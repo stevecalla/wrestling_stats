@@ -1,0 +1,45 @@
+{
+  "name": "wrestling",
+  "version": "0.1.0",
+  "description": "Utilities and scripts for the wrestling project",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node .",
+    "dev": "node --watch .",
+    "test": "playwright test",
+    "test:headful": "playwright test --headed",
+    "install-browsers": "playwright install",
+    "lint": "echo \"No lint configured\"",
+    "format": "echo \"No formatter configured\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourname/wrestling.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourname/wrestling/issues"
+  },
+  "homepage": "https://github.com/yourname/wrestling#readme",
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "lib",
+    "src",
+    "dist"
+  ],
+  "keywords": [
+    "wrestling",
+    "playwright",
+    "csv"
+  ],
+  "dependencies": {
+    "csv-parse": "^6.1.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

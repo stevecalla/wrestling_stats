@@ -1,0 +1,105 @@
+# Custom .gitignore for JavaScript/Node.js projects
+notes.txt
+pw-user-data/
+chrome-tw-user-data
+
+# Dependency locks
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*.log
+*.bak
+*.tgz
+
+# Operating System
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Vim / editors temporary files
+*~
+*.swp
+.*.sw?
+*.tmp
+
+# dotenv / secrets
+.env
+.env.*.local
+.env.local
+.envrc
+.local.env
+
+# Node / package managers / build artifacts
+node_modules/
+.pnp/
+.pnp.js
+dist/
+build/
+out/
+.next/
+.next/cache/
+.cache/
+.parcel-cache/
+.vite/
+public/build/
+storybook-static/
+coverage/
+.nyc_output
+.temp/
+tmp/
+
+# Bundlers / caches
+.cache-loader
+.rpt2_cache/
+.rollup.cache
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editors / IDEs
+.vscode/
+.vscode-test/
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# OS X Finder attributes
+.AppleDouble
+.LSOverride
+
+# Certificates / keys / secrets
+*.pem
+*.key
+*.crt
+*.p12
+secrets.json
+
+# Misc
+.eslintcache
+.cache
+coverage/
+coverage-final.json
+.Dockerfile.swp
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Optional: local-only files you may want to ignore
+# .env.example should typically be tracked, so not ignored here.
