@@ -1,0 +1,45 @@
+import fs from "fs";
+import path from "path";
+
+function to_csv_file(rows) {
+  if (!rows.length) return "";
+  const headers = Object.keys(rows[0]);
+  const esc = v => {
+    if (v == null) return "";
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [headers.join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\n");
+}
+
+function save_to_csv_file(all_rows, iterationIndex, headersWritten, FOLDER_NAME, FILE_NAME) {
+  const DIR = "/Users/stevecalla/wrestling/data_tracker_wrestling";
+  const CSV_FILE = path.join(DIR, FOLDER_NAME, FILE_NAME);
+
+  fs.mkdirSync(path.join(DIR, FOLDER_NAME), { recursive: true });
+
+  // Skip empty batches until we get data
+  if (!Array.isArray(all_rows) || all_rows.length === 0) {
+    console.log(`ℹ️ Iteration ${iterationIndex}: no data, waiting for next batch...`);
+    return;
+  }
+
+  // Build CSV normally
+  const csvFull = to_csv_file(all_rows);
+  const lines = csvFull.split(/\r?\n/).filter(Boolean);
+  const headerLine = lines.shift();  // first line
+  const rowsOnly = lines.join("\n");
+
+  // If we haven’t written headers yet, start fresh file
+  if (!headersWritten) {
+    fs.writeFileSync(CSV_FILE, headerLine + "\n" + rowsOnly + "\n", "utf8");
+    headersWritten = true;
+    console.log(`🧾 Created ${CSV_FILE} with headers + ${all_rows.length} rows`);
+  } else {
+    // Append only rows
+    fs.appendFileSync(CSV_FILE, "\n" + rowsOnly + "\n", "utf8");
+    console.log(`➕ Appended ${all_rows.length} rows → ${CSV_FILE}`);
+  }
+}
+
+export { save_to_csv_file };

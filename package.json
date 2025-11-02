@@ -37,7 +37,8 @@
     "csv"
   ],
   "dependencies": {
-    "csv-parse": "^6.1.0"
+    "csv-parse": "^6.1.0",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
     "playwright": "^1.56.1"

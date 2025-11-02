@@ -1,14 +1,20 @@
+import dotenv from "dotenv";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { spawn } from "child_process";
-
 import { chromium } from "playwright";
 
-const CONNECT_URL = "http://localhost:9222"; // Chrome DevTools 
+const PORT = process.env.CHROME_DEVTOOLS_PORT || 9222;
+const CONNECT_URL = `http://localhost:${PORT}`; // Chrome DevTools 
 const LOAD_TIMEOUT_MS = 30000;
-const AFTER_LOAD_PAUSE_MS = 500;
 
-const USER_DATA_DIR = process.env.STORE_CHROME_DATA || path.resolve(process.env.HOME || "~", "chrome-tw-user-data"); // persistent across reboots
+console.log('process.env.STORE_CHROME_DATA ', process.env.STORE_CHROME_DATA);
+const USER_DATA_DIR = process.env.STORE_CHROME_DATA; // persistent across reboots
 
 // ---------- tiny utils ----------
 async function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -36,7 +42,7 @@ function find_mac_chrome() {
   return null;
 }
 
-async function go_to_website_in_chrome(url) {
+async function go_to_website_in_chrome(URL) {
 
   const browser = await chromium.connectOverCDP(CONNECT_URL);
   const contexts = browser.contexts();
@@ -47,19 +53,23 @@ async function go_to_website_in_chrome(url) {
   // await google.goto("https://www.google.com");
   // await google.waitForTimeout(800); // small settle
 
-  const trackwrestling_page = await context.newPage();
-  trackwrestling_page.setDefaultTimeout(LOAD_TIMEOUT_MS);
-  await trackwrestling_page.goto("https://www.trackwrestling.com/", { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
-  await trackwrestling_page.waitForTimeout(800); // small settle
+  const page = await context.newPage();
+  page.setDefaultTimeout(LOAD_TIMEOUT_MS);
+  await page.goto(URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+  await page.waitForTimeout(2000); // small settle
 
-  return { browser, trackwrestling_page };
+  return { browser, page };
 }
 
-async function step_0_launch_chrome_developer() {
+async function step_0_launch_chrome_developer(URL) {
+  // Ensure the profile path exists before launch
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+  console.log("[ENV] STORE_CHROME_DATA:", USER_DATA_DIR);
+
   if (await is_chrome_dev_up()) {
-    console.log("[CDP] Chrome is already listening on 9222.");
-    const { browser, trackwrestling_page } = await go_to_website_in_chrome();
-    return { browser, trackwrestling_page };
+    console.log(`[CDP] Chrome is already listening on ${PORT}.`);
+    const { browser, page } = await go_to_website_in_chrome(URL);
+    return { browser, page };
   }
   if (process.platform !== "darwin") {
     console.warn("[CDP] Auto-launch is set up for macOS only. Start Chrome manually if not on macOS.");
@@ -76,12 +86,12 @@ async function step_0_launch_chrome_developer() {
 
   console.log("[CDP] Launching Chrome with remote debugging…");
   const child = spawn(chromeBin, [
-    `--remote-debugging-port=9222`,
+    `--remote-debugging-port=${PORT}`,
     `--user-data-dir=${USER_DATA_DIR}`,
     `--no-first-run`,
     `--no-default-browser-check`,
     // Open a blank page quickly
-    "about:blank",
+    // "about:blank",
   ], {
     stdio: "ignore",
     detached: true,
@@ -92,13 +102,13 @@ async function step_0_launch_chrome_developer() {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
     if (await is_chrome_dev_up()) {
-        console.log("[CDP] Chrome is now available on 9222.");
-        const { browser, trackwrestling_page } = await go_to_website_in_chrome();
-        return { browser, trackwrestling_page };
+        console.log(`[CDP] Chrome is now available on ${PORT}.`);
+        const { browser, page } = await go_to_website_in_chrome(URL);
+        return { browser, page };
     }
     await wait(400);
   }
-  throw new Error("Timed out waiting for Chrome DevTools on port 9222.");
+  throw new Error(`Timed out waiting for Chrome DevTools on port ${PORT}.`);
 }
 
 export { step_0_launch_chrome_developer };
