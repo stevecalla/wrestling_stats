@@ -6,7 +6,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-import { URL_WRESTLERS } from "../data/input/urls_wrestlers.js";
+import { wrestler_match_urls_2024_25 } from "../data_tracker_wrestling/input/wrestler_match_urls_2024_25.js";
+import { wrestler_match_urls_2025_26 } from "../data_tracker_wrestling/input/wrestler_match_urls_2025_26.js";
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
 
@@ -273,8 +274,8 @@ function extractor_source() {
   };
 }
 
-async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser) {
-  const URLS = URL_WRESTLERS;
+async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, folder_name, file_name) {
+  const URLS = WRESTLING_SEASON === '2024-25' ? wrestler_match_urls_2024_25 : wrestler_match_urls_2025_26;
   const LOAD_TIMEOUT_MS = 30000;
   const NO_OF_URLS = Math.min(MIN_URLS, URLS.length);
   let headersWritten = false; // stays true once header is created
@@ -324,6 +325,7 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser)
 
     console.log('step 5: extract rows');
     await targetFrame.waitForLoadState?.("domcontentloaded");
+    
     await page.waitForTimeout(1000);
 
     const rows = await targetFrame.evaluate(extractor_source());
@@ -331,9 +333,7 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser)
     all_rows.push(...rows);
 
     console.log('step 6: save to CSV');
-    const FILE_NAME = `tw_matches_full_${WRESTLING_SEASON}.csv`;
-    const FOLDER_NAME = "output";
-    save_to_csv_file(all_rows, i, headersWritten, FOLDER_NAME, FILE_NAME); // pass iteration index to determine if first run
+    save_to_csv_file(all_rows, i, headersWritten, folder_name, file_name); // pass iteration index to determine if first run
   }
 
   await browser.close(); // closes CDP connection (not your Chrome instance)

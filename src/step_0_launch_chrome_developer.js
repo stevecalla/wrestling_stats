@@ -58,7 +58,7 @@ async function go_to_website_in_chrome(URL) {
   await page.goto(URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
   await page.waitForTimeout(2000); // small settle
 
-  return { browser, page };
+  return { browser, page, context };
 }
 
 async function step_0_launch_chrome_developer(URL) {
@@ -68,8 +68,8 @@ async function step_0_launch_chrome_developer(URL) {
 
   if (await is_chrome_dev_up()) {
     console.log(`[CDP] Chrome is already listening on ${PORT}.`);
-    const { browser, page } = await go_to_website_in_chrome(URL);
-    return { browser, page };
+    const { browser, page, context } = await go_to_website_in_chrome(URL);
+    return { browser, page, context };
   }
   if (process.platform !== "darwin") {
     console.warn("[CDP] Auto-launch is set up for macOS only. Start Chrome manually if not on macOS.");
@@ -103,8 +103,8 @@ async function step_0_launch_chrome_developer(URL) {
   while (Date.now() < deadline) {
     if (await is_chrome_dev_up()) {
         console.log(`[CDP] Chrome is now available on ${PORT}.`);
-        const { browser, page } = await go_to_website_in_chrome(URL);
-        return { browser, page };
+        const { browser, page, context } = await go_to_website_in_chrome(URL);
+        return { browser, page, context };
     }
     await wait(400);
   }

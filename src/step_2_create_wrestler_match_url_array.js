@@ -1,8 +1,6 @@
 import fs from "fs";
+import path from "path";
 import { parse } from "csv-parse/sync";
-
-const INPUT_CSV = "/Users/stevecalla/wrestling/data/input/wrestlers_2024.csv";
-const OUTPUT_JS = "/Users/stevecalla/wrestling/data/input/urls_wrestlers.js";
 
 /**
  * Reads the CSV and extracts Name_link column
@@ -34,25 +32,22 @@ function extract_name_links(csvPath) {
 /**
  * Writes array file with export const
  */
-async function step_2_write_wrestler_match_url_array(outPath = OUTPUT_JS) {
+async function step_2_write_wrestler_match_url_array(DIR, folder_name, url_file_name, file_name) {
+
+  fs.mkdirSync(path.join(DIR, folder_name), { recursive: true });
+
+  const INPUT_CSV = path.join(DIR, folder_name, file_name);
+  const OUTPUT_JS = path.join(DIR, folder_name, url_file_name);
 
   const urls = extract_name_links(INPUT_CSV);
 
+  // create the JS file name adjusting the wrestling season for 2024-25
+  const js_var_name = url_file_name.replace(".js", "");
   const fileContent = `// Auto-generated from wrestlers_2024.csv
-export const URL_WRESTLERS = ${JSON.stringify(urls, null, 2)};
+export const ${js_var_name} = ${JSON.stringify(urls, null, 2)};
 `;
-  fs.writeFileSync(outPath, fileContent, "utf8");
-  console.log(`✅ Step 2: Wrote ${urls.length} URLs → ${outPath}`);
-}
-
-// this code runs only when the file is executed directly
-if (import.meta.url === process.argv[1] || import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    await step_2_write_wrestler_match_url_array(OUTPUT_JS);
-
-  } catch (err) {
-    console.error("❌ Error:", err.message);
-  }
+  fs.writeFileSync(OUTPUT_JS, fileContent, "utf8");
+  console.log(`✅ Step 2: Wrote ${urls.length} URLs → ${OUTPUT_JS}`);
 }
 
 export { step_2_write_wrestler_match_url_array };

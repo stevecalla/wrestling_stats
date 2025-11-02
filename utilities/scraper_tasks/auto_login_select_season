@@ -116,6 +116,9 @@ async function auto_login_select_season(args) {
     }
   }
 
+  // inserted delay to allow page to load
+  await sleep(1000);
+
   // 2) Open "2024–25 High School Boys"
   const seasonLink = Array.from(document.querySelectorAll("a[href^='javascript:seasonSelected']"))
     .find(a => (a.textContent || "").trim().includes(`${WRESTLING_SEASON} High School Boys`));
@@ -129,6 +132,9 @@ async function auto_login_select_season(args) {
     toast("Season link not found");
     console.warn("[snippet] Season link not found");
   }
+
+  // inserted delay to allow page to load
+  await sleep(1000);
 
   // 3) Select Colorado governing body
   const select = document.querySelector("select#gbId");
@@ -152,6 +158,9 @@ async function auto_login_select_season(args) {
     toast("<select id='gbId'> not found");
     console.warn("[snippet] Governing-body <select> not found");
   }
+
+  // inserted delay to allow page to load
+  await sleep(1000);
 
   // 4) Click Login
   const loginBtn = Array.from(document.querySelectorAll('input[type="button"][value="Login"]'))
