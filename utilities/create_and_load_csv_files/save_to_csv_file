@@ -34,11 +34,11 @@ function save_to_csv_file(all_rows, iterationIndex, headersWritten, FOLDER_NAME,
   if (!headersWritten) {
     fs.writeFileSync(CSV_FILE, headerLine + "\n" + rowsOnly + "\n", "utf8");
     headersWritten = true;
-    console.log(`🧾 Created ${CSV_FILE} with headers + ${all_rows.length} rows`);
+    // console.log(`🧾 Created ${CSV_FILE} with headers + ${all_rows.length} rows`);
   } else {
     // Append only rows
     fs.appendFileSync(CSV_FILE, "\n" + rowsOnly + "\n", "utf8");
-    console.log(`➕ Appended ${all_rows.length} rows → ${CSV_FILE}`);
+    // console.log(`➕ Appended ${all_rows.length} rows → ${CSV_FILE}`);
   }
 }
 

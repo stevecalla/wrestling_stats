@@ -1,3 +1,16 @@
+// if url contains seasons/index.jsp?
+// click on scroll to right
+    // <a href="javascript:defaultGrid.nextX()"><i aria-hidden="true" class="icon-arrow_r dgNext"></i></a>
+// then click on href = 
+    // <a href="javascript:seasonSelected(842514138)">2024-25 High School Boys</a>
+    // don't scroll....
+    // <a href="javascript:seasonSelected(1560212138)">2025-26 High School Boys</a>
+// select Colorado
+    // <select class="unchanged" id="gbId" name="gbId" title="* governing body" 
+    // <option value="10">Colorado High School Activities Association</option>
+// then clicks on the login button
+    // <div> <input type="button" value="Login" onclick="publicLogin()" class="segment-track"> </div>
+
 // === Function to login automatically by selecting the correct season ===
 async function auto_login_select_season(args) {
   const { WRESTLING_SEASON } = args;
@@ -87,34 +100,6 @@ async function auto_login_select_season(args) {
     return;
   }
 
-  // // 1) Scroll right (defaultGrid.nextX)
-  // const scrollBtn = document.querySelector('a[href="javascript:defaultGrid.nextX()"]');
-  // if (scrollBtn) {
-  //   highlight(scrollBtn, "Scroll right");
-  //   toast("Click: Scroll right");
-  //   await sleep(350);
-  //   if (!DRY_RUN) scrollBtn.click();
-  //   await sleep(800);
-  // } else {
-  //   toast("Scroll-right arrow not found");
-  //   console.warn("[snippet] Scroll arrow not found");
-  // }
-
-  // // 2) Open "2024–25 High School Boys"
-  // const seasonLink = Array.from(document.querySelectorAll("a[href^='javascript:seasonSelected']"))
-  //   .find(a => (a.textContent || "").trim().includes("2024-25 High School Boys"));
-  // if (seasonLink) {
-  //   highlight(seasonLink, "Open: 2024–25 High School Boys");
-  //   toast("Open: 2024–25 High School Boys");
-  //   await sleep(400);
-  //   if (!DRY_RUN) seasonLink.click();
-  //   await sleep(1500);
-  // } else {
-  //   toast("Season link not found");
-  //   console.warn("[snippet] Season link not found");
-  // }
-
-  // todo: ===========
   // 1) Scroll right (defaultGrid.nextX)
   if (WRESTLING_SEASON === "2024-25") {
     toast("WRESTLING_SEASON = 2024-25");
@@ -144,8 +129,6 @@ async function auto_login_select_season(args) {
     toast("Season link not found");
     console.warn("[snippet] Season link not found");
   }
-
-  // todo: ============
 
   // 3) Select Colorado governing body
   const select = document.querySelector("select#gbId");

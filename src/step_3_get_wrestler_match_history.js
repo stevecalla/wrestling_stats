@@ -10,13 +10,6 @@ import { URL_WRESTLERS } from "../data/input/urls_wrestlers.js";
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
 
-// ================== USER CONFIG ==================
-const URLS = URL_WRESTLERS;
-
-const LOAD_TIMEOUT_MS = 30000;
-const AFTER_LOAD_PAUSE_MS = 500;
-// ================== END USER CONFIG ==================
-
 // === Main function to get wrestler match history ===
 function extractor_source() {
   return () => {
@@ -280,7 +273,9 @@ function extractor_source() {
   };
 }
 
-async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser ) {
+async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser) {
+  const URLS = URL_WRESTLERS;
+  const LOAD_TIMEOUT_MS = 30000;
   const NO_OF_URLS = Math.min(MIN_URLS, URLS.length);
   let headersWritten = false; // stays true once header is created
 
@@ -329,7 +324,7 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-2025", page, browser 
 
     console.log('step 5: extract rows');
     await targetFrame.waitForLoadState?.("domcontentloaded");
-    await page.waitForTimeout(AFTER_LOAD_PAUSE_MS);
+    await page.waitForTimeout(1000);
 
     const rows = await targetFrame.evaluate(extractor_source());
     console.log(`✔ ${i} of ${NO_OF_URLS}. Rows returned: ${rows.length} rows from: ${url}`);
