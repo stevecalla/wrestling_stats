@@ -99,6 +99,9 @@ async function auto_login_select_season(args) {
     console.warn("[snippet] Not on seasons/index.jsp — aborting.");
     return;
   }
+  
+  // inserted delay to allow page to load
+  await sleep(2000);
 
   // 1) Scroll right (defaultGrid.nextX)
   if (WRESTLING_SEASON === "2024-25") {
@@ -117,7 +120,7 @@ async function auto_login_select_season(args) {
   }
 
   // inserted delay to allow page to load
-  await sleep(1000);
+  await sleep(2000);
 
   // 2) Open "2024–25 High School Boys"
   const seasonLink = Array.from(document.querySelectorAll("a[href^='javascript:seasonSelected']"))
@@ -134,7 +137,7 @@ async function auto_login_select_season(args) {
   }
 
   // inserted delay to allow page to load
-  await sleep(1000);
+  await sleep(2000);
 
   // 3) Select Colorado governing body
   const select = document.querySelector("select#gbId");
@@ -160,7 +163,7 @@ async function auto_login_select_season(args) {
   }
 
   // inserted delay to allow page to load
-  await sleep(1000);
+  await sleep(2000);
 
   // 4) Click Login
   const loginBtn = Array.from(document.querySelectorAll('input[type="button"][value="Login"]'))

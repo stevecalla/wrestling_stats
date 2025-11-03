@@ -11,6 +11,25 @@ import { wrestler_match_urls_2025_26 } from "../data_tracker_wrestling/input/wre
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
 
+// === helper: resilient navigation that ignores TW's mid-flight redirects ===
+async function safe_goto(page, url, opts = {}) {
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (msg.includes("is interrupted by another navigation")) {
+      console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
+      await page.waitForLoadState("domcontentloaded").catch(() => { });
+    } else if (msg.includes("Target page, context or browser has been closed")) {
+      err.code = "E_TARGET_CLOSED";  // ← sentinel
+      throw err;
+    } else {
+      throw err;
+    }
+  }
+  return page.url();
+}
+
 // === Main function to get wrestler match history ===
 function extractor_source() {
   return () => {
@@ -274,14 +293,14 @@ function extractor_source() {
   };
 }
 
-async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, folder_name, file_name) {
+async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, context, folder_name, file_name, loop_start = 0) {
   const URLS = WRESTLING_SEASON === '2024-25' ? wrestler_match_urls_2024_25 : wrestler_match_urls_2025_26;
   const LOAD_TIMEOUT_MS = 30000;
   const NO_OF_URLS = Math.min(MIN_URLS, URLS.length);
   let headersWritten = false; // stays true once header is created
 
   const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
-  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+  await safe_goto(page, LOGIN_URL, { timeout: LOAD_TIMEOUT_MS });
   await page.waitForTimeout(2000); // small settle
 
   // Step 1: select wrestling season
@@ -291,16 +310,16 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, f
   await page.waitForTimeout(1000);
 
   // Step 2: go to each URL and extract rows
-  for (let i = 0; i < NO_OF_URLS; i++) {
+  for (let i = loop_start; i < NO_OF_URLS; i++) {
     const all_rows = [];
-
     const url = URLS[i];
+
     console.log('step 2a: go to url:', url);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+    await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
 
     // Some pages embed the content in frames—find the right one
     console.log('step 2b: find target frame');
-    const targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+    let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
     // Wait to see if TW bounces us to seasons/index.jsp; ignore if it doesn't.
     console.log('step 3: wait to see if redirected to seasons/index.jsp');
@@ -316,7 +335,17 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, f
       await page.waitForTimeout(1000);
 
       console.log('step 3b: re-navigating to original URL after login:', url);
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+      await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+
+      await page.waitForTimeout(1000); // short settle before grabbing frame
+      // Re-find target frame after re-navigation
+      targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+    }
+
+    // if TrackWrestling silently redirects you to MainFrame.jsp, your script immediately recovers by re-opening the correct WrestlerMatches page and resetting targetFrame accordingly.
+    if (/MainFrame\.jsp/i.test(page.url())) {
+      await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+      targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
     }
 
     // Wait for the dropdown (proof we’re on the right doc)
@@ -325,7 +354,7 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, f
 
     console.log('step 5: extract rows');
     await targetFrame.waitForLoadState?.("domcontentloaded");
-    
+
     await page.waitForTimeout(1000);
 
     const rows = await targetFrame.evaluate(extractor_source());
@@ -333,7 +362,8 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, f
     all_rows.push(...rows);
 
     console.log('step 6: save to CSV');
-    save_to_csv_file(all_rows, i, headersWritten, folder_name, file_name); // pass iteration index to determine if first run
+    headersWritten = await save_to_csv_file(all_rows, i, headersWritten, folder_name, file_name); // pass iteration index to determine if first run
+    console.log(`\x1b[33m➕ Tracking headersWritten: ${headersWritten}\x1b[0m\n`);
   }
 
   await browser.close(); // closes CDP connection (not your Chrome instance)
