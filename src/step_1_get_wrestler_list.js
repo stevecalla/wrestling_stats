@@ -133,13 +133,13 @@ function extractor_source() {
       }
 
       // 3) Level = Varsity
-      const levelSelect = document.querySelector("#s_levelId");
-      if (levelSelect) {
-        const ok = setSelectByText(levelSelect, level);
-        if (!ok) console.warn(`Option "${level}" not found in level dropdown.`);
-      } else {
-        console.warn("Level select #s_levelId not found; continuing without level filter.");
-      }
+      // const levelSelect = document.querySelector("#s_levelId");
+      // if (levelSelect) {
+      //   const ok = setSelectByText(levelSelect, level);
+      //   if (!ok) console.warn(`Option "${level}" not found in level dropdown.`);
+      // } else {
+      //   console.warn("Level select #s_levelId not found; continuing without level filter.");
+      // }
 
       // 4) Click inner Search
       const go = document.querySelector(
