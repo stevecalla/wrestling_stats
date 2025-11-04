@@ -456,7 +456,7 @@ async function main(
           }
         }
 
-        console.log(`✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} rows from: ${url}`);
+        console.log(color_text(`✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} rows from: ${url}`, "red"));
         all_rows.push(...rows);
 
         console.log("step 6: save to csv");

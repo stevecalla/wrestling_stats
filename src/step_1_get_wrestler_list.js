@@ -11,6 +11,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 import { click_on_wrestler_menu } from "../utilities/scraper_tasks/click_on_wrestler_menu.js";
+import { color_text } from "../utilities/console_logs/console_colors.js";
 
 /* ------------------------------------------
    Helpers
@@ -330,10 +331,10 @@ async function main(
       }
 
       const pages_info = result?.pages_advanced ?? 0;
-      console.log(
+      console.log(color_text(
         `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | level="${level}" | pages=${pages_info + 1
-        } | rows_written=${wrote} | total_rows=${cumulative_rows}`
-      );
+        } | rows_written=${wrote} | total_rows=${cumulative_rows}`, "green"
+      ));
     }
   }
 
