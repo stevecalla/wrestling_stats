@@ -8,8 +8,8 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 import { wrestler_match_urls_2024_25 } from "../data_tracker_wrestling/input/wrestler_match_urls_2024_25.js";
 import { wrestler_match_urls_2025_26 } from "../data_tracker_wrestling/input/wrestler_match_urls_2025_26.js";
-import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
-import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
+import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
+import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 
