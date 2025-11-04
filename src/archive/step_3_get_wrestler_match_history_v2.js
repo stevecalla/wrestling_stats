@@ -8,10 +8,24 @@
 
 // import { wrestler_match_urls_2024_25 } from "../data_tracker_wrestling/input/wrestler_match_urls_2024_25.js";
 // import { wrestler_match_urls_2025_26 } from "../data_tracker_wrestling/input/wrestler_match_urls_2025_26.js";
-// import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
-// import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
+// import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
+// import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
+
+// import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 
 // // === helper: resilient navigation that ignores TW's mid-flight redirects ===
+// function handlesDead({ browser, context, page }) {
+//   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
+// }
+
+// async function relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON) {
+//   const LOGIN_URL = URL_LOGIN_PAGE;
+//   await safe_goto(page, LOGIN_URL, { timeout: LOAD_TIMEOUT_MS });
+//   await page.waitForTimeout(1000);
+//   await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+//   await page.waitForTimeout(800);
+// }
+
 // async function safe_goto(page, url, opts = {}) {
 //   try {
 //     await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
@@ -28,6 +42,22 @@
 //     }
 //   }
 //   return page.url();
+// }
+
+// async function safe_wait_for_selector(frameOrPage, selector, opts = {}) {
+//   try {
+//     await frameOrPage.waitForSelector(selector, { state: "visible", ...opts });
+//   } catch (err) {
+//     const msg = String(err?.message || "");
+//     if (
+//       msg.includes("Target page, context or browser has been closed") ||
+//       msg.includes("Frame was detached") ||
+//       msg.includes("Execution context was destroyed")
+//     ) {
+//       err.code = "E_TARGET_CLOSED"; // sentinel for revive
+//     }
+//     throw err;
+//   }
 // }
 
 // // === Main function to get wrestler match history ===
@@ -293,13 +323,18 @@
 //   };
 // }
 
-// async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, context, folder_name, file_name, loop_start = 0) {
+// async function main(URL_HOME_PAGE, URL_LOGIN_PAGE, MIN_URLS = 5, loop_start = 0, WRESTLING_SEASON = "2024-25", page, browser, context, folder_path) {
 //   const URLS = WRESTLING_SEASON === '2024-25' ? wrestler_match_urls_2024_25 : wrestler_match_urls_2025_26;
 //   const LOAD_TIMEOUT_MS = 30000;
 //   const NO_OF_URLS = Math.min(MIN_URLS, URLS.length);
-//   let headersWritten = false; // stays true once header is created
+//   let headers_written = false; // stays true once header is created
 
-//   const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
+//   // This sets up an event listener on the Playwright browser object that fires whenever the CDP (Chrome DevTools Protocol) connection between Playwright and Chrome is lost.
+//   browser.on?.("disconnected", () => {
+//     console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
+//   });
+
+//   const LOGIN_URL = URL_LOGIN_PAGE;
 //   await safe_goto(page, LOGIN_URL, { timeout: LOAD_TIMEOUT_MS });
 //   await page.waitForTimeout(2000); // small settle
 
@@ -311,62 +346,125 @@
 
 //   // Step 2: go to each URL and extract rows
 //   for (let i = loop_start; i < NO_OF_URLS; i++) {
-//     const all_rows = [];
+//     // revive handles if needed
+//     if (handlesDead({ browser, context, page })) {
+//       console.warn("♻️ Handles dead — reconnecting via step_0_launch_chrome_developer...");
+//       ({ browser, page, context } = await step_0_launch_chrome_developer(URL_HOME_PAGE));
+
+//       // ✅ Reattach listener for the new browser instance
+//       browser.on?.("disconnected", () => {
+//         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
+//       });
+
+//       await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
+//     }
+
+
 //     const url = URLS[i];
+//     let attempts = 0;
 
-//     console.log('step 2a: go to url:', url);
-//     await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+//     while (attempts < 2) {
+//       attempts++;
 
-//     // Some pages embed the content in frames—find the right one
-//     console.log('step 2b: find target frame');
-//     let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+//       try {
+//         const all_rows = [];
 
-//     // Wait to see if TW bounces us to seasons/index.jsp; ignore if it doesn't.
-//     console.log('step 3: wait to see if redirected to seasons/index.jsp');
-//     await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
+//         console.log('step 2a: go to url:', url);
+//         await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
 
-//     // If we ARE on seasons/index.jsp, run the in-page auto login UI flow
-//     if (/seasons\/index\.jsp/i.test(page.url())) {
-//       console.log("step 3a: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
+//         // find frame AFTER nav
+//         console.log('step 2b: find target frame');
+//         let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
-//       const loginArgs = { WRESTLING_SEASON: WRESTLING_SEASON };
-//       await page.evaluate(auto_login_select_season, loginArgs); // <-- pass the function itself
+//         // check redirect to seasons/index.jsp
+//         console.log('step 3: wait to see if redirected to seasons/index.jsp');
+//         await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
 
-//       await page.waitForTimeout(1000);
+//         if (/seasons\/index\.jsp/i.test(page.url())) {
+//           console.log("step 3a: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
+//           await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+//           await page.waitForTimeout(1000);
+//           console.log('step 3b: re-navigating to original URL after login:', url);
+//           await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+//           await page.waitForTimeout(1000);
+//           targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+//         }
 
-//       console.log('step 3b: re-navigating to original URL after login:', url);
-//       await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+//         // bounce off MainFrame.jsp if it happens
+//         if (/MainFrame\.jsp/i.test(page.url())) {
+//           await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+//           targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+//         }
 
-//       await page.waitForTimeout(1000); // short settle before grabbing frame
-//       // Re-find target frame after re-navigation
-//       targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
-//     }
+//         // Wait for the dropdown (proof we’re on the right doc)
+//         console.log('step 4: wait for dropdown');
+//         // await targetFrame.waitForSelector("#wrestler", { timeout: LOAD_TIMEOUT_MS });
+//         await safe_wait_for_selector(targetFrame, "#wrestler", { timeout: LOAD_TIMEOUT_MS });
 
-//     // if TrackWrestling silently redirects you to MainFrame.jsp, your script immediately recovers by re-opening the correct WrestlerMatches page and resetting targetFrame accordingly.
-//     if (/MainFrame\.jsp/i.test(page.url())) {
-//       await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
-//       targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
-//     }
+//         console.log('step 5: extract rows');
+//         await targetFrame.waitForLoadState?.("domcontentloaded");
+//         await page.waitForTimeout(1000);
 
-//     // Wait for the dropdown (proof we’re on the right doc)
-//     console.log('step 4: wait for dropdown');
-//     await targetFrame.waitForSelector("#wrestler", { timeout: LOAD_TIMEOUT_MS });
+//         // const rows = await targetFrame.evaluate(extractor_source());
 
-//     console.log('step 5: extract rows');
-//     await targetFrame.waitForLoadState?.("domcontentloaded");
+//         let rows;
+//         try {
+//           rows = await targetFrame.evaluate(extractor_source());
+//         } catch (e) {
+//           const msg = String(e?.message || "");
+//           if (
+//             msg.includes("Target page, context or browser has been closed") ||
+//             msg.includes("Frame was detached") ||
+//             msg.includes("Execution context was destroyed")
+//           ) {
+//             e.code = "E_TARGET_CLOSED";
+//           }
+//           if (e?.code === "E_TARGET_CLOSED") {
+//             console.warn("♻️ Frame died during evaluate — reconnecting and retrying once...");
+//             ({ browser, page, context } = await step_0_launch_chrome_developer(URL_HOME_PAGE));
+//             browser.on?.("disconnected", () => console.warn("⚠️ CDP disconnected — Chrome was closed."));
+//             await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
+//             await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+//             let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+//             rows = await targetFrame.evaluate(extractor_source());
+//           } else {
+//             throw e;
+//           }
+//         }
 
-//     await page.waitForTimeout(1000);
+//         console.log(`✔ ${i} of ${NO_OF_URLS}. Rows returned: ${rows.length} rows from: ${url}`);
+//         all_rows.push(...rows);
 
-//     const rows = await targetFrame.evaluate(extractor_source());
-//     console.log(`✔ ${i} of ${NO_OF_URLS}. Rows returned: ${rows.length} rows from: ${url}`);
-//     all_rows.push(...rows);
+//         console.log('step 6: save to CSV');
+//         headers_written = await save_to_csv_file(all_rows, i, headers_written, file_path);
+//         console.log(`\x1b[33m➕ Tracking headers_written: ${headers_written}\x1b[0m\n`);
 
-//     console.log('step 6: save to CSV');
-//     headersWritten = await save_to_csv_file(all_rows, i, headersWritten, folder_name, file_name); // pass iteration index to determine if first run
-//     console.log(`\x1b[33m➕ Tracking headersWritten: ${headersWritten}\x1b[0m\n`);
+//         // success → break retry loop
+//         break;
+
+//       } catch (e) {
+//         if (e?.code === "E_TARGET_CLOSED" || e?.code === "E_GOTO_TIMEOUT") {
+//           const cause = e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
+//           console.warn(`♻️ ${cause} — reconnecting and retrying this URL once...`);
+
+//           ({ browser, page, context } = await step_0_launch_chrome_developer(URL_HOME_PAGE));
+
+//           // ✅ Reattach listener for the new browser instance
+//           browser.on?.("disconnected", () => {
+//             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
+//           });
+
+//           await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
+
+//           if (attempts >= 2) throw e; // stop after retry
+//           continue; // retry same URL
+//         }
+//         throw e; // not one of our recoverable cases
+//       }
 //   }
+// }
 
-//   await browser.close(); // closes CDP connection (not your Chrome instance)
+// await browser.close(); // closes CDP connection (not your Chrome instance)
 // }
 
 // export { main as step_3_get_wrestler_match_history };

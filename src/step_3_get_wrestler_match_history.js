@@ -1,28 +1,32 @@
+// src/step_3_get_wrestler_match_history.js (ESM, snake_case)
 import path from "path";
 import { fileURLToPath } from "url";
-
 import dotenv from "dotenv";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-import { wrestler_match_urls_2024_25 } from "../data_tracker_wrestling/input/wrestler_match_urls_2024_25.js";
-import { wrestler_match_urls_2025_26 } from "../data_tracker_wrestling/input/wrestler_match_urls_2025_26.js";
+// keep import specifiers but use snake_case bindings locally
+import { count_rows_in_csv } from "../utilities/create_and_load_csv_files/count_rows_in_csv.js";
+import { iter_name_links_from_csv } from "../utilities/create_and_load_csv_files/iter_name_links_from_csv.js";
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
-
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
+import { color_text } from "../utilities/console_logs/console_colors.js";
 
-// === helper: resilient navigation that ignores TW's mid-flight redirects ===
-function handlesDead({ browser, context, page }) {
+/* ------------------------------------------
+   small helpers
+-------------------------------------------*/
+function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
 
-async function relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON) {
-  const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
-  await safe_goto(page, LOGIN_URL, { timeout: LOAD_TIMEOUT_MS });
+async function relogin(page, load_timeout_ms, wrestling_season, url_login_page) {
+  const login_url = url_login_page;
+  await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
-  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
   await page.waitForTimeout(800);
 }
 
@@ -35,7 +39,7 @@ async function safe_goto(page, url, opts = {}) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
       await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
-      err.code = "E_TARGET_CLOSED";  // ← sentinel
+      err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
     } else {
       throw err;
@@ -44,9 +48,9 @@ async function safe_goto(page, url, opts = {}) {
   return page.url();
 }
 
-async function safe_wait_for_selector(frameOrPage, selector, opts = {}) {
+async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
   try {
-    await frameOrPage.waitForSelector(selector, { state: "visible", ...opts });
+    await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
   } catch (err) {
     const msg = String(err?.message || "");
     if (
@@ -54,29 +58,33 @@ async function safe_wait_for_selector(frameOrPage, selector, opts = {}) {
       msg.includes("Frame was detached") ||
       msg.includes("Execution context was destroyed")
     ) {
-      err.code = "E_TARGET_CLOSED"; // sentinel for revive
+      err.code = "E_TARGET_CLOSED"; // sentinel
     }
     throw err;
   }
 }
 
-// === Main function to get wrestler match history ===
+/* ------------------------------------------
+   extractor_source runs in the page (frame) context
+-------------------------------------------*/
 function extractor_source() {
   return () => {
-    // === TW COLLECT (FULL LOGIC with improved start_date / end_date parsing) ===
-    // Handles "12/13 - 12/14/2024" → start_date=12/13/2024, end_date=12/14/2024
-    // ---------- helpers ----------
-    const norm = s => (s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-    const lc = s => norm(s).toLowerCase();
-    const escReg = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // === helpers in-page ===
+    const norm = (s) =>
+      (s || "")
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const lc = (s) => norm(s).toLowerCase();
+    const esc_reg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-    const toDate = (y, m, d) => {
-      const Y = +y < 100 ? (+y + 2000) : +y;
-      const mm = +m, dd = +d;
-      const dt = new Date(Y, mm - 1, dd);
+    const to_date = (y, m, d) => {
+      const yy = +y < 100 ? +y + 2000 : +y;
+      const dt = new Date(yy, +m - 1, +d);
       return isNaN(+dt) ? null : dt;
     };
-    const fmtMDY = d => {
+    const fmt_mdy = (d) => {
       if (!(d instanceof Date) || isNaN(+d)) return "";
       const mm = String(d.getMonth() + 1).padStart(2, "0");
       const dd = String(d.getDate()).padStart(2, "0");
@@ -84,177 +92,182 @@ function extractor_source() {
       return `${mm}/${dd}/${yy}`;
     };
 
-    // Robustly parse date cell text into start/end
-    // Supports:
-    //   MM/DD - MM/DD/YYYY   (year missing on first → borrow from second)
-    //   MM/DD/YYYY - MM/DD/YYYY
-    //   MM/DD/YYYY
-    const parseDateRangeText = (raw) => {
+    const parse_date_range_text = (raw) => {
       const t = norm(raw);
-      if (!t) return { start_date: "", end_date: "", startObj: null, endObj: null };
+      if (!t) return { start_date: "", end_date: "", start_obj: null, end_obj: null };
 
-      // Pattern A: "MM/DD - MM/DD/YYYY"
-      let m = t.match(/^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      // A: MM/DD - MM/DD/YYYY
+      let m =
+        t.match(
+          /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+        );
       if (m) {
         const [, m1, d1, m2, d2, y2] = m;
-        const startObj = toDate(y2, m1, d1);
-        const endObj = toDate(y2, m2, d2);
-        return { start_date: fmtMDY(startObj), end_date: fmtMDY(endObj), startObj, endObj };
+        const start_obj = to_date(y2, m1, d1);
+        const end_obj = to_date(y2, m2, d2);
+        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
       }
 
-      // Pattern B: "MM/DD/YYYY - MM/DD/YYYY"
-      m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      // B: MM/DD/YYYY - MM/DD/YYYY
+      m =
+        t.match(
+          /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+        );
       if (m) {
         const [, m1, d1, y1, m2, d2, y2] = m;
-        const startObj = toDate(y1, m1, d1);
-        const endObj = toDate(y2, m2, d2);
-        return { start_date: fmtMDY(startObj), end_date: fmtMDY(endObj), startObj, endObj };
+        const start_obj = to_date(y1, m1, d1);
+        const end_obj = to_date(y2, m2, d2);
+        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
       }
 
-      // Pattern C: single "MM/DD/YYYY"
+      // C: MM/DD/YYYY
       m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
       if (m) {
         const [, mm, dd, yy] = m;
-        const d = toDate(yy, mm, dd);
-        return { start_date: fmtMDY(d), end_date: "", startObj: d, endObj: null };
+        const d = to_date(yy, mm, dd);
+        return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
       }
 
-      // Fallback: try to pick the first full date present, ignore others
+      // fallback: first full date token
       m = t.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
       if (m) {
         const [token] = m;
         const [mm, dd, yy] = token.split(/[\/\-]/);
-        const d = toDate(yy, mm, dd);
-        return { start_date: fmtMDY(d), end_date: "", startObj: d, endObj: null };
+        const d = to_date(yy, mm, dd);
+        return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
       }
 
-      return { start_date: "", end_date: "", startObj: null, endObj: null };
+      return { start_date: "", end_date: "", start_obj: null, end_obj: null };
     };
 
-    // Selected wrestler from dropdown
+    // current wrestler context (from dropdown)
     const sel = document.querySelector("#wrestler");
-    const selOpt = sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
-    const currentId = (selOpt?.value || "").trim();
-    const optText = norm(selOpt?.textContent || "");
-    const currentName = optText.includes(" - ") ? optText.split(" - ").slice(1).join(" - ").trim() : optText;
-    const currentNameN = lc(currentName);
+    const sel_opt = sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
+    const current_id = (sel_opt?.value || "").trim();
+    const opt_text = norm(sel_opt?.textContent || "");
+    const current_name = opt_text.includes(" - ")
+      ? opt_text.split(" - ").slice(1).join(" - ").trim()
+      : opt_text;
+    const current_name_n = lc(current_name);
 
-    // Scrubber for non-wrestler columns
-    const nameRe = new RegExp(`\\b${escReg(currentName)}\\b`, "gi");
-    const scrub = s => norm((s || "").replace(nameRe, "").replace(/\s{2,}/g, " "));
+    const name_re = new RegExp(`\\b${esc_reg(current_name)}\\b`, "gi");
+    const scrub = (s) => norm((s || "").replace(name_re, "").replace(/\s{2,}/g, " "));
 
-    // ---------- extract rows ----------
     const rows = [];
-    for (const row of document.querySelectorAll("tr.dataGridRow")) {
-      const tds = row.querySelectorAll("td");
+    for (const tr of document.querySelectorAll("tr.dataGridRow")) {
+      const tds = tr.querySelectorAll("td");
       if (tds.length < 5) continue;
 
-      // NEW: parse start/end
-      const dateStrRaw = norm(tds[1]?.innerText);
-      const { start_date, end_date, startObj, endObj } = parseDateRangeText(dateStrRaw);
+      const date_raw = norm(tds[1]?.innerText);
+      const { start_date, end_date, start_obj, end_obj } = parse_date_range_text(date_raw);
 
-      const eventRaw = norm(tds[2]?.innerText);
-      const weight = norm(tds[3]?.innerText);
-      const detailsTextRaw = norm(tds[4]?.innerText);
-      const detailsCell = tds[4];
+      const event_raw = norm(tds[2]?.innerText);
+      const weight_raw = norm(tds[3]?.innerText);
+      const details_text_raw = norm(tds[4]?.innerText);
+      const details_cell = tds[4];
 
-      const round = (detailsTextRaw.match(/^(.*?)\s*-\s*/)?.[1] || "").trim();
-      const isBye = /\b(received a bye|bye)\b/i.test(detailsTextRaw);
-      const isUnknownForfeit = /\bover\s+Unknown\s*\(\s*For\.\s*\)/i.test(detailsTextRaw);
+      const round = (details_text_raw.match(/^(.*?)\s*-\s*/)?.[1] || "").trim();
+      const is_bye = /\b(received a bye|bye)\b/i.test(details_text_raw);
+      const is_unknown_forfeit = /\bover\s+Unknown\s*\(\s*For\.\s*\)/i.test(details_text_raw);
 
-      // Linked names
-      const linkInfos = Array.from(detailsCell.querySelectorAll('a[href*="wrestlerId="], td a'))
-        .map(a => {
+      const link_infos = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="], td a'))
+        .map((a) => {
           const href = a.getAttribute("href") || "";
           const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
           const name = norm(a.textContent || "");
-          return { id, name, nameN: lc(name) };
+          return { id, name, name_n: lc(name) };
         })
-        .filter(x => x.nameN);
+        .filter((x) => x.name_n);
 
-      // Name (School) pairs
-      const nameSchoolPairs = [];
-      const rxNS = /([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g;
-      for (const m of detailsTextRaw.matchAll(rxNS)) {
-        nameSchoolPairs.push({ name: m[1].trim(), nameN: lc(m[1]), school: m[2].trim() });
+      const name_school_pairs = [];
+      const rx_ns = /([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g;
+      for (const m of details_text_raw.matchAll(rx_ns)) {
+        name_school_pairs.push({ name: m[1].trim(), name_n: lc(m[1]), school: m[2].trim() });
       }
 
-      // Resolve "me"
-      let me = { id: currentId, name: currentName, nameN: currentNameN };
-      const meById = currentId && linkInfos.find(li => li.id === currentId);
-      if (meById) me = meById;
-      const meByName = linkInfos.find(li => li.nameN === currentNameN);
-      if (!meById && meByName) me = meByName;
+      let me = { id: current_id, name: current_name, name_n: current_name_n };
+      const me_by_id = current_id && link_infos.find((li) => li.id === current_id);
+      if (me_by_id) me = me_by_id;
+      const me_by_name = link_infos.find((li) => li.name_n === current_name_n);
+      if (!me_by_id && me_by_name) me = me_by_name;
 
-      // Candidate opponents (exclude me)
-      const cand = [];
-      for (const li of linkInfos) if (li.nameN && li.nameN !== me.nameN) cand.push({ id: li.id || "", name: li.name, nameN: li.nameN });
-      for (const ns of nameSchoolPairs) if (ns.nameN && ns.nameN !== me.nameN && !cand.some(c => c.nameN === ns.nameN)) cand.push({ id: "", name: ns.name, nameN: ns.nameN });
-
-      // Opponent selection with special rule
-      let opponent = { id: "", name: "", nameN: "" };
-      let opponentSchool = "";
-      if (isUnknownForfeit && !isBye) {
-        opponent = { id: "", name: "Unknown", nameN: "unknown" };
-      } else {
-        opponent = cand[0] || opponent;
-        if (opponent.name && lc(opponent.name) === me.nameN) opponent = { id: "", name: "", nameN: "" };
-        if (opponent.name && lc(opponent.name) !== "unknown") {
-          const nsHit = nameSchoolPairs.find(ns => ns.nameN === lc(opponent.name));
-          if (nsHit) opponentSchool = nsHit.school;
+      const candidates = [];
+      for (const li of link_infos) {
+        if (li.name_n && li.name_n !== me.name_n) candidates.push({ id: li.id || "", name: li.name, name_n: li.name_n });
+      }
+      for (const ns of name_school_pairs) {
+        if (ns.name_n && ns.name_n !== me.name_n && !candidates.some((c) => c.name_n === ns.name_n)) {
+          candidates.push({ id: "", name: ns.name, name_n: ns.name_n });
         }
       }
 
-      // Result token and score details
-      const resultToken =
-        (detailsTextRaw.match(/\b(over|def\.?|maj\.?\s*dec\.?|dec(?:ision)?|tech(?:nical)?\s*fall|fall|pinned|bye)\b/i)?.[0] ||
-          (isUnknownForfeit ? "over" : "")).toLowerCase();
+      let opponent = { id: "", name: "", name_n: "" };
+      let opponent_school = "";
+      if (is_unknown_forfeit && !is_bye) {
+        opponent = { id: "", name: "Unknown", name_n: "unknown" };
+      } else {
+        opponent = candidates[0] || opponent;
+        if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
+        if (opponent.name && lc(opponent.name) !== "unknown") {
+          const hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
+          if (hit) opponent_school = hit.school;
+        }
+      }
 
-      let scoreDetails = (detailsTextRaw.match(/\(([^()]+)\)\s*$/)?.[1] || "").trim();
-      if (/^for\.?$/i.test(scoreDetails)) scoreDetails = "";
-      if (lc(opponent.name) === "unknown") scoreDetails = "Unknown";
-      if (resultToken === "bye" || isBye) scoreDetails = "Bye";
+      const result_token =
+        (
+          details_text_raw.match(
+            /\b(over|def\.?|maj\.?\s*dec\.?|dec(?:ision)?|tech(?:nical)?\s*fall|fall|pinned|bye)\b/i
+          ) || []
+        )[0]?.toLowerCase() || (is_unknown_forfeit ? "over" : "");
 
-      // If school empty, backfill with event text; THEN strip leading "vs. " from school only
-      if (!opponentSchool) opponentSchool = eventRaw;
-      opponentSchool = opponentSchool.replace(/\bvs\.\s*/i, "").trim();
+      let score_details = (details_text_raw.match(/\(([^()]+)\)\s*$/)?.[1] || "").trim();
+      if (/^for\.?$/i.test(score_details)) score_details = "";
+      if (lc(opponent.name) === "unknown") score_details = "Unknown";
+      if (result_token === "bye" || is_bye) score_details = "Bye";
 
-      // Precompute for winner detection
-      const detailsLC = lc(detailsTextRaw);
-      const overIdx = detailsLC.indexOf(" over ");
-      const defIdx = detailsLC.indexOf(" def.");
-      const tokenIdx = overIdx >= 0 ? overIdx : defIdx;
-      const namesInOrder = [...detailsTextRaw.matchAll(/([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g)].map(m => m[1].trim());
+      if (!opponent_school) opponent_school = event_raw;
+      opponent_school = opponent_school.replace(/\bvs\.\s*/i, "").trim();
+
+      const details_lc = lc(details_text_raw);
+      const over_idx = details_lc.indexOf(" over ");
+      const def_idx = details_lc.indexOf(" def.");
+      const token_idx = over_idx >= 0 ? over_idx : def_idx;
+      const names_in_order = [...details_text_raw.matchAll(/([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g)].map((m) =>
+        m[1].trim()
+      );
 
       rows.push({
-        // dates
-        start_date: start_date,
-        end_date: end_date,
-        sortDateObj: startObj || endObj || new Date(NaN),
+        start_date,
+        end_date,
+        sort_date_obj: start_obj || end_obj || new Date(NaN),
+        raw_details: details_text_raw,
 
-        // raw details (new)
-        raw_details: detailsTextRaw,
-
-        // fields for outcome/winner
-        event: eventRaw,
-        weight,
+        event: event_raw,
+        weight: weight_raw,
         round,
-        opponent: isBye ? "" : (opponent.name || ""),
-        opponentId: isBye ? "" : (opponent.id || ""),
-        opponentSchool,
-        result: resultToken || (isBye ? "bye" : ""),
-        score_details: scoreDetails,
-        details: detailsTextRaw,
-        tokenIdx,
-        namesInOrder
+        opponent: is_bye ? "" : opponent.name || "",
+        opponent_id: is_bye ? "" : opponent.id || "",
+        school: opponent_school,
+        result: result_token || (is_bye ? "bye" : ""),
+        score_details,
+        details: details_text_raw,
+        token_idx,
+        names_in_order,
       });
     }
 
-    // ---------- compute W-L-T + winner (enforce consistency) ----------
-    rows.sort((a, b) => (+a.sortDateObj - +b.sortDateObj) || String(a.start_date).localeCompare(String(b.start_date)));
+    // compute per-row w-l-t from top to bottom
+    rows.sort(
+      (a, b) =>
+        +a.sort_date_obj - +b.sort_date_obj ||
+        String(a.start_date).localeCompare(String(b.start_date))
+    );
 
-    let W = 0, L = 0, T = 0;
-    const withRecord = rows.map(r => {
+    let w = 0,
+      l = 0,
+      t = 0;
+    const with_record = rows.map((r) => {
       let outcome = "U";
 
       if (r.result === "bye") {
@@ -263,42 +276,40 @@ function extractor_source() {
         outcome = "T";
       } else if (/\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(r.details)) {
         outcome = "W";
-      } else if (r.tokenIdx >= 0) {
-        const before = r.details.slice(0, r.tokenIdx).toLowerCase();
-        const after = r.details.slice(r.tokenIdx).toLowerCase();
-        const meBefore = before.includes(currentNameN);
-        const meAfter = after.includes(currentNameN);
-        if (meBefore && !meAfter) outcome = "W";
-        else if (!meBefore && meAfter) outcome = "L";
+      } else if (r.token_idx >= 0) {
+        const before = r.details.slice(0, r.token_idx).toLowerCase();
+        const after = r.details.slice(r.token_idx).toLowerCase();
+        const me_before = before.includes(lc(current_name));
+        const me_after = after.includes(lc(current_name));
+        if (me_before && !me_after) outcome = "W";
+        else if (!me_before && me_after) outcome = "L";
       }
 
-      if (outcome === "W") W++;
-      else if (outcome === "L") L++;
-      else if (outcome === "T") T++;
+      if (outcome === "W") w++;
+      else if (outcome === "L") l++;
+      else if (outcome === "T") t++;
 
-      // Winner determination
-      let winnerRaw = "";
+      let winner_name = "";
       if (r.result === "bye" || /\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(r.details)) {
-        winnerRaw = currentName;
-      } else if (r.tokenIdx >= 0 && r.namesInOrder.length) {
-        winnerRaw = r.namesInOrder[0];
+        winner_name = current_name;
+      } else if (r.token_idx >= 0 && r.names_in_order.length) {
+        winner_name = r.names_in_order[0];
       } else if (outcome === "W") {
-        winnerRaw = currentName;
+        winner_name = current_name;
       } else if (outcome === "L") {
-        winnerRaw = r.opponent;
+        winner_name = r.opponent;
       }
 
-      if (outcome === "L") winnerRaw = r.opponent || winnerRaw;
-      if (outcome === "W") winnerRaw = currentName;
-      if (outcome === "T") winnerRaw = "";
+      if (outcome === "L") winner_name = r.opponent || winner_name;
+      if (outcome === "W") winner_name = current_name;
+      if (outcome === "T") winner_name = "";
 
-      const now_timestamp_utc = new Date().toISOString(); // created_at (UTC ISO 8601)
+      const now_utc = new Date().toISOString();
       return {
         page_url: location.href,
-        wrestler_id: currentId,
-        wrestler: currentName,
+        wrestler_id: current_id,
+        wrestler: current_name,
 
-        // date columns
         start_date: r.start_date,
         end_date: r.end_date,
 
@@ -306,110 +317,123 @@ function extractor_source() {
         weight_c: scrub(r.weight),
         round: scrub(r.round),
         opponent: scrub(r.opponent),
-        school: scrub(r.opponentSchool),
+        school: scrub(r.school),
         result: scrub(r.result),
         score_details: scrub(r.score_details),
-        winner_name: winnerRaw,
+        winner_name,
         outcome,
-        record: `${W}-${L}-${T} W-L-T`,  // keep as text for Excel
+        record: `${w}-${l}-${t} W-L-T`, // text-safe for Excel
 
-        raw_details: r.raw_details,     // NEW: preserve original text
-        created_at_utc: now_timestamp_utc,             // NEW
+        raw_details: r.raw_details,
+        created_at_utc: now_utc,
       };
     });
 
-    return withRecord;
-
+    return with_record;
   };
 }
 
-async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, context, folder_name, file_name, loop_start = 0) {
-  const URLS = WRESTLING_SEASON === '2024-25' ? wrestler_match_urls_2024_25 : wrestler_match_urls_2025_26;
-  const LOAD_TIMEOUT_MS = 30000;
-  const NO_OF_URLS = Math.min(MIN_URLS, URLS.length);
-  let headersWritten = false; // stays true once header is created
+/* ------------------------------------------
+   main orchestrator (now reads URLs from CSV)
+-------------------------------------------*/
+async function main(
+  url_home_page,
+  url_login_page,
+  matches_page_limit = 5,
+  loop_start = 0,
+  wrestling_season = "2024-25",
+  page,
+  browser,
+  context,
+  file_path,
+  wrestler_list_file_path // NEW: pass in CSV path from your resolver
+) {
+  const load_timeout_ms = 30000;
+  const total_rows_in_csv = await count_rows_in_csv(wrestler_list_file_path);
+  const no_of_urls = Math.min(matches_page_limit, total_rows_in_csv);
+  let headers_written = false;
 
-  // This sets up an event listener on the Playwright browser object that fires whenever the CDP (Chrome DevTools Protocol) connection between Playwright and Chrome is lost.
   browser.on?.("disconnected", () => {
     console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
   });
 
-  const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
-  await safe_goto(page, LOGIN_URL, { timeout: LOAD_TIMEOUT_MS });
-  await page.waitForTimeout(2000); // small settle
+  // initial login
+  await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
+  await page.waitForTimeout(2000);
 
-  // Step 1: select wrestling season
-  console.log("step 1: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
-  const loginArgs = { WRESTLING_SEASON: WRESTLING_SEASON };
-  await page.evaluate(auto_login_select_season, loginArgs); // <-- pass the function itself
+  console.log("step 1: on index.jsp, starting auto login for season:", wrestling_season);
+  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
   await page.waitForTimeout(1000);
 
-  // Step 2: go to each URL and extract rows
-  for (let i = loop_start; i < NO_OF_URLS; i++) {
-    // revive handles if needed
-    if (handlesDead({ browser, context, page })) {
-      console.warn("♻️ Handles dead — reconnecting via step_0_launch_chrome_developer...");
-      ({ browser, page, context } = await step_0_launch_chrome_developer("https://www.trackwrestling.com/"));
+  // process URLs from CSV stream
+  let processed = 0;
 
-      // ✅ Reattach listener for the new browser instance
+  console.log(color_text(`📄 CSV has ${total_rows_in_csv} wrestler links`, "green"));
+  console.log(color_text(`\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs CSV size)\x1b[0m\n`, "green"));
+  
+  // NOTE: Using "for await...of" because iter_name_links_from_csv() is an async generator.
+  // It streams each row from the CSV without loading the entire file into memory.
+  // This is more memory-efficient for large files (thousands of wrestler URLs).
+  for await (const { i, url } of iter_name_links_from_csv(wrestler_list_file_path, {
+    start_at: loop_start,
+    limit: matches_page_limit,
+  })) {
+    if (handles_dead({ browser, context, page })) {
+      console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
+      ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
       browser.on?.("disconnected", () => {
         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
       });
 
-      await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
+      await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
     }
 
-
-    const url = URLS[i];
     let attempts = 0;
 
     while (attempts < 2) {
-      attempts++;
+      attempts += 1;
 
       try {
         const all_rows = [];
 
-        console.log('step 2a: go to url:', url);
-        await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+        console.log("step 2a: go to url:", url);
+        await safe_goto(page, url, { timeout: load_timeout_ms });
 
-        // find frame AFTER nav
-        console.log('step 2b: find target frame');
-        let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+        console.log("step 2b: find target frame");
+        let target_frame =
+          page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
-        // check redirect to seasons/index.jsp
-        console.log('step 3: wait to see if redirected to seasons/index.jsp');
+        console.log("step 3: wait to see if redirected to seasons/index.jsp");
         await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
-          console.log("step 3a: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
-          await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+          console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
+          await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
           await page.waitForTimeout(1000);
-          console.log('step 3b: re-navigating to original URL after login:', url);
-          await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
+          console.log("step 3b: re-navigating to original URL after login:", url);
+          await safe_goto(page, url, { timeout: load_timeout_ms });
           await page.waitForTimeout(1000);
-          targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+          target_frame =
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
 
-        // bounce off MainFrame.jsp if it happens
         if (/MainFrame\.jsp/i.test(page.url())) {
-          await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
-          targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+          await safe_goto(page, url, { timeout: load_timeout_ms });
+          target_frame =
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
 
-        // Wait for the dropdown (proof we’re on the right doc)
-        console.log('step 4: wait for dropdown');
-        // await targetFrame.waitForSelector("#wrestler", { timeout: LOAD_TIMEOUT_MS });
-        await safe_wait_for_selector(targetFrame, "#wrestler", { timeout: LOAD_TIMEOUT_MS });
+        console.log("step 4: wait for dropdown");
+        await safe_wait_for_selector(target_frame, "#wrestler", { timeout: load_timeout_ms });
 
-        console.log('step 5: extract rows');
-        await targetFrame.waitForLoadState?.("domcontentloaded");
+        console.log("step 5: extract rows");
+        await target_frame.waitForLoadState?.("domcontentloaded");
         await page.waitForTimeout(1000);
-
-        // const rows = await targetFrame.evaluate(extractor_source());
 
         let rows;
         try {
-          rows = await targetFrame.evaluate(extractor_source());
+          rows = await target_frame.evaluate(extractor_source());
         } catch (e) {
           const msg = String(e?.message || "");
           if (
@@ -420,51 +444,51 @@ async function main(MIN_URLS = 5, WRESTLING_SEASON = "2024-25", page, browser, c
             e.code = "E_TARGET_CLOSED";
           }
           if (e?.code === "E_TARGET_CLOSED") {
-            console.warn("♻️ Frame died during evaluate — reconnecting and retrying once...");
-            ({ browser, page, context } = await step_0_launch_chrome_developer("https://www.trackwrestling.com/"));
+            console.warn("♻️ frame died during evaluate — reconnecting and retrying once...");
+            ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
             browser.on?.("disconnected", () => console.warn("⚠️ CDP disconnected — Chrome was closed."));
-            await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
-            await safe_goto(page, url, { timeout: LOAD_TIMEOUT_MS });
-            let targetFrame = page.frames().find(f => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
-            rows = await targetFrame.evaluate(extractor_source());
+            await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+            await safe_goto(page, url, { timeout: load_timeout_ms });
+            let tf = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            rows = await tf.evaluate(extractor_source());
           } else {
             throw e;
           }
         }
 
-        console.log(`✔ ${i} of ${NO_OF_URLS}. Rows returned: ${rows.length} rows from: ${url}`);
+        console.log(`✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} rows from: ${url}`);
         all_rows.push(...rows);
 
-        console.log('step 6: save to CSV');
-        headersWritten = await save_to_csv_file(all_rows, i, headersWritten, folder_name, file_name);
-        console.log(`\x1b[33m➕ Tracking headersWritten: ${headersWritten}\x1b[0m\n`);
+        console.log("step 6: save to csv");
+        headers_written = await save_to_csv_file(all_rows, i, headers_written, file_path);
+        console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
 
-        // success → break retry loop
-        break;
-
+        processed += 1;
+        break; // success → break retry loop
       } catch (e) {
         if (e?.code === "E_TARGET_CLOSED" || e?.code === "E_GOTO_TIMEOUT") {
-          const cause = e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
-          console.warn(`♻️ ${cause} — reconnecting and retrying this URL once...`);
+          const cause =
+            e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
+          console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
 
-          ({ browser, page, context } = await step_0_launch_chrome_developer("https://www.trackwrestling.com/"));
+          ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
 
-          // ✅ Reattach listener for the new browser instance
           browser.on?.("disconnected", () => {
             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
           });
 
-          await relogin(page, LOAD_TIMEOUT_MS, WRESTLING_SEASON);
+          await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
 
-          if (attempts >= 2) throw e; // stop after retry
-          continue; // retry same URL
+          if (attempts >= 2) throw e;
+          continue;
         }
-        throw e; // not one of our recoverable cases
+        throw e;
       }
+    }
   }
-}
 
-await browser.close(); // closes CDP connection (not your Chrome instance)
+  await browser.close(); // closes CDP connection (not the external Chrome instance)
+  console.log(`\n✅ done. processed ${processed} wrestler pages from csv: ${wrestler_list_file_path}`);
 }
 
 export { main as step_3_get_wrestler_match_history };
