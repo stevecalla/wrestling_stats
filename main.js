@@ -17,10 +17,10 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 
 async function main() {
   // Initialize variables
-  const is_test = true;
+  const is_test = false;
   const loop_start = 0; // to set the for loop start index in step 3; used 0, 109, and 458
 
-  // console.log(`\n\x1b[33m➕ === STARTING MAIN PROGRAM (is_test = ${is_test}) === \x1b[0m\n`);
+  console.log(color_text(`➕ === STARTING MAIN PROGRAM (is_test = ${is_test}) ===`, "red"));
 
   const ALPHA_WRESTLER_LIST_LIMIT = is_test ? 10 : 30; // number of wrestlers to retrieve in step 1
   const MATCHES_PAGE_LIMIT = is_test ? 100 : 2000; // number of wrestler match history pages to retrieve in step 3
@@ -42,17 +42,17 @@ async function main() {
   const { browser, page, context } = await step_0_launch_chrome_developer(URL);
 
   // STEP 1: GET THE WRESTLER LIST & MATCH URLS
-  console.log(color_text(`\n=== STARTING SCRAPE for ${ALPHA_WRESTLER_LIST_LIMIT} WRESTLERS for SEASON ${WRESTLING_SEASON} ===\n`));
+  console.log(color_text(`\n=== STARTING SCRAPE for ${ALPHA_WRESTLER_LIST_LIMIT} WRESTLERS for SEASON ${WRESTLING_SEASON} ===\n`, "red"));
 
   folder_name = "input";
   folder_path = await create_directory(folder_name);
   file_name = `wrestlers_alpha_${adjusted_season}.csv`;
   file_path = path.join(folder_path, file_name);
 
-  // await step_1_run_alpha_wrestler_list(ALPHA_WRESTLER_LIST_LIMIT, WRESTLING_SEASON, page, browser, file_path);
+  await step_1_run_alpha_wrestler_list(ALPHA_WRESTLER_LIST_LIMIT, WRESTLING_SEASON, page, browser, file_path);
 
   // STEP #2: WRITE WRESTLER MATCH URL ARRAY
-  console.log(color_text(`\n=== STARTING STEP #2 TO WRITE WRESTLER MATCH URL ARRAY ===\n`));
+  console.log(color_text(`\n=== STARTING STEP #2 TO WRITE WRESTLER MATCH URL ARRAY ===\n`, "red"));
 
   // const DIR = "/Users/stevecalla/wrestling/data_tracker_wrestling";
   folder_name = "input";
@@ -67,7 +67,7 @@ async function main() {
   await step_2_write_wrestler_match_url_array(file_path, url_file_path, url_file_name);
 
   // // STEP #3: GET WRESTLER MATCH HISTORY
-  // console.log(color_text(`\n=== STARTING SCRAPE FOR ${WRESTLING_SEASON} WRESTLERS MATCH HISTORY SEASON. PAGE LIMIT = ${MATCHES_PAGE_LIMIT} ===\n`));
+  // console.log(color_text(`\n=== STARTING SCRAPE FOR ${WRESTLING_SEASON} WRESTLERS MATCH HISTORY SEASON. PAGE LIMIT = ${MATCHES_PAGE_LIMIT} ===\n`, "red"));
   // file_name = `tw_matches_full_${adjusted_season}.csv`;
   // folder_name = "output";
   // // await step_3_get_wrestler_match_history(MATCHES_PAGE_LIMIT, WRESTLING_SEASON, page, browser, context, folder_name, file_name, loop_start);
