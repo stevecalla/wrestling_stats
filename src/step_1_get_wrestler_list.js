@@ -341,7 +341,7 @@ async function main(
   console.log(`\n✅ Wrestler list by alpha completed. Total rows=${cumulative_rows}`);
 
   // Close just the CDP connection (keeps your external Chrome alive if attached)
-  await browser.close();
+  // await browser.close();
 }
 
 export { main as step_1_run_alpha_wrestler_list };
