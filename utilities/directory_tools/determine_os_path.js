@@ -1,8 +1,8 @@
 import os from "os";
 import path from "path";
 
-const csv_export_path_linux = `/home/steve-calla/development/wrestling_stats/data/wrestling`;
-const csv_export_path_mac = `/Users/teamkwsc/development/wrestling_stats/data/wrestling`;
+const csv_export_path_linux = `/home/steve-calla/development/wrestling/data`;
+const csv_export_path_mac = `/Users/stevecalla/development/wrestling/data`;
 const csv_export_path_windows = `C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/data/wrestling`;
 
 async function determine_os_user() {
