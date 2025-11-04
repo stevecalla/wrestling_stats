@@ -5,12 +5,12 @@ import { parse } from "csv-parse/sync";
 /**
  * Reads the CSV and extracts Name_link column
  */
-function extract_name_links(csvPath) {
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`File not found: ${csvPath}`);
+function extract_wrestler_match_link(INPUT_CSV_FILE_PATH) {
+  if (!fs.existsSync(INPUT_CSV_FILE_PATH)) {
+    throw new Error(`File not found: ${INPUT_CSV_FILE_PATH}`);
   }
 
-  const csvText = fs.readFileSync(csvPath, "utf8");
+  const csvText = fs.readFileSync(INPUT_CSV_FILE_PATH, "utf8");
   const records = parse(csvText, {
     columns: true,
     skip_empty_lines: true,
@@ -22,7 +22,7 @@ function extract_name_links(csvPath) {
     (k) => k.toLowerCase() === "name_link"
   );
 
-  if (!nameCol) throw new Error(`No "Name_link" column found in ${csvPath}`);
+  if (!nameCol) throw new Error(`No "Name_link" column found in ${INPUT_CSV_FILE_PATH}`);
 
   return records
     .map((r) => r[nameCol])
@@ -32,22 +32,23 @@ function extract_name_links(csvPath) {
 /**
  * Writes array file with export const
  */
-async function step_2_write_wrestler_match_url_array(DIR, folder_name, url_file_name, file_name) {
+async function main(file_path, url_file_path, url_file_name) {
 
-  fs.mkdirSync(path.join(DIR, folder_name), { recursive: true });
+  const INPUT_CSV_FILE_PATH = file_path;
+  const OUTPUT_FILE_PATH = url_file_path;
 
-  const INPUT_CSV = path.join(DIR, folder_name, file_name);
-  const OUTPUT_JS = path.join(DIR, folder_name, url_file_name);
-
-  const urls = extract_name_links(INPUT_CSV);
+  const url_list = extract_wrestler_match_link(INPUT_CSV_FILE_PATH);
 
   // create the JS file name adjusting the wrestling season for 2024-25
-  const js_var_name = url_file_name.replace(".js", "");
+  const variable_name = url_file_name.replace(".js", "");
+
   const fileContent = `// Auto-generated from wrestlers_2024.csv
-export const ${js_var_name} = ${JSON.stringify(urls, null, 2)};
+export const ${variable_name} = ${JSON.stringify(url_list, null, 2)};
 `;
-  fs.writeFileSync(OUTPUT_JS, fileContent, "utf8");
-  console.log(`✅ Step 2: Wrote ${urls.length} URLs → ${OUTPUT_JS}`);
+
+  fs.writeFileSync(OUTPUT_FILE_PATH, fileContent, "utf8");
+
+  console.log(`✅ Step 2: Wrote ${url_list.length} URLs → ${OUTPUT_FILE_PATH}`);
 }
 
-export { step_2_write_wrestler_match_url_array };
+export { main as step_2_write_wrestler_match_url_array };
