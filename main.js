@@ -37,8 +37,8 @@ async function main() {
   const { browser, page, context } = await step_0_launch_chrome_developer(URL_HOME_PAGE);
 
   // STEP 1: GET THE WRESTLER LIST WITH MATCH HISTORY URLS
-  const ALPHA_WRESTLER_LIST_LIMIT = is_test ? 10 : 30; // number of wrestlers to retrieve in step 1
   is_test = false;
+  const ALPHA_WRESTLER_LIST_LIMIT = is_test ? 10 : 30; // number of wrestlers to retrieve in step 1
   console.log(color_text(`➕ ===  is_test = ${is_test} ===`, "red"));
   folder_name = "input";
   folder_path = await create_directory(folder_name);
