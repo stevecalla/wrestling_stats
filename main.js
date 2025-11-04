@@ -7,7 +7,7 @@ import { sleep_with_countdown } from "./utilities/time_out_tools/sleep.js";
 
 // IMPORTS
 import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_developer.js";
-// import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
+import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
 
 import { step_2_write_wrestler_match_url_array } from "./src/step_2_create_wrestler_match_url_array.js";
 
