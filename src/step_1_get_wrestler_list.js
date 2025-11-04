@@ -1,22 +1,68 @@
+// src/step_1_get_wrestler_list.js  (ESM)
+
 import path from "path";
 import { fileURLToPath } from "url";
-
 import dotenv from "dotenv";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-import { URL_WRESTLERS } from "../data/input/urls_wrestlers.js";
-import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file";
-import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season";
-import { click_on_wrestler_menu } from "../utilities/scraper_tasks/click_on_wrestler_menu";
+import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
+import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
+import { click_on_wrestler_menu } from "../utilities/scraper_tasks/click_on_wrestler_menu.js";
 
-// === Main function to get wrestler match history ===
+/* ------------------------------------------
+   Helpers
+-------------------------------------------*/
+
+// robust wait for selector on a Page or Frame
+async function safe_wait_for_selector(frameOrPage, selector, opts = {}) {
+  try {
+    await frameOrPage.waitForSelector(selector, { state: "visible", ...opts });
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (
+      msg.includes("Target page, context or browser has been closed") ||
+      msg.includes("Frame was detached") ||
+      msg.includes("Execution context was destroyed")
+    ) {
+      err.code = "E_TARGET_CLOSED";
+    }
+    throw err;
+  }
+}
+
+// wait until the Wrestlers.jsp frame exists AND has a stable element
+async function wait_for_wrestlers_frame(page, timeoutMs = 30000) {
+  const start = Date.now();
+  const STABLE_SELECTOR = [
+    "#searchButton", // often the "Open Search" toggle
+    'input[type="button"][onclick*="openSearchWrestlers"]',
+    "table.dataGrid",      // the grid
+    ".dataGridNextPrev"    // the pager
+  ].join(", ");
+
+  while (Date.now() - start < timeoutMs) {
+    const f = page.frames().find(fr => /Wrestlers\.jsp/i.test(fr.url()));
+    if (f) {
+      try { await f.waitForLoadState?.("domcontentloaded", { timeout: 3000 }); } catch {}
+      try {
+        await f.waitForSelector(STABLE_SELECTOR, { state: "attached", timeout: 3000 });
+        return f;
+      } catch { /* keep polling */ }
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new Error("Timed out waiting for Wrestlers.jsp frame to attach.");
+}
+
+// in-page scraper factory; returns a function executed inside the Wrestlers frame
 function extractor_source() {
   return async (opts = {}) => {
     const { prefix = "a", grade, level, delay_ms = 100 } = opts;
 
-    // --- tiny utils ---
+    // tiny utils for in-page context
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     const getPager = (which = "top") =>
@@ -86,21 +132,20 @@ function extractor_source() {
       const before = lastRowSignature();
       input.value = "50";
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await waitForLastRowChange(before).catch(() => { });
+      await waitForLastRowChange(before).catch(() => {});
     };
 
-    // --- search helpers ---
     const openSearchPanel = async () => {
       const btn = document.querySelector('#searchButton, input[type="button"][onclick*="openSearchWrestlers"]');
       if (btn) btn.click();
-      await sleep(1000);
+      await sleep(800);
     };
 
-    // NEW: select helper using visible text only
+    // select by visible text (not value)
     const setSelectByText = (selectEl, text) => {
-      if (!selectEl) return false;
-      const opts = Array.from(selectEl.options);
-      const found = opts.find(o => (o.textContent || "").trim().toLowerCase() === text.toLowerCase());
+      if (!selectEl || !text) return false;
+      const opts = Array.from(selectEl.options || []);
+      const found = opts.find(o => (o.textContent || "").trim().toLowerCase() === String(text).toLowerCase());
       if (!found) return false;
       selectEl.value = found.value;
       selectEl.dispatchEvent(new Event("input", { bubbles: true }));
@@ -110,12 +155,12 @@ function extractor_source() {
     };
 
     const runSearchWithPrefix = async (pfx) => {
-      // insert delay to avoid server overload
       await sleep(200 + Math.random() * 300);
 
+      // ensure search UI fields exist
       await openSearchPanel();
 
-      // 1) Last name
+      // 1) Last name starts with prefix
       const lastName = document.querySelector("#s_lastName");
       if (!lastName) throw new Error("Last Name input #s_lastName not found");
       lastName.focus();
@@ -123,32 +168,28 @@ function extractor_source() {
       lastName.dispatchEvent(new Event("input", { bubbles: true }));
       lastName.dispatchEvent(new Event("change", { bubbles: true }));
 
-      // 2) Grade = HS Senior (by text only)
+      // 2) Grade (by text only, per your requirement)
       const gradeSelect = document.querySelector("#s_gradeId");
-      if (gradeSelect) {
+      if (gradeSelect && grade) {
         const ok = setSelectByText(gradeSelect, grade);
-        if (!ok) console.warn(`Option "${grade}" not found in grade dropdown.`);
-      } else {
-        console.warn("Grade select #s_gradeId not found; continuing without grade filter.");
+        if (!ok) console.warn(`Option "${grade}" not found in #s_gradeId.`);
       }
 
-      // 3) Level = Varsity
-      // const levelSelect = document.querySelector("#s_levelId");
-      // if (levelSelect) {
-      //   const ok = setSelectByText(levelSelect, level);
-      //   if (!ok) console.warn(`Option "${level}" not found in level dropdown.`);
-      // } else {
-      //   console.warn("Level select #s_levelId not found; continuing without level filter.");
-      // }
+      // 3) Level (optional)
+      const levelSelect = document.querySelector("#s_levelId");
+      if (levelSelect && level) {
+        const ok = setSelectByText(levelSelect, level);
+        if (!ok) console.warn(`Option "${level}" not found in #s_levelId.`);
+      }
 
-      // 4) Click inner Search
+      // 4) Trigger inner Search
       const go = document.querySelector(
         'input[type="button"][onclick*="searchWrestlers"], input.segment-track[value="Search"]'
       );
       if (!go) throw new Error("Inner Search button not found");
-
       const before = lastRowSignature();
       go.click();
+
       await waitForLastRowChange(before);
       await ensure_page_size_50("top");
     };
@@ -167,15 +208,16 @@ function extractor_source() {
           weight_class: txt(4),
           gender: txt(5),
           grade: txt(6),
-          level: txt(7), record: txt(8),
+          level: txt(7),
+          record: `${txt(8).trim()} W-L`,
         };
       });
     };
 
-    // --- 1) run the search for this prefix (with grade filter) ---
+    // run once for this prefix
     await runSearchWithPrefix(prefix);
 
-    // --- 2) collect current page + all next pages ---
+    // collect current + next pages
     const collected = [];
     collected.push(...readTable());
 
@@ -191,7 +233,6 @@ function extractor_source() {
       await sleep(delay_ms);
     }
 
-    // --- 3) return results (outer loop handles A→Z) ---
     const now = new Date().toISOString();
     const rows_with_meta = collected.map(r => ({ ...r, created_at_utc: now, page_url: location.href }));
 
@@ -203,75 +244,101 @@ function extractor_source() {
   };
 }
 
+/* ------------------------------------------
+   Main Orchestrator
+-------------------------------------------*/
+
 /**
- * In-page helper that performs exactly ONE alpha step:
- *  - run search with the given prefix
- *  - paginate (200/page) and collect rows
- *  - decide the next prefix (two-letter from last row or fallback)
- * Returns { rows, next_prefix, pages_advanced, range_text }
+ * Executes an A→Z sweep for HS Freshman/Sophomore/Junior/Senior (Varsity),
+ * writing each letter’s results as they’re fetched.
+ *
+ * @param {number} ALPHA_WRESTLER_LIST_LIMIT - max letters to iterate (<=26)
+ * @param {string}  WRESTLING_SEASON         - e.g., "2024-2025" or "2025-26"
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Browser} browser
+ * @param {string} folder_name               - output folder (your save_to_csv_file handles it)
+ * @param {string} file_name                 - base file name
  */
-async function main(ALPHA_WRESTLER_LIST_LIMIT = 5, WRESTLING_SEASON = "2024-2025", page, browser, folder_name, file_name) {
-  const URLS = URL_WRESTLERS;
+async function main(
+  ALPHA_WRESTLER_LIST_LIMIT = 26,
+  WRESTLING_SEASON = "2024-2025",
+  page,
+  browser,
+  folder_name,
+  file_name
+) {
   const LOAD_TIMEOUT_MS = 30000;
 
+  // 1) Go to season index and complete auto login / season selection
   const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
-  await page.waitForTimeout(2000); // small settle
+  await page.waitForTimeout(800);
 
-  // Step 1: select wrestling season
   console.log("step 1: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
-  const loginArgs = { WRESTLING_SEASON: WRESTLING_SEASON };
-  await page.evaluate(auto_login_select_season, loginArgs); // <-- pass the function itself
-  await page.waitForTimeout(1000);
+  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
 
-  // 2) land on MainFrame and open Wrestlers menu
-  await page.waitForURL(/seasons\/MainFrame\.jsp/i, { timeout: 8000 }).catch(() => { });
+  // 2) REQUIRE landing on MainFrame
+  await page.waitForURL(/seasons\/MainFrame\.jsp/i, { timeout: 20000 });
+
+  // 3) Open Wrestlers menu
   await page.evaluate(click_on_wrestler_menu);
-  await page.waitForTimeout(1500);
 
-  const wrestlers_frame = page.frames().find(f => /Wrestlers\.jsp/i.test(f.url())) || page.mainFrame();
-  await wrestlers_frame.waitForSelector("#searchButton", { timeout: LOAD_TIMEOUT_MS });
+  // 4) Wait for the Wrestlers frame and ensure a stable element is present
+  const wrestlers_frame = await wait_for_wrestlers_frame(page, LOAD_TIMEOUT_MS);
 
-  // --- LOOP: one alpha step → write file → progress → compute next prefix
+  // If the search panel is collapsed, open it so inputs exist for extractor_source
+  try {
+    await wrestlers_frame.waitForSelector("#s_lastName, #searchButton", { timeout: 1500 });
+  } catch {
+    await wrestlers_frame.evaluate(() => {
+      const btn = document.querySelector('#searchButton, input[type="button"][onclick*="openSearchWrestlers"]');
+      if (btn) btn.click();
+    });
+    await wrestlers_frame.waitForSelector("#s_lastName", { timeout: 5000 });
+  }
+
+  // 5) A→Z loop across grade categories
   let headers_written = false;
   let cumulative_rows = 0;
-  const delay_ms = 1000;
+  const delay_ms = 800;
 
-  const LETTERS = [
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
-  ];
+  const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
   const ALPHA_LIMIT = Math.min(ALPHA_WRESTLER_LIST_LIMIT, LETTERS.length);
-  const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
-  const LEVEL_CATEGORY = ["Varsity"];
 
-  // --- LOOP: cycle through each letter explicitly (a to z)
+  const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
+  const LEVEL_CATEGORY = ["Varsity"]; // extend if needed
+
   for (let j = 0; j < GRADE_CATEGORY.length; j++) {
     for (let i = 0; i < ALPHA_LIMIT; i++) {
       const prefix = LETTERS[i];
       const grade = GRADE_CATEGORY[j];
-      const level = LEVEL_CATEGORY[0]; // Always use "Varsity"
+      const level = LEVEL_CATEGORY[0];
 
+      // 6) Run one in-page extraction step for this letter+grade
       const result = await wrestlers_frame.evaluate(extractor_source(), { prefix, grade, level, delay_ms });
-
       const rows = result?.rows || [];
       const wrote = rows.length;
 
       if (wrote > 0) {
-        const iterationIndex = i; // 0-based
+        // write (first write can create headers; your util handles deletion/append)
+        const iterationIndex = i; // 0-based index you already use
         save_to_csv_file(rows, iterationIndex, headers_written, folder_name, file_name);
         headers_written = true;
         cumulative_rows += wrote;
       }
 
       const pages_info = result?.pages_advanced ?? 0;
-      console.log(`step ${j + 1}-${i + 1}: prefix="${prefix}" || grade="${grade}" || level="${level}" || pages=${pages_info + 1} || rows_written=${wrote} || total_rows=${cumulative_rows}`);
+      console.log(
+        `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | level="${level}" | pages=${pages_info + 1
+        } | rows_written=${wrote} | total_rows=${cumulative_rows}`
+      );
     }
   }
 
-  console.log(`\n Wrestler list by alpha successufully. Total rows=${cumulative_rows}`);
+  console.log(`\n✅ Wrestler list by alpha completed. Total rows=${cumulative_rows}`);
 
-  await browser.close(); // closes CDP connection (not your Chrome instance)
+  // Close just the CDP connection (keeps your external Chrome alive if attached)
+  await browser.close();
 }
 
 export { main as step_1_run_alpha_wrestler_list };
