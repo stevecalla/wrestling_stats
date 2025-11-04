@@ -252,6 +252,7 @@ function extractor_source() {
  * Executes an A→Z sweep for HS Freshman/Sophomore/Junior/Senior (Varsity),
  * writing each letter’s results as they’re fetched.
  *
+ * @param {string} URL_LOGIN_PAGE
  * @param {number} ALPHA_WRESTLER_LIST_LIMIT - max letters to iterate (<=26)
  * @param {string}  WRESTLING_SEASON         - e.g., "2024-2025" or "2025-26"
  * @param {import('playwright').Page} page
@@ -260,6 +261,7 @@ function extractor_source() {
  * @param {string} file_name                 - base file name
  */
 async function main(
+  URL_LOGIN_PAGE,
   ALPHA_WRESTLER_LIST_LIMIT = 26,
   WRESTLING_SEASON = "2024-2025",
   page,
@@ -270,7 +272,7 @@ async function main(
   const LOAD_TIMEOUT_MS = 30000;
 
   // 1) Go to season index and complete auto login / season selection
-  const LOGIN_URL = "https://www.trackwrestling.com/seasons/index.jsp";
+  const LOGIN_URL = URL_LOGIN_PAGE;
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
   await page.waitForTimeout(800);
 
