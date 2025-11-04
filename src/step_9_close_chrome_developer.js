@@ -8,7 +8,7 @@ dotenv.config(); // load .env if present
 
 // --- defaults ---
 const PORT = process.env.CHROME_DEVTOOLS_PORT || "9222";
-const USER_DATA_DIR = process.env.STORE_CHROME_DATA || path.join(os.homedir(), "chrome-tw-user-data");
+const USER_DATA_DIR = path.join(os.homedir(), "chrome-tw-user-data");
 
 // --- main function ---
 export async function step_9_close_chrome_dev({
@@ -20,10 +20,10 @@ export async function step_9_close_chrome_dev({
   try {
     // Close Playwright handles if provided
     if (context) {
-      try { await context.close(); } catch {}
+      try { await context.close(); } catch { }
     }
     if (browser) {
-      try { await browser.close(); } catch {}
+      try { await browser.close(); } catch { }
     }
 
     const platform = process.platform;
@@ -60,10 +60,18 @@ export async function step_9_close_chrome_dev({
     }
 
     // macOS / Linux
-    const cmd = `pkill -f "${userDataDir}" -f "remote-debugging-port=${port}"`;
-    const { ok, err } = await run(cmd);
-    if (ok) console.log("🧹 Closed Chrome Dev instance cleanly (macOS/Linux).");
-    else console.warn("⚠️ Could not close Chrome Dev instance:", err?.message || "unknown error");
+    for (const name of ["Google Chrome", "Google Chrome Canary", "Chromium"]) {
+      const cmd = `pkill -if "${name}.*--user-data-dir=${userDataDir}"`;
+      const { ok, err } = await run(cmd);
+
+      if (ok) {
+        console.log(`🧹 Closed ${name} Dev instance cleanly (macOS/Linux).`);
+        return; // stop after the first successful kill
+      } else if (err?.code !== 1) {
+        // code 1 just means "no match found", which is fine
+        console.warn(`⚠️ Error while closing ${name}:`, err?.message || "unknown error");
+      }
+    }
   } catch (e) {
     console.error("❌ Failed to close Chrome Dev:", e);
   }
