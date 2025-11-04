@@ -1,81 +1,203 @@
+// run_simple_visual_numbered_test_snake.js (ESM)
 import path from "path";
+import { fileURLToPath } from "url";
 
 import { determine_os_path } from "./utilities/directory_tools/determine_os_path.js";
 import { create_directory } from "./utilities/directory_tools/create_directory.js";
 import { color_text } from "./utilities/console_logs/console_colors.js";
-import { sleep_with_countdown } from "./utilities/time_out_tools/sleep.js";
 
-// IMPORTS
+// === imports for each step ===
 import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_developer.js";
 import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
 import { step_2_write_wrestler_match_url_array } from "./src/step_2_create_wrestler_match_url_array.js";
 import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_match_history.js";
-
 import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js";
 
-async function main() {
-  // Initialize variables
-  console.log(color_text(`➕ === STARTING MAIN PROGRAM ===`, "red"));
+// ====================================================
+// 🧩 STEP TOGGLES todo:
+// ====================================================
+const step_flags = {
+  step_0: true,  // 🚀 launch chrome
+  step_1: true,  // 📄 get wrestler list
+  step_2: false, // 🔗 optional URL array
+  step_3: true,  // 🏟️ get match history
+  step_9: false,  // 🧹 close browser
+};
 
-  let is_test = "";
+// 🧪 each step can run test or full //todo:
+const test_flags = {
+  step_1_is_test: true, // run small sample for wrestler list
+  step_3_is_test: true, // run small sample for match history
+};
 
-  const URL_HOME_PAGE = "https://www.trackwrestling.com/";
-  const URL_LOGIN_PAGE = "https://www.trackwrestling.com/seasons/index.jsp";
-  const WRESTLING_SEASON = "2024-25"; // season to scrape
-  // const WRESTLING_SEASON = "2025-26"; // season to scrape
-  // --- LOOP: one alpha step → write file → progress → compute next prefix
-  const adjusted_season = WRESTLING_SEASON.replace("-", "_");
+// ====================================================
+// ⚙️ GLOBAL CONFIG — all tunable numbers here
+// ====================================================
+const config = {
+  url_home_page: "https://www.trackwrestling.com/",
+  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
+  wrestling_season: "2024-25", // todo:
+  // wrestling_season: "2025-26",
 
-  const DIRECTORY = determine_os_path();
-  let folder_name = "";
-  let folder_path = "";
-  let file_name = "";
-  let file_path = "";
+  // Step #1 config
+  alpha_list_limit_test: 1,
+  alpha_list_limit_full: 30,
 
-  // BEGIN STEPS
-  // STEP 0: LAUNCH CHROME DEVELOPER WITH CDP
-  const { browser, page, context } = await step_0_launch_chrome_developer(URL_HOME_PAGE);
+  // Step #3 config
+  matches_page_limit_test: 5,
+  matches_page_limit_full: 2000,
+  step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
+};
 
-  // STEP 1: GET THE WRESTLER LIST WITH MATCH HISTORY URLS
-  is_test = false;
-  const ALPHA_WRESTLER_LIST_LIMIT = is_test ? 10 : 30; // number of wrestlers to retrieve in step 1
-  console.log(color_text(`➕ ===  is_test = ${is_test} ===`, "red"));
-  folder_name = "input";
-  folder_path = await create_directory(folder_name);
-  const wrestler_list_file_name = `wrestlers_alpha_${adjusted_season}.csv`;
-  const wrestler_list_file_path = path.join(folder_path, wrestler_list_file_name);
-  
-  console.log(color_text(`\n=== STARTING SCRAPE for ${ALPHA_WRESTLER_LIST_LIMIT} WRESTLERS for SEASON ${WRESTLING_SEASON} ===\n`, "red"));
-  // await step_1_run_alpha_wrestler_list(URL_LOGIN_PAGE, ALPHA_WRESTLER_LIST_LIMIT, WRESTLING_SEASON, page, browser, wrestler_list_file_path);
+// ====================================================
+// 🎨 HELPERS
+// ====================================================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const adjusted_season = config.wrestling_season.replace("-", "_");
 
-  // // STEP #2: WRITE WRESTLER MATCH URL_HOME_PAGE ARRAY
-  // // NOTE: DONT NEED THIS STEP IF STEP #3 STREAMS DIRECTLY FROM THE CSV CREATED IN STEP 1
-  // console.log(color_text(`\n=== STARTING STEP #2 TO WRITE WRESTLER MATCH URL_HOME_PAGE ARRAY ===\n`, "red"));
+const step_icons = {
+  0: "0️⃣", 1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣",
+  5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣",
+};
 
-  // folder_name = "input";
-  // folder_path = await create_directory(folder_name);
-  // const url_file_name = `wrestler_match_urls_${adjusted_season}.js`;
-  // file_path = path.join(folder_path, file_name);
-  // let url_file_path = path.join(folder_path, url_file_name);
-
-  // await step_2_write_wrestler_match_url_array(file_path, url_file_path, url_file_name);
-
-  // STEP #3: GET WRESTLER MATCH HISTORY
-  is_test = false;
-  const MATCHES_PAGE_LIMIT = is_test ? 10 : 2000; // number of wrestler match history pages to retrieve in step 3
-  const loop_start = 0; // to set the for loop start index in step 3; used 0, 109, and 458
-  folder_name = "output";
-  folder_path = await create_directory(folder_name);
-  file_name = `tw_matches_full_${adjusted_season}.csv`;
-  file_path = path.join(folder_path, file_name);
-
-  console.log(color_text(`\n=== STARTING SCRAPE FOR ${WRESTLING_SEASON} WRESTLERS MATCH HISTORY SEASON. PAGE LIMIT = ${MATCHES_PAGE_LIMIT} ===\n`, "red"));
-  await step_3_get_wrestler_match_history(URL_HOME_PAGE, URL_LOGIN_PAGE, MATCHES_PAGE_LIMIT, loop_start, WRESTLING_SEASON, page, browser, context, file_path, wrestler_list_file_path);
-
-  // step #9 CLOSE BROWSER AND EXIT
-  // await sleep_with_countdown(3000);
-  // console.log("✅ Done waiting!");
-  // await step_9_close_chrome_dev(browser, context);
+// convert milliseconds → h:mm:ss
+function format_duration(ms) {
+  const total_seconds = Math.floor(ms / 1000);
+  const hours = Math.floor(total_seconds / 3600);
+  const minutes = Math.floor((total_seconds % 3600) / 60);
+  const seconds = total_seconds % 60;
+  return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+    .toString()
+    .padStart(2, "0")}`;
 }
 
-await main();
+function log_step_start(n, msg) {
+  console.log(color_text(`${step_icons[n] || "🔹"}  Step #${n}: ${msg}`, "cyan"));
+}
+function log_step_skip(n, msg) {
+  console.log(color_text(`${step_icons[n] || "⏭️"}  Step #${n}: ⏭️  Skipped (${msg})`, "yellow"));
+}
+function log_step_success(n, msg, duration = null) {
+  const time = duration ? ` ⏱️  (${format_duration(duration)})` : "";
+  console.log(color_text(`${step_icons[n] || "✅"}  Step #${n}: ✅  ${msg}${time}`, "green"));
+}
+function log_error(msg) {
+  console.error(color_text(`💥 ${msg}`, "red"));
+}
+
+// ====================================================
+// 🚀 MAIN ORCHESTRATOR
+// ====================================================
+async function main() {
+  const program_start = Date.now();
+  console.log(color_text(`\n🏁 ➕ Starting main program for ${config.wrestling_season}`, "red"));
+
+  const directory = determine_os_path();
+  const input_dir = await create_directory("input", directory);
+  const output_dir = await create_directory("output", directory);
+
+  const ctx = {
+    config,
+    paths: {
+      input_dir,
+      output_dir,
+      wrestler_list_csv: path.join(input_dir,  `wrestlers_alpha_${adjusted_season}.csv`),
+      url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}.js`),
+      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}.csv`),
+    },
+    browser: null,
+    page: null,
+    context: null,
+  };
+
+  // === STEP 0 ===
+  if (step_flags.step_0) {
+    const start = Date.now();
+    log_step_start(0, "Launching Chrome DevTools 🚀");
+    const { browser, page, context } = await step_0_launch_chrome_developer(config.url_home_page);
+    ctx.browser = browser;
+    ctx.page = page;
+    ctx.context = context;
+    log_step_success(0, "Chrome launched successfully", Date.now() - start);
+  } else log_step_skip(0, "chrome launch");
+
+  // === STEP 1 ===
+  if (step_flags.step_1) {
+    const start = Date.now();
+    const is_test = test_flags.step_1_is_test;
+    const limit = is_test ? config.alpha_list_limit_test : config.alpha_list_limit_full;
+    log_step_start(1, `Fetching ${limit} wrestlers (${is_test ? "🧪 TEST MODE" : "FULL"}) 📄`);
+
+    await step_1_run_alpha_wrestler_list(
+      config.url_login_page,
+      limit,
+      config.wrestling_season,
+      ctx.page,
+      ctx.browser,
+      ctx.paths.wrestler_list_csv,
+      is_test
+    );
+
+    log_step_success(1, `Wrestler list saved → ${ctx.paths.wrestler_list_csv}`, Date.now() - start);
+  } else log_step_skip(1, "wrestler list generation");
+
+  // === STEP 2 ===
+  if (step_flags.step_2) {
+    const start = Date.now();
+    log_step_start(2, "Building match URL array 🔗");
+    await step_2_write_wrestler_match_url_array(
+      ctx.paths.wrestler_list_csv,
+      ctx.paths.url_array_js,
+      path.basename(ctx.paths.url_array_js)
+    );
+    log_step_success(2, `URL array written → ${ctx.paths.url_array_js}`, Date.now() - start);
+  } else log_step_skip(2, "URL array generation");
+
+  // === STEP 3 ===
+  if (step_flags.step_3) {
+    const start = Date.now();
+    const is_test = test_flags.step_3_is_test;
+    const limit = is_test ? config.matches_page_limit_test : config.matches_page_limit_full;
+    const loop_start = config.step_3_loop_start;
+
+    log_step_start(
+      3,
+      `Scraping match history (limit=${limit}, step_3_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
+    );
+
+    await step_3_get_wrestler_match_history(
+      config.url_home_page,
+      config.url_login_page,
+      limit,
+      loop_start,
+      config.wrestling_season,
+      ctx.page,
+      ctx.browser,
+      ctx.context,
+      ctx.paths.match_csv,
+      ctx.paths.wrestler_list_csv,
+      is_test
+    );
+
+    log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
+  } else log_step_skip(3, "match history");
+
+  // === STEP 9 ===
+  if (step_flags.step_9) {
+    const start = Date.now();
+    log_step_start(9, "Closing Chrome DevTools 🧹");
+    await step_9_close_chrome_dev(ctx.browser, ctx.context);
+    log_step_success(9, "Browser closed successfully", Date.now() - start);
+  } else log_step_skip(9, "close browser");
+
+  const total_ms = Date.now() - program_start;
+  console.log(color_text(`\n⏲️  Total duration: ${format_duration(total_ms)}`, "cyan"));
+  console.log(color_text("\n🏆 🎉 All steps completed successfully!\n", "green"));
+}
+
+// ====================================================
+main().catch(e => {
+  log_error(e?.stack || e);
+  // process.exit(1);
+});
