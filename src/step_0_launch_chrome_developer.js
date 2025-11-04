@@ -20,17 +20,6 @@ const CONNECT_URL = `http://localhost:${PORT}`;
 const LOAD_TIMEOUT_MS = 30000;
 
 // --- unified default profile dir in the user's home (~ works on all OS) ---
-// const USER_DATA_DIR_DEFAULT = path.join(os.homedir(), "chrome-tw-user-data");
-
-// // If STORE_CHROME_DATA isn't set, force the unified default so all launchers align
-// if (!process.env.STORE_CHROME_DATA || !process.env.STORE_CHROME_DATA.trim()) {
-//   process.env.STORE_CHROME_DATA = USER_DATA_DIR_DEFAULT;
-// }
-// fs.mkdirSync(process.env.STORE_CHROME_DATA, { recursive: true });
-// console.log(`[INFO] Using Chrome profile dir → ${process.env.STORE_CHROME_DATA}`);
-// console.log(`[INFO] DevTools port → ${PORT}`);
-
-// --- unified default profile dir in the user's home (~ works on all OS) ---
 const USER_DATA_DIR_DEFAULT = path.join(os.homedir(), "chrome-tw-user-data");
 fs.mkdirSync(USER_DATA_DIR_DEFAULT, { recursive: true });
 
@@ -62,9 +51,7 @@ async function go_to_website_in_chrome(URL) {
   return { browser, page, context };
 }
 
-async function step_0_launch_chrome_developer(
-  URL = process.env.TARGET_URL || "https://www.google.com"
-) {
+async function step_0_launch_chrome_developer(URL = process.env.TARGET_URL || "https://www.google.com") {
   const platform = process.platform;
   console.log(`[INFO] Detected platform → ${platform}`);
 
@@ -99,6 +86,6 @@ async function step_0_launch_chrome_developer(
   throw new Error(`Timed out waiting for Chrome DevTools on port ${PORT}.`);
 }
 
-step_0_launch_chrome_developer();
+// step_0_launch_chrome_developer();
 
 export { step_0_launch_chrome_developer };
