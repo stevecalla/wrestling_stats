@@ -243,7 +243,6 @@ async function main(ALPHA_WRESTLER_LIST_LIMIT = 5, WRESTLING_SEASON = "2024-2025
   ];
   const ALPHA_LIMIT = Math.min(ALPHA_WRESTLER_LIST_LIMIT, LETTERS.length);
   const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
-  // const GRADE_CATEGORY = ["HS Senior"];
   const LEVEL_CATEGORY = ["Varsity"];
 
   // --- LOOP: cycle through each letter explicitly (a to z)
