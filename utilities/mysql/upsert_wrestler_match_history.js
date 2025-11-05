@@ -15,14 +15,18 @@ async function ensure_table_step3() {
       page_url        VARCHAR(1024) NULL,
       wrestler_id     BIGINT UNSIGNED NOT NULL,
       wrestler        VARCHAR(255)   NOT NULL,
+      first_name      VARCHAR(255)   NULL,  -- NEW
+      last_name       VARCHAR(255)   NULL,  -- NEW
 
       start_date      DATE          NULL,
       end_date        DATE          NULL,
 
       event           VARCHAR(255)  NULL,
-      weight_c        VARCHAR(64)   NULL,
+      weight_category        VARCHAR(64)   NULL,
       round           VARCHAR(128)  NULL,
       opponent        VARCHAR(255)  NULL,
+      opponent_first_name VARCHAR(255) NULL,  -- NEW
+      opponent_last_name  VARCHAR(255) NULL,  -- NEW
       opponent_id     BIGINT UNSIGNED NULL,
       school          VARCHAR(255)  NULL,
       result          VARCHAR(64)   NULL,
@@ -96,9 +100,10 @@ export async function upsert_wrestler_match_history(rows) {
   // will avoid touching created_* but will refresh updated_*).
   const cols = [
     "page_url",
-    "wrestler_id", "wrestler",
+    "wrestler_id", "wrestler", "first_name", "last_name", // NEW
     "start_date", "end_date",
-    "event", "weight_c", "round", "opponent", "opponent_id", "school",
+    "event", "weight_category", "round",
+    "opponent", "opponent_first_name", "opponent_last_name", "opponent_id", "school", // NEW
     "result", "score_details", "winner_name", "outcome", "record",
     "raw_details",
     "created_at_mtn", "created_at_utc",
@@ -115,14 +120,18 @@ export async function upsert_wrestler_match_history(rows) {
       page_url: r.page_url ?? null,
       wrestler_id: Number(r.wrestler_id) || 0,
       wrestler: r.wrestler ?? "",
+      first_name: r.first_name ?? null,  // NEW
+      last_name: r.last_name ?? null,    // NEW
 
       start_date: to_mysql_date(r.start_date),
       end_date: to_mysql_date(r.end_date),
 
       event: r.event ?? null,
-      weight_c: r.weight_c ?? null,
+      weight_category: r.weight_category ?? null,
       round: r.round ?? null,
       opponent: r.opponent ?? null,
+      opponent_first_name: r.opponent_first_name ?? null, // NEW
+      opponent_last_name: r.opponent_last_name ?? null,   // NEW
       opponent_id: r.opponent_id ? Number(r.opponent_id) : null,
       school: r.school ?? null,
 
@@ -155,11 +164,15 @@ export async function upsert_wrestler_match_history(rows) {
       ON DUPLICATE KEY UPDATE
         page_url        = VALUES(page_url),
         wrestler        = VALUES(wrestler),
+        first_name      = VALUES(first_name),  -- NEW
+        last_name       = VALUES(last_name),   -- NEW
         end_date        = VALUES(end_date),
         event           = VALUES(event),
-        weight_c        = VALUES(weight_c),
+        weight_category        = VALUES(weight_category),
         round           = VALUES(round),
         opponent        = VALUES(opponent),
+        opponent_first_name = VALUES(opponent_first_name), -- NEW
+        opponent_last_name  = VALUES(opponent_last_name),  -- NEW
         opponent_id     = VALUES(opponent_id),
         school          = VALUES(school),
         result          = VALUES(result),

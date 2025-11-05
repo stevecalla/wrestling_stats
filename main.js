@@ -18,8 +18,8 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 // ====================================================
 const step_flags = {
   step_0: true,  // 🚀 launch chrome
-  step_1: true,  // 📄 get wrestler list
-  step_2: false, // 🔗 optional URL array
+  step_1: false,  // 📄 get wrestler list
+  step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
   step_3: true,  // 🏟️ get match history
   step_9: false,  // 🧹 close browser
 };
@@ -34,10 +34,11 @@ const test_flags = {
 // ⚙️ GLOBAL CONFIG — all tunable numbers here
 // ====================================================
 const config = {
-  url_home_page: "https://www.trackwrestling.com/",
-  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
   wrestling_season: "2024-25", // todo:
   // wrestling_season: "2025-26",
+
+  url_home_page: "https://www.trackwrestling.com/",
+  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
 
   // Step #1 config
   alpha_list_limit_test: 1,

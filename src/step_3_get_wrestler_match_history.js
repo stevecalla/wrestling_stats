@@ -143,6 +143,29 @@ function extractor_source() {
       return { start_date: "", end_date: "", start_obj: null, end_obj: null };
     };
 
+    // NEW: parse first/last name from a full name string
+    function parse_name(full) {
+      const raw = String(full || "").trim();
+      if (!raw) return { first_name: null, last_name: null };
+
+      if (raw.includes(",")) {
+        // "Last, First Middle"
+        const [last, rest] = raw.split(",").map(s => s.trim()).filter(Boolean);
+        if (!last) return { first_name: null, last_name: null };
+        if (!rest) return { first_name: null, last_name: last };
+        const first = rest.split(/\s+/)[0] || null;
+        return { first_name: first || null, last_name: last || null };
+      }
+
+      const parts = raw.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) {
+        return { first_name: null, last_name: parts[0] || null };
+      }
+      const first = parts[0] || null;
+      const last = parts[parts.length - 1] || null;
+      return { first_name: first || null, last_name: last || null };
+    }
+
     // current wrestler context (from dropdown)
     const sel = document.querySelector("#wrestler");
     const sel_opt = sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
@@ -270,6 +293,10 @@ function extractor_source() {
     let w = 0,
       l = 0,
       t = 0;
+
+    // Parse current wrestler's first/last once (used for every returned row)
+    const { first_name, last_name } = parse_name(current_name);
+
     const with_record = rows.map((r) => {
       let outcome = "U";
 
@@ -307,19 +334,26 @@ function extractor_source() {
       if (outcome === "W") winner_name = current_name;
       if (outcome === "T") winner_name = "";
 
+      // NEW: parse opponent first/last for this row
+      const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(r.opponent);
+
       const now_utc = new Date().toISOString();
       return {
         page_url: location.href,
         wrestler_id: current_id,
         wrestler: current_name,
+        first_name,              // parsed first name
+        last_name,               // parsed last name
 
         start_date: r.start_date,
         end_date: r.end_date,
 
         event: scrub(r.event),
-        weight_c: scrub(r.weight),
+        weight_category: scrub(r.weight),
         round: scrub(r.round),
         opponent: scrub(r.opponent),
+        opponent_first_name,     // NEW
+        opponent_last_name,      // NEW
         school: scrub(r.school),
         result: scrub(r.result),
         score_details: scrub(r.score_details),

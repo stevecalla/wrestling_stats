@@ -13,40 +13,42 @@ async function ensure_table() {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       -- SELECTION CRITERIA
-      season           VARCHAR(32)  NOT NULL,
-      prefix           VARCHAR(8)   NOT NULL,
-      grade            VARCHAR(64)  NULL,
-      level            VARCHAR(64)  NULL,
-      governing_body   VARCHAR(100) NULL,
+      season             VARCHAR(32)  NOT NULL,
+      last_name_prefix   VARCHAR(8)   NOT NULL,
+      grade              VARCHAR(64)  NULL,
+      level              VARCHAR(64)  NULL,
+      governing_body     VARCHAR(100) NULL,
 
       -- WRESTLER INFO
-      wrestler_id      BIGINT UNSIGNED NULL,
-      name             VARCHAR(255) NOT NULL,
-      team             VARCHAR(255) NULL,
-      team_id          BIGINT UNSIGNED NULL,
-      weight_class     VARCHAR(64)  NULL,
-      gender           VARCHAR(32)  NULL,
+      wrestler_id        BIGINT UNSIGNED NULL,
+      name               VARCHAR(255) NOT NULL,
+      first_name         VARCHAR(255) NULL,
+      last_name          VARCHAR(255) NULL,
+      team               VARCHAR(255) NULL,
+      team_id            BIGINT UNSIGNED NULL,
+      weight_class       VARCHAR(64)  NULL,
+      gender             VARCHAR(32)  NULL,
 
-      record_text      VARCHAR(64)  NULL,
-      wins             INT          NULL,
-      losses           INT          NULL,
-      matches          INT          NULL,
-      win_pct          DECIMAL(5,3) NULL,
+      record_text        VARCHAR(64)  NULL,
+      wins               INT          NULL,
+      losses             INT          NULL,
+      matches            INT          NULL,
+      win_pct            DECIMAL(5,3) NULL,
 
       -- WEBSITE URL / LINK DETAILS
-      name_link        TEXT         NULL,
-      team_link        TEXT         NULL,
-      page_url         TEXT         NULL,
+      name_link          TEXT         NULL,
+      team_link          TEXT         NULL,
+      page_url           TEXT         NULL,
 
       -- timestamps
-      created_at_mtn   DATETIME     NOT NULL,
-      created_at_utc   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at_mtn   DATETIME     NOT NULL,
-      updated_at_utc   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_at_mtn     DATETIME     NOT NULL,
+      created_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at_mtn     DATETIME     NOT NULL,
+      updated_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
       -- Hybrid uniqueness:
       UNIQUE KEY uk_wrestler (season, wrestler_id),
-      UNIQUE KEY uk_alpha    (season, prefix, grade, level, name, team),
+      UNIQUE KEY uk_alpha    (season, last_name_prefix, grade, level, name, team),
 
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
@@ -62,7 +64,7 @@ async function ensure_table() {
  * - created_at_* are immutable (set on insert only)
  * - updated_at_* are refreshed on update (and set on initial insert)
  * @param {Array<object>} rows one batch from a single letter+grade
- * @param {object} meta { season, prefix, grade, level, governing_body }
+ * @param {object} meta { season, last_name_prefix, grade, level, governing_body }
  */
 export async function upsert_wrestlers_list(rows, meta) {
   if (!rows?.length) return { inserted: 0, updated: 0 };
@@ -83,7 +85,7 @@ export async function upsert_wrestlers_list(rows, meta) {
 
   // shape inbound → DB columns
   const season = meta?.season || "unknown";
-  const prefix = meta?.prefix || "";
+  const last_name_prefix = meta?.last_name_prefix ?? meta?.prefix ?? ""; // fallback if caller still sends 'prefix'
   const grade = meta?.grade || null;
   const level = meta?.level || null;
   const governing_body = meta?.governing_body || null;
@@ -97,12 +99,14 @@ export async function upsert_wrestlers_list(rows, meta) {
 
     const values = slice.map(r => ({
       season,
-      prefix,
+      last_name_prefix,
       grade,
       level,
       governing_body,
 
       name: r.name ?? "",
+      first_name: r.first_name ?? null,
+      last_name:  r.last_name ?? null,
       name_link: r.name_link ?? null,
       team: r.team ?? null,
       team_link: r.team_link ?? null,
@@ -137,8 +141,11 @@ export async function upsert_wrestlers_list(rows, meta) {
     }));
 
     const cols = [
-      "season", "prefix", "grade", "level", "governing_body",
-      "wrestler_id", "name", "name_link", "team", "team_link", "team_id",
+      "season", "last_name_prefix", "grade", "level", "governing_body",
+      "wrestler_id",
+      "name", "first_name", "last_name",
+      "name_link",
+      "team", "team_link", "team_id",
       "weight_class", "gender",
       "record_text", "wins", "losses", "matches", "win_pct",
       "created_at_mtn", "created_at_utc",
@@ -174,6 +181,8 @@ export async function upsert_wrestlers_list(rows, meta) {
         matches         = VALUES(matches),
         win_pct         = VALUES(win_pct),
         page_url        = VALUES(page_url),
+        first_name      = VALUES(first_name),
+        last_name       = VALUES(last_name),
         -- keep created_* immutable; refresh only updated_*:
         updated_at_mtn  = VALUES(updated_at_mtn),
         updated_at_utc  = CURRENT_TIMESTAMP
