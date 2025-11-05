@@ -8,12 +8,10 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // keep import specifiers but use snake_case bindings locally
+import { count_rows_in_csv } from "../utilities/create_and_load_csv_files/count_rows_in_csv.js";
+import { iter_name_links_from_csv } from "../utilities/create_and_load_csv_files/iter_name_links_from_csv.js";
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
-import {
-  count_rows_in_db_wrestler_links,
-  iter_name_links_from_db,
-} from "../utilities/mysql/iter_name_links_from_db.js";
 
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
@@ -42,7 +40,7 @@ async function safe_goto(page, url, opts = {}) {
     const msg = String(err?.message || "");
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
       err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
@@ -372,9 +370,8 @@ function extractor_source() {
   };
 }
 
-
 /* ------------------------------------------
-   main orchestrator (DB-backed)
+   main orchestrator (now reads URLs from CSV)
 -------------------------------------------*/
 async function main(
   url_home_page,
@@ -385,14 +382,12 @@ async function main(
   page,
   browser,
   context,
-  file_path
+  file_path,
+  wrestler_list_file_path // NEW: pass in CSV path from your resolver
 ) {
   const load_timeout_ms = 30000;
-
-  // DB: count + cap (memory-efficient streaming)
-  const total_rows_in_db = await count_rows_in_db_wrestler_links();
-  const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
-
+  const total_rows_in_csv = await count_rows_in_csv(wrestler_list_file_path);
+  const no_of_urls = Math.min(matches_page_limit, total_rows_in_csv);
   let headers_written = false;
 
   browser.on?.("disconnected", () => {
@@ -407,32 +402,35 @@ async function main(
   await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
   await page.waitForTimeout(1000);
 
-  console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links`, "green"));
-  console.log(
-    color_text(
-      `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size)\x1b[0m\n`,
-      "green"
-    )
-  );
-
+  // process URLs from CSV stream
   let processed = 0;
 
-  for await (const { i, url } of iter_name_links_from_db({
+  console.log(color_text(`📄 CSV has ${total_rows_in_csv} wrestler links`, "green"));
+  console.log(color_text(`\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs CSV size)\x1b[0m\n`, "green"));
+
+  // NOTE: Using "for await...of" because iter_name_links_from_csv() is an async generator.
+  // It streams each row from the CSV without loading the entire file into memory.
+  // This is more memory-efficient for large files (thousands of wrestler URLs).
+  for await (const { i, url } of iter_name_links_from_csv(wrestler_list_file_path, {
     start_at: loop_start,
     limit: matches_page_limit,
   })) {
     if (handles_dead({ browser, context, page })) {
       console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
       ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
       browser.on?.("disconnected", () => {
         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
       });
+
       await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
     }
 
     let attempts = 0;
+
     while (attempts < 2) {
       attempts += 1;
+
       try {
         const all_rows = [];
 
@@ -444,7 +442,7 @@ async function main(
           page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
         console.log("step 3: wait to see if redirected to seasons/index.jsp");
-        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
+        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
@@ -485,30 +483,21 @@ async function main(
           if (e?.code === "E_TARGET_CLOSED") {
             console.warn("♻️ frame died during evaluate — reconnecting and retrying once...");
             ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
-            browser.on?.("disconnected", () =>
-              console.warn("⚠️ CDP disconnected — Chrome was closed.")
-            );
+            browser.on?.("disconnected", () => console.warn("⚠️ CDP disconnected — Chrome was closed."));
             await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
             await safe_goto(page, url, { timeout: load_timeout_ms });
-            let tf =
-              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            let tf = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
             rows = await tf.evaluate(extractor_source());
           } else {
             throw e;
           }
         }
 
-        console.log(
-          color_text(
-            `✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} rows from: ${url}`,
-            "red"
-          )
-        );
+        console.log(color_text(`✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} rows from: ${url}`, "red"));
         all_rows.push(...rows);
 
         console.log("step 6: save to csv");
-        const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
-        headers_written = headers_written_now;
+        headers_written = await save_to_csv_file(all_rows, i, headers_written, file_path);
         console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
 
         console.log("step 7: save to sql db\n");
@@ -528,9 +517,11 @@ async function main(
           console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
 
           ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
           browser.on?.("disconnected", () => {
             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
           });
+
           await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
 
           if (attempts >= 2) throw e;
@@ -542,7 +533,7 @@ async function main(
   }
 
   await browser.close(); // closes CDP connection (not the external Chrome instance)
-  console.log(`\n✅ done. processed ${processed} wrestler pages from DB (wrestler_list.name_link)`);
+  console.log(`\n✅ done. processed ${processed} wrestler pages from csv: ${wrestler_list_file_path}`);
 }
 
 export { main as step_3_get_wrestler_match_history };
