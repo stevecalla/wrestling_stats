@@ -83,7 +83,6 @@ export async function upsert_wrestler_match_history(rows) {
   const pool = await get_pool();
 
   // Batch timestamps (UTC → MTN via your offset fn)
-  // We use the same "now" for both the INSERT side and the UPDATE side.
   const now_utc = new Date();
   const mtn_offset_hours = get_mountain_time_offset_hours(now_utc);
   const now_mtn = new Date(now_utc.getTime() + mtn_offset_hours * 60 * 60 * 1000);
@@ -189,7 +188,6 @@ export async function upsert_wrestler_match_history(rows) {
     const [res] = await pool.query({ sql, values: params });
 
     // Heuristic counts for ON DUPLICATE:
-    // affectedRows ≈ inserted + 2*updated (engine-dependent). Estimate:
     const affected = Number(res.affectedRows || 0);
     const _updated = Math.max(0, affected - slice.length);
     const _inserted = slice.length - _updated;
