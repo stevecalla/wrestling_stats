@@ -145,7 +145,7 @@ function extractor_source() {
       return { start_date: "", end_date: "", start_obj: null, end_obj: null };
     };
 
-    // NEW: parse first/last name from a full name string
+    // parse first/last name from a full name string
     function parse_name(full) {
       const raw = String(full || "").trim();
       if (!raw) return { first_name: null, last_name: null };
@@ -209,7 +209,7 @@ function extractor_source() {
 
       // Parse Name (School) pairs — allow lowercase names too and ignore score/time parentheses.
       const name_school_pairs = [];
-      const rx_ns = /([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)/gi;  // was /([A-Z]...)/g
+      const rx_ns = /([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)/gi;
       for (const m of details_text_raw.matchAll(rx_ns)) {
         const nm = (m[1] || "").trim();
         const sc = (m[2] || "").trim();
@@ -218,15 +218,17 @@ function extractor_source() {
         if (/\d|:/.test(sc)) continue;
         if (/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) continue;
 
-        if (nm && sc) name_school_pairs.push({ name: nm, name_n: lc(nm), opponent_school: sc });
+        if (nm && sc) name_school_pairs.push({ name: nm, name_n: lc(nm), school: sc });
       }
 
+      // identify "me" among links
       let me = { id: current_id, name: current_name, name_n: current_name_n };
       const me_by_id = current_id && link_infos.find((li) => li.id === current_id);
       if (me_by_id) me = me_by_id;
       const me_by_name = link_infos.find((li) => li.name_n === current_name_n);
       if (!me_by_id && me_by_name) me = me_by_name;
 
+      // opponent candidates
       const candidates = [];
       for (const li of link_infos) {
         if (li.name_n && li.name_n !== me.name_n) candidates.push({ id: li.id || "", name: li.name, name_n: li.name_n });
@@ -237,6 +239,7 @@ function extractor_source() {
         }
       }
 
+      // resolve opponent + opponent_school
       let opponent = { id: "", name: "", name_n: "" };
       let opponent_school = "";
       if (is_unknown_forfeit && !is_bye) {
@@ -244,14 +247,14 @@ function extractor_source() {
       } else {
         opponent = candidates[0] || opponent;
         if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
-        
+
         if (opponent.name && lc(opponent.name) !== "unknown") {
-          // first: pair map (case-insensitive)
+          // pair-map first
           let hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
           if (hit) {
-            opponent_school = hit.opponent_school;
+            opponent_school = hit.school;
           } else {
-            // fallback: search "opponent name (School)" directly, case-insensitive
+            // fallback regex search "Opponent (School)"
             const re = new RegExp(`\\b${esc_reg(opponent.name)}\\b\\s*\\(([^)]+)\\)`, "i");
             const m = details_text_raw.match(re);
             if (m) {
@@ -262,8 +265,43 @@ function extractor_source() {
             }
           }
         }
-
       }
+
+      // Minimal: set opponent_id from links by matching the already-picked opponent name
+let opponent_id = "";
+if (!is_bye && !is_unknown_forfeit && opponent?.name) {
+  const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
+  const li = link_nodes
+    .map(a => {
+      const href = a.getAttribute("href") || "";
+      const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
+      const name = norm(a.textContent || "");
+      return { id, name_n: lc(name) };
+    })
+    .find(x => x.id && x.id !== current_id && x.name_n === lc(opponent.name));
+
+  if (li) opponent_id = li.id;
+}
+
+      // Resolve wrestler_school (same strategy as opponent)
+      let wrestler_school = "";
+      // if (!is_bye) {
+        // try pair-map first
+        const me_hit = name_school_pairs.find((ns) => ns.name_n === me.name_n);
+        if (me_hit) {
+          wrestler_school = me_hit.school;
+        } else if (me.name) {
+          // fallback regex search "Me (School)"
+          const reMe = new RegExp(`\\b${esc_reg(me.name)}\\b\\s*\\(([^)]+)\\)`, "i");
+          const m = details_text_raw.match(reMe);
+          if (m) {
+            const sc = (m[1] || "").trim();
+            if (!/\d|:/.test(sc) && !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) {
+              wrestler_school = sc;
+            }
+          }
+        }
+      // }
 
       const result_token =
         (
@@ -296,7 +334,8 @@ function extractor_source() {
         round,
         opponent: is_bye ? "" : opponent.name || "",
         opponent_id: is_bye ? "" : opponent.id || "",
-        opponent_school: opponent_school,
+        opponent_school,
+        wrestler_school,
         result: result_token || (is_bye ? "bye" : ""),
         score_details,
         details: details_text_raw,
@@ -312,9 +351,7 @@ function extractor_source() {
         String(a.start_date).localeCompare(String(b.start_date))
     );
 
-    let w = 0,
-      l = 0,
-      t = 0;
+    let w = 0, l = 0, t = 0;
 
     // Parse current wrestler's first/last once (used for every returned row)
     const { first_name, last_name } = parse_name(current_name);
@@ -356,16 +393,17 @@ function extractor_source() {
       if (outcome === "W") winner_name = current_name;
       if (outcome === "T") winner_name = "";
 
-      // NEW: parse opponent first/last for this row
+      // parse opponent first/last for this row
       const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(r.opponent);
 
       const now_utc = new Date().toISOString();
       return {
         page_url: location.href,
-        wrestler_id: current_id,
+        wrestler_id: (document.querySelector("#wrestler")?.value || "").trim(),
         wrestler: current_name,
-        first_name,              // parsed first name
-        last_name,               // parsed last name
+        first_name,
+        last_name,
+        wrestler_school: scrub(r.wrestler_school),
 
         start_date: r.start_date,
         end_date: r.end_date,
@@ -373,15 +411,18 @@ function extractor_source() {
         event: scrub(r.event),
         weight_category: scrub(r.weight),
         round: scrub(r.round),
+
         opponent: scrub(r.opponent),
-        opponent_first_name,     // NEW
-        opponent_last_name,      // NEW
+        opponent_id: r.opponent_id || "",
+        opponent_first_name,
+        opponent_last_name,
         opponent_school: scrub(r.opponent_school),
+
         result: scrub(r.result),
         score_details: scrub(r.score_details),
         winner_name,
         outcome,
-        record: `${w}-${l}-${t} W-L-T`, // text-safe for Excel
+        record: `${w}-${l}-${t} W-L-T`,
 
         raw_details: r.raw_details,
         created_at_utc: now_utc,
@@ -391,7 +432,6 @@ function extractor_source() {
     return with_record;
   };
 }
-
 
 /* ------------------------------------------
    main orchestrator (DB-backed)
