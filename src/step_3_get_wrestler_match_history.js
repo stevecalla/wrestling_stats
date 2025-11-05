@@ -42,7 +42,7 @@ async function safe_goto(page, url, opts = {}) {
     const msg = String(err?.message || "");
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
       err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
@@ -207,10 +207,18 @@ function extractor_source() {
         })
         .filter((x) => x.name_n);
 
+      // Parse Name (School) pairs — allow lowercase names too and ignore score/time parentheses.
       const name_school_pairs = [];
-      const rx_ns = /([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g;
+      const rx_ns = /([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)/gi;  // was /([A-Z]...)/g
       for (const m of details_text_raw.matchAll(rx_ns)) {
-        name_school_pairs.push({ name: m[1].trim(), name_n: lc(m[1]), opponent_school: m[2].trim() });
+        const nm = (m[1] || "").trim();
+        const sc = (m[2] || "").trim();
+
+        // skip non-school parentheses like (Fall 1:59), (TF 17-1 2:37), (Dec 6-3)
+        if (/\d|:/.test(sc)) continue;
+        if (/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) continue;
+
+        if (nm && sc) name_school_pairs.push({ name: nm, name_n: lc(nm), opponent_school: sc });
       }
 
       let me = { id: current_id, name: current_name, name_n: current_name_n };
@@ -236,10 +244,25 @@ function extractor_source() {
       } else {
         opponent = candidates[0] || opponent;
         if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
+        
         if (opponent.name && lc(opponent.name) !== "unknown") {
-          const hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
-          if (hit) opponent_school = hit.opponent_school;
+          // first: pair map (case-insensitive)
+          let hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
+          if (hit) {
+            opponent_school = hit.opponent_school;
+          } else {
+            // fallback: search "opponent name (School)" directly, case-insensitive
+            const re = new RegExp(`\\b${esc_reg(opponent.name)}\\b\\s*\\(([^)]+)\\)`, "i");
+            const m = details_text_raw.match(re);
+            if (m) {
+              const sc = (m[1] || "").trim();
+              if (!/\d|:/.test(sc) && !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) {
+                opponent_school = sc;
+              }
+            }
+          }
         }
+
       }
 
       const result_token =
@@ -253,9 +276,6 @@ function extractor_source() {
       if (/^for\.?$/i.test(score_details)) score_details = "";
       if (lc(opponent.name) === "unknown") score_details = "Unknown";
       if (result_token === "bye" || is_bye) score_details = "Bye";
-
-      if (!opponent_school) opponent_school = event_raw;
-      opponent_school = opponent_school.replace(/\bvs\.\s*/i, "").trim();
 
       const details_lc = lc(details_text_raw);
       const over_idx = details_lc.indexOf(" over ");
@@ -444,7 +464,7 @@ async function main(
           page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
         console.log("step 3: wait to see if redirected to seasons/index.jsp");
-        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
+        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
