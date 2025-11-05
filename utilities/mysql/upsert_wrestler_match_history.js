@@ -28,7 +28,7 @@ async function ensure_table_step3() {
       opponent_first_name VARCHAR(255) NULL,  -- NEW
       opponent_last_name  VARCHAR(255) NULL,  -- NEW
       opponent_id     BIGINT UNSIGNED NULL,
-      school          VARCHAR(255)  NULL,
+      opponent_school          VARCHAR(255)  NULL,
       result          VARCHAR(64)   NULL,
       score_details   VARCHAR(255)  NULL,
       winner_name     VARCHAR(255)  NULL,
@@ -41,6 +41,7 @@ async function ensure_table_step3() {
       -- updated_* change on any update.
       created_at_mtn  DATETIME      NOT NULL,
       created_at_utc  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
       updated_at_mtn  DATETIME      NOT NULL,
       updated_at_utc  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
@@ -102,7 +103,7 @@ export async function upsert_wrestler_match_history(rows) {
     "wrestler_id", "wrestler", "first_name", "last_name", // NEW
     "start_date", "end_date",
     "event", "weight_category", "round",
-    "opponent", "opponent_first_name", "opponent_last_name", "opponent_id", "school", // NEW
+    "opponent", "opponent_first_name", "opponent_last_name", "opponent_id", "opponent_school", // NEW
     "result", "score_details", "winner_name", "outcome", "record",
     "raw_details",
     "created_at_mtn", "created_at_utc",
@@ -132,7 +133,7 @@ export async function upsert_wrestler_match_history(rows) {
       opponent_first_name: r.opponent_first_name ?? null, // NEW
       opponent_last_name: r.opponent_last_name ?? null,   // NEW
       opponent_id: r.opponent_id ? Number(r.opponent_id) : null,
-      school: r.school ?? null,
+      opponent_school: r.opponent_school ?? null,
 
       result: r.result ?? null,
       score_details: r.score_details ?? null,
@@ -173,7 +174,7 @@ export async function upsert_wrestler_match_history(rows) {
         opponent_first_name = VALUES(opponent_first_name), -- NEW
         opponent_last_name  = VALUES(opponent_last_name),  -- NEW
         opponent_id     = VALUES(opponent_id),
-        school          = VALUES(school),
+        opponent_school          = VALUES(opponent_school),
         result          = VALUES(result),
         score_details   = VALUES(score_details),
         winner_name     = VALUES(winner_name),

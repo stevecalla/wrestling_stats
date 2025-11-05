@@ -210,7 +210,7 @@ function extractor_source() {
       const name_school_pairs = [];
       const rx_ns = /([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g;
       for (const m of details_text_raw.matchAll(rx_ns)) {
-        name_school_pairs.push({ name: m[1].trim(), name_n: lc(m[1]), school: m[2].trim() });
+        name_school_pairs.push({ name: m[1].trim(), name_n: lc(m[1]), opponent_school: m[2].trim() });
       }
 
       let me = { id: current_id, name: current_name, name_n: current_name_n };
@@ -238,7 +238,7 @@ function extractor_source() {
         if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
         if (opponent.name && lc(opponent.name) !== "unknown") {
           const hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
-          if (hit) opponent_school = hit.school;
+          if (hit) opponent_school = hit.opponent_school;
         }
       }
 
@@ -276,7 +276,7 @@ function extractor_source() {
         round,
         opponent: is_bye ? "" : opponent.name || "",
         opponent_id: is_bye ? "" : opponent.id || "",
-        school: opponent_school,
+        opponent_school: opponent_school,
         result: result_token || (is_bye ? "bye" : ""),
         score_details,
         details: details_text_raw,
@@ -356,7 +356,7 @@ function extractor_source() {
         opponent: scrub(r.opponent),
         opponent_first_name,     // NEW
         opponent_last_name,      // NEW
-        school: scrub(r.school),
+        opponent_school: scrub(r.opponent_school),
         result: scrub(r.result),
         score_details: scrub(r.score_details),
         winner_name,
