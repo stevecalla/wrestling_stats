@@ -1,16 +1,18 @@
 // src/step_1_get_wrestler_list.js  (ESM)
-
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 
+import dotenv from "dotenv";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 import { click_on_wrestler_menu } from "../utilities/scraper_tasks/click_on_wrestler_menu.js";
+
+import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
+import { upsert_wrestlers_list } from "../utilities/mysql/upsert_wrestlers_list.js";
+
 import { color_text } from "../utilities/console_logs/console_colors.js";
 
 /* ------------------------------------------
@@ -47,7 +49,7 @@ async function wait_for_wrestlers_frame(page, timeoutMs = 30000) {
   while (Date.now() - start < timeoutMs) {
     const f = page.frames().find(fr => /Wrestlers\.jsp/i.test(fr.url()));
     if (f) {
-      try { await f.waitForLoadState?.("domcontentloaded", { timeout: 3000 }); } catch {}
+      try { await f.waitForLoadState?.("domcontentloaded", { timeout: 3000 }); } catch { }
       try {
         await f.waitForSelector(STABLE_SELECTOR, { state: "attached", timeout: 3000 });
         return f;
@@ -133,7 +135,7 @@ function extractor_source() {
       const before = lastRowSignature();
       input.value = "50";
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await waitForLastRowChange(before).catch(() => {});
+      await waitForLastRowChange(before).catch(() => { });
     };
 
     const openSearchPanel = async () => {
@@ -195,25 +197,107 @@ function extractor_source() {
       await ensure_page_size_50("top");
     };
 
+    const parseRecord = (raw) => {
+      const s = String(raw || "").trim();
+      const m = s.match(/(\d+)\s*-\s*(\d+)/);
+      if (!m) return { wins: null, losses: null, matches: null, win_pct: null, record_text: s || null };
+      const wins = Number(m[1]);
+      const losses = Number(m[2]);
+      const matches = wins + losses;
+      const win_pct = matches > 0 ? Number((wins / matches).toFixed(3)) : 0;
+      return { wins, losses, matches, win_pct, record_text: s || null };
+    };
+
+    // --- helper: pull a numeric id from a link by trying common param keys ---
+    const get_id_from_url = (href, keys = []) => {
+      if (!href) return null;
+      try {
+        const u = new URL(href, location.origin);
+        // 1) Try query params first
+        for (const k of keys) {
+          const v = u.searchParams.get(k);
+          if (v && /^\d+$/.test(v)) return v;
+        }
+        // 2) Fallback: regex over the full href (covers weird casing/aliases)
+        const anyKey = keys.map(k => k.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&")).join("|");
+        const rx = new RegExp(`[?&](?:${anyKey})=(\\d+)`, "i");
+        const m = href.match(rx);
+        if (m) return m[1];
+      } catch { /* ignore */ }
+      return null;
+    };
+
+    // --- update: include wrestler_id & team_id (snake_case) ---
     const readTable = () => {
       const rows = document.querySelectorAll("tr.dataGridRow");
       return Array.from(rows).map((row) => {
         const cols = row.querySelectorAll("td div");
         const txt = (i) => (cols[i]?.textContent || "").trim();
         const href = (i) => cols[i]?.querySelector("a")?.href || null;
+
+        const rec = parseRecord(txt(8)); // original record cell
+
+        const name_link = href(2);
+        const team_link = href(3);
+
+        const wrestler_id = get_id_from_url(name_link, [
+          "wrestlerId", "wrestlerID", "wrestlerid", "athleteId", "athleteID"
+        ]);
+        const team_id = get_id_from_url(team_link, [
+          "teamId", "teamID", "teamid", "clubId", "clubID", "organizationId", "orgId"
+        ]);
+
         return {
+          wrestler_id,
+          team_id,
+
           name: txt(2),
-          name_link: href(2),
           team: txt(3),
-          team_link: href(3),
           weight_class: txt(4),
           gender: txt(5),
           grade: txt(6),
           level: txt(7),
-          record: `${txt(8).trim()} W-L`,
+
+          record: rec.record_text,
+          wins: rec.wins,
+          losses: rec.losses,
+          matches: rec.matches,
+          win_pct: rec.win_pct,
+
+          name_link,
+          team_link,
+
         };
       });
     };
+
+    // const readTable = () => {
+    //   const rows = document.querySelectorAll("tr.dataGridRow");
+    //   return Array.from(rows).map((row) => {
+    //     const cols = row.querySelectorAll("td div");
+    //     const txt = (i) => (cols[i]?.textContent || "").trim();
+    //     const href = (i) => cols[i]?.querySelector("a")?.href || null;
+
+    //     const rec = parseRecord(txt(8)); // the original cell
+
+    //     return {
+    //       name: txt(2),
+    //       team: txt(3),
+    //       weight_class: txt(4),
+    //       gender: txt(5),
+    //       grade: txt(6),
+    //       level: txt(7),
+
+    //       record: rec.record_text,       // e.g., "12-3 W-L" or "12-3"
+    //       wins: rec.wins,                // INT or null
+    //       losses: rec.losses,            // INT or null
+    //       matches: rec.matches,          // wins + losses (INT) or null
+
+    //       name_link: href(2),
+    //       team_link: href(3),
+    //     };
+    //   });
+    // };
 
     // run once for this prefix
     await runSearchWithPrefix(prefix);
@@ -310,12 +394,14 @@ async function main(
 
   const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
   const LEVEL_CATEGORY = ["Varsity"]; // extend if needed
+  const GOVERNING_BODY = ["Colorado High School Activities Association"]; // extend if needed
 
   for (let j = 0; j < GRADE_CATEGORY.length; j++) {
     for (let i = 0; i < ALPHA_LIMIT; i++) {
       const prefix = LETTERS[i];
       const grade = GRADE_CATEGORY[j];
       const level = LEVEL_CATEGORY[0];
+      const governing_body = GOVERNING_BODY[0]; // not current used for the selector
 
       // 6) Run one in-page extraction step for this letter+grade
       const result = await wrestlers_frame.evaluate(extractor_source(), { prefix, grade, level, delay_ms });
@@ -328,6 +414,25 @@ async function main(
         save_to_csv_file(rows, iterationIndex, headers_written, folder_name, file_name);
         headers_written = true;
         cumulative_rows += wrote;
+      }
+
+      if (wrote > 0) {
+        // 1) Write CSV (first write can create headers; your util handles deletion/append)
+        const iterationIndex = i;
+        save_to_csv_file(rows, iterationIndex, headers_written, folder_name, file_name);
+        headers_written = true;
+        cumulative_rows += wrote;
+
+        // 2) NEW: Stream into MySQL
+        //    (await here keeps backpressure simple and avoids piling up too many inserts)
+        console.log("Save to sql db\n");
+        await upsert_wrestlers_list(rows, {
+          season: WRESTLING_SEASON,
+          prefix,
+          grade,
+          level,
+          governing_body,
+        });
       }
 
       const pages_info = result?.pages_advanced ?? 0;

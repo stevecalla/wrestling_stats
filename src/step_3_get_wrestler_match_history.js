@@ -11,8 +11,11 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import { count_rows_in_csv } from "../utilities/create_and_load_csv_files/count_rows_in_csv.js";
 import { iter_name_links_from_csv } from "../utilities/create_and_load_csv_files/iter_name_links_from_csv.js";
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
-import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
+import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
+
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
+import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
+
 import { color_text } from "../utilities/console_logs/console_colors.js";
 
 /* ------------------------------------------
@@ -370,7 +373,7 @@ async function main(
 
   console.log(color_text(`📄 CSV has ${total_rows_in_csv} wrestler links`, "green"));
   console.log(color_text(`\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs CSV size)\x1b[0m\n`, "green"));
-  
+
   // NOTE: Using "for await...of" because iter_name_links_from_csv() is an async generator.
   // It streams each row from the CSV without loading the entire file into memory.
   // This is more memory-efficient for large files (thousands of wrestler URLs).
@@ -462,6 +465,14 @@ async function main(
         console.log("step 6: save to csv");
         headers_written = await save_to_csv_file(all_rows, i, headers_written, file_path);
         console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
+
+        console.log("step 7: save to sql db\n");
+        try {
+          const { inserted, updated } = await upsert_wrestler_match_history(rows);
+          console.log(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
+        } catch (e) {
+          console.error("❌ DB upsert failed:", e?.message || e);
+        }
 
         processed += 1;
         break; // success → break retry loop
