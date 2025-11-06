@@ -1,8 +1,8 @@
 // src/step_3_get_wrestler_match_history.js (ESM, snake_case)
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 
+import dotenv from "dotenv";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -10,10 +10,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 // keep import specifiers but use snake_case bindings locally
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
-import {
-  count_rows_in_db_wrestler_links,
-  iter_name_links_from_db,
-} from "../utilities/mysql/iter_name_links_from_db.js";
+import { count_rows_in_db_wrestler_links, iter_name_links_from_db } from "../utilities/mysql/iter_name_links_from_db.js";
 
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";

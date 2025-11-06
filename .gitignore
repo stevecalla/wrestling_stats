@@ -2,6 +2,11 @@
 notes.txt
 pw-user-data/
 chrome-tw-user-data
+crontab_draft.txt
+
+# google analytics
+ga4_data
+wrestler-match-tracking-data-71ccf46666ed.json
 
 # Dependency locks
 package-lock.json
