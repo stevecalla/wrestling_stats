@@ -15,6 +15,7 @@ const run_step_3 = true;  // execute_create_bigquery_dataset
 const run_step_4 = true;  // execute_load_bigquery_database
 
 const directory_prefix = 'wrestling';
+
 const data_options = {
   wrestler: {
     // data_label: "matches",

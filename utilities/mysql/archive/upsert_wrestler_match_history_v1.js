@@ -24,7 +24,7 @@ async function ensure_table() {
       end_date        DATE          NULL,
 
       event           VARCHAR(255)  NULL,
-      weight_category VARCHAR(64)   NULL,
+      weight_category        VARCHAR(64)   NULL,
       round           VARCHAR(128)  NULL,
       
       opponent        VARCHAR(255)  NULL,
@@ -36,10 +36,8 @@ async function ensure_table() {
       result          VARCHAR(64)   NULL,
       score_details   VARCHAR(255)  NULL,
       winner_name     VARCHAR(255)  NULL,
-      outcome         VARCHAR(8)    NULL,        -- CHANGED (was CHAR(1)) now supports 'W','L','T','U','bye'
-      counts_in_record TINYINT(1)   NULL,        -- CHANGED new: whether it impacted W-L-T (1/0)
+      outcome         CHAR(1)       NULL,        -- W/L/T/U
       record          VARCHAR(64)   NULL,        -- "12-3-0 W-L-T"
-      record_varsity  VARCHAR(64)   NULL,        -- CHANGED new: varsity-only split
       raw_details     TEXT          NULL,
 
       -- Timestamps:
@@ -109,13 +107,11 @@ export async function upsert_wrestler_match_history(rows, meta) {
   // will avoid touching created_* but will refresh updated_*).
   const cols = [
     "season", "page_url",
-    "wrestler_id", "wrestler", "first_name", "last_name", "wrestler_school",
+    "wrestler_id", "wrestler", "first_name", "last_name", "wrestler_school", // NEW
     "start_date", "end_date",
     "event", "weight_category", "round",
-    "opponent", "opponent_first_name", "opponent_last_name", "opponent_id", "opponent_school",
-    "result", "score_details", "winner_name", "outcome",
-    "counts_in_record",                    // CHANGED new col
-    "record", "record_varsity",            // CHANGED add varsity split
+    "opponent", "opponent_first_name", "opponent_last_name", "opponent_id", "opponent_school", // NEW
+    "result", "score_details", "winner_name", "outcome", "record",
     "raw_details",
     "created_at_mtn", "created_at_utc",
     "updated_at_mtn", "updated_at_utc"
@@ -151,10 +147,8 @@ export async function upsert_wrestler_match_history(rows, meta) {
       result: r.result ?? null,
       score_details: r.score_details ?? null,
       winner_name: r.winner_name ?? null,
-      outcome: r.outcome ?? null,                        // can now be 'bye'
-      counts_in_record: (r.counts_in_record ?? null),    // CHANGED new field (expects true/false → 1/0 if you prefer)
+      outcome: r.outcome ?? null,
       record: r.record ?? null,
-      record_varsity: r.record_varsity ?? null,          // CHANGED new field
       raw_details: r.raw_details ?? null,
 
       // timestamps for the INSERT attempt
@@ -177,32 +171,30 @@ export async function upsert_wrestler_match_history(rows, meta) {
       INSERT INTO wrestler_match_history (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
-        season             = VALUES(season),
-        page_url           = VALUES(page_url),
-        wrestler           = VALUES(wrestler),
-        first_name         = VALUES(first_name), 
-        last_name          = VALUES(last_name),  
-        wrestler_school    = VALUES(wrestler_school),
-        end_date           = VALUES(end_date),
-        event              = VALUES(event),
-        weight_category    = VALUES(weight_category),
-        round              = VALUES(round),
-        opponent           = VALUES(opponent),
-        opponent_first_name= VALUES(opponent_first_name),
-        opponent_last_name = VALUES(opponent_last_name), 
-        opponent_id        = VALUES(opponent_id),
-        opponent_school    = VALUES(opponent_school),
-        result             = VALUES(result),
-        score_details      = VALUES(score_details),
-        winner_name        = VALUES(winner_name),
-        outcome            = VALUES(outcome),           -- CHANGED widened type supports 'bye'
-        counts_in_record   = VALUES(counts_in_record),  -- CHANGED new field
-        record             = VALUES(record),
-        record_varsity     = VALUES(record_varsity),    -- CHANGED new field
-        raw_details        = VALUES(raw_details),
+        season          = VALUES(season),
+        page_url        = VALUES(page_url),
+        wrestler        = VALUES(wrestler),
+        first_name      = VALUES(first_name), 
+        last_name       = VALUES(last_name),  
+        wrestler_school = VALUES(wrestler_school),
+        end_date        = VALUES(end_date),
+        event           = VALUES(event),
+        weight_category        = VALUES(weight_category),
+        round           = VALUES(round),
+        opponent        = VALUES(opponent),
+        opponent_first_name = VALUES(opponent_first_name),
+        opponent_last_name  = VALUES(opponent_last_name), 
+        opponent_id     = VALUES(opponent_id),
+        opponent_school = VALUES(opponent_school),
+        result          = VALUES(result),
+        score_details   = VALUES(score_details),
+        winner_name     = VALUES(winner_name),
+        outcome         = VALUES(outcome),
+        record          = VALUES(record),
+        raw_details     = VALUES(raw_details),
         -- do NOT touch created_* on update:
-        updated_at_mtn     = VALUES(updated_at_mtn),
-        updated_at_utc     = CURRENT_TIMESTAMP
+        updated_at_mtn  = VALUES(updated_at_mtn),
+        updated_at_utc  = CURRENT_TIMESTAMP
     `;
 
     const [res] = await pool.query({ sql, values: params });

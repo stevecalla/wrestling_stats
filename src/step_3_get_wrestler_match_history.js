@@ -142,26 +142,62 @@ function extractor_source() {
       return { start_date: "", end_date: "", start_obj: null, end_obj: null };
     };
 
-    // parse first/last name from a full name string
-    function parse_name(full) {
-      const raw = String(full || "").trim();
-      if (!raw) return { first_name: null, last_name: null };
+    // --- helper: sanitize a display name before splitting ---
+    // removes trailing " (…)" bits and common suffixes like Jr., III, etc.
+    function clean_display_name(raw) {
+      let s = String(raw || "").trim();
 
-      if (raw.includes(",")) {
-        // "Last, First Middle"
-        const [last, rest] = raw.split(",").map(s => s.trim()).filter(Boolean);
-        if (!last) return { first_name: null, last_name: null };
-        if (!rest) return { first_name: null, last_name: last };
+      // 1) remove any trailing parenthetical, e.g. " (Roman)" or "(JR)"
+      //    only at the END of the string to avoid nuking legitimate middle nicknames
+      s = s.replace(/\s*\([^)]+\)\s*$/u, "");
+
+      // 2) collapse stray multiple spaces
+      s = s.replace(/\s+/g, " ").trim();
+
+      // 3) strip a trailing suffix token if present
+      //    (handles comma or no-comma variants: "Jr", "Jr.", "III", "IV", "II")
+      const suffixRe = /(?:,?\s+(?:Jr\.?|Sr\.?|II|III|IV|V|VI))$/iu;
+      s = s.replace(suffixRe, "").trim();
+
+      return s;
+    }
+
+    // --- improved name parser ---
+    // Cases handled:
+    //  - "Last, First Middle" → last = "Last", first = "First"
+    //  - "First Middle Last"  → last = last token (keeps hyphens, "de la", etc. naïvely)
+    //  - "Boyd Thomas (Roman)" → parenthetical removed, yields first="Boyd", last="Thomas"
+    function parse_name(full) {
+      const cleaned = clean_display_name(full);
+      if (!cleaned) return { first_name: null, last_name: null };
+
+      // Case 1: "Last, First …"
+      if (cleaned.includes(",")) {
+        const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+        const rest = restRaw || "";
         const first = rest.split(/\s+/)[0] || null;
         return { first_name: first || null, last_name: last || null };
       }
 
-      const parts = raw.split(/\s+/).filter(Boolean);
+      // Case 2: "First … Last"
+      const parts = cleaned.split(/\s+/).filter(Boolean);
       if (parts.length === 1) {
+        // only one token left → assume it's a last name
         return { first_name: null, last_name: parts[0] || null };
       }
-      const first = parts[0] || null;
-      const last = parts[parts.length - 1] || null;
+
+      // Optional: light support for multi-word last-name particles (van, de, da, del, de la, di, du, von)
+      // If the penultimate token is a common particle, attach it to the last token.
+      const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
+      let first = parts[0];
+      let last = parts[parts.length - 1];
+      const penult = parts[parts.length - 2]?.toLowerCase();
+
+      if (particles.has(penult)) {
+        last = parts.slice(parts.length - 2).join(" ");
+        if (parts.length > 2) first = parts[0]; // keep simple "First"
+      }
+
       return { first_name: first || null, last_name: last || null };
     }
 
@@ -265,40 +301,37 @@ function extractor_source() {
       }
 
       // Minimal: set opponent_id from links by matching the already-picked opponent name
-let opponent_id = "";
-if (!is_bye && !is_unknown_forfeit && opponent?.name) {
-  const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
-  const li = link_nodes
-    .map(a => {
-      const href = a.getAttribute("href") || "";
-      const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
-      const name = norm(a.textContent || "");
-      return { id, name_n: lc(name) };
-    })
-    .find(x => x.id && x.id !== current_id && x.name_n === lc(opponent.name));
+      let opponent_id = "";
+      if (!is_bye && !is_unknown_forfeit && opponent?.name) {
+        const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
+        const li = link_nodes
+          .map(a => {
+            const href = a.getAttribute("href") || "";
+            const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
+            const name = norm(a.textContent || "");
+            return { id, name_n: lc(name) };
+          })
+          .find(x => x.id && x.id !== current_id && x.name_n === lc(opponent.name));
 
-  if (li) opponent_id = li.id;
-}
+        if (li) opponent_id = li.id;
+      }
 
       // Resolve wrestler_school (same strategy as opponent)
       let wrestler_school = "";
-      // if (!is_bye) {
-        // try pair-map first
-        const me_hit = name_school_pairs.find((ns) => ns.name_n === me.name_n);
-        if (me_hit) {
-          wrestler_school = me_hit.school;
-        } else if (me.name) {
-          // fallback regex search "Me (School)"
-          const reMe = new RegExp(`\\b${esc_reg(me.name)}\\b\\s*\\(([^)]+)\\)`, "i");
-          const m = details_text_raw.match(reMe);
-          if (m) {
-            const sc = (m[1] || "").trim();
-            if (!/\d|:/.test(sc) && !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) {
-              wrestler_school = sc;
-            }
+      const me_hit = name_school_pairs.find((ns) => ns.name_n === me.name_n);
+      if (me_hit) {
+        wrestler_school = me_hit.school;
+      } else if (me.name) {
+        // fallback regex search "Me (School)"
+        const reMe = new RegExp(`\\b${esc_reg(me.name)}\\b\\s*\\(([^)]+)\\)`, "i");
+        const m = details_text_raw.match(reMe);
+        if (m) {
+          const sc = (m[1] || "").trim();
+          if (!/\d|:/.test(sc) && !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(sc)) {
+            wrestler_school = sc;
           }
         }
-      // }
+      }
 
       const result_token =
         (
@@ -341,87 +374,172 @@ if (!is_bye && !is_unknown_forfeit && opponent?.name) {
       });
     }
 
-    // compute per-row w-l-t from top to bottom
+    // ------------------------------------------
+    // Compute win-loss-tie record for wrestler
+    // (Revised scoring mechanism: BYE = "bye" and does not count;
+    // forfeits/injury defaults/DQ count; exhibitions excluded.)
+    // ------------------------------------------
     rows.sort(
       (a, b) =>
         +a.sort_date_obj - +b.sort_date_obj ||
         String(a.start_date).localeCompare(String(b.start_date))
     );
 
-    let w = 0, l = 0, t = 0;
+    let wins_all = 0, losses_all = 0, ties_all = 0;   // official total record (all counting matches)
+    let wins_var = 0, losses_var = 0, ties_var = 0;   // varsity-only record
 
-    // Parse current wrestler's first/last once (used for every returned row)
-    const { first_name, last_name } = parse_name(current_name);
+    /**
+     * Classify the result of a single match row.
+     * Decides: outcome (W/L/T/bye/U), whether it counts toward record, and varsity flag.
+     */
+    function classify_row(row, current_name) {
+      const txt = (row.details || "").toLowerCase();
 
-    const with_record = rows.map((r) => {
-      let outcome = "U";
+      const is_bye = row.result === "bye" || /\b(received a bye|bye)\b/i.test(row.details);
+      const is_exhibition = /\bexhibition\b/i.test(txt);
+      const is_unknown_forfeit = /\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(row.details);
+      const is_forfeit = /\b(for\.|fft|forfeit)\b/i.test(txt);
+      const is_med_forfeit = /\b(mff|med(?:ical)?\s*for(?:feit)?)\b/i.test(txt);
+      const is_injury_default = /\b(inj\.?\s*def\.?|injury\s*default)\b/i.test(txt);
+      const is_dq = /\b(dq|disqualification)\b/i.test(txt);
+      const is_tie = /\b(tie|draw)\b/i.test(txt);
 
-      if (r.result === "bye") {
-        outcome = "W";
-      } else if (/\b(tie|draw)\b/i.test(r.details)) {
+      // Varsity-level detection (based on round text)
+      const is_varsity = /^varsity\b/i.test(String(row.round || ""));
+
+      // Default classification
+      let outcome = "U";           // U = unknown/unresolved
+      let counts_in_record = true; // whether it affects official record
+
+      // 1) BYE: mark as "bye" but exclude from W-L-T
+      if (is_bye) {
+        outcome = "bye";
+        counts_in_record = false;
+        return { outcome, counts_in_record, is_varsity };
+      }
+
+      // 2) Exhibition: keep the row, but exclude from record
+      if (is_exhibition) {
+        outcome = "U";
+        counts_in_record = false;
+        return { outcome, counts_in_record, is_varsity };
+      }
+
+      // 3) Tie / Draw
+      if (is_tie) {
         outcome = "T";
-      } else if (/\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(r.details)) {
-        outcome = "W";
-      } else if (r.token_idx >= 0) {
-        const before = r.details.slice(0, r.token_idx).toLowerCase();
-        const after = r.details.slice(r.token_idx).toLowerCase();
-        const me_before = before.includes(lc(current_name));
-        const me_after = after.includes(lc(current_name));
+        return { outcome, counts_in_record, is_varsity };
+      }
+
+      // 4) Forfeit / Medical Forfeit / Injury Default / DQ
+      if (is_unknown_forfeit || is_forfeit || is_med_forfeit || is_injury_default || is_dq) {
+        if (is_unknown_forfeit) {
+          // “over Unknown (For.)” → current wrestler wins
+          outcome = "W";
+          return { outcome, counts_in_record, is_varsity };
+        }
+
+        // Determine winner based on text position (“ over ” / “ def.”)
+        if (row.token_idx >= 0) {
+          const before = row.details.slice(0, row.token_idx).toLowerCase();
+          const after = row.details.slice(row.token_idx).toLowerCase();
+          const me_before = before.includes(current_name.toLowerCase());
+          const me_after = after.includes(current_name.toLowerCase());
+          outcome = (me_before && !me_after) ? "W" : (!me_before && me_after) ? "L" : "U";
+        } else {
+          outcome = "U";
+        }
+        return { outcome, counts_in_record, is_varsity };
+      }
+
+      // 5) Regular scored matches (Dec, Fall, TF, etc.) using token position
+      if (row.token_idx >= 0) {
+        const before = row.details.slice(0, row.token_idx).toLowerCase();
+        const after = row.details.slice(row.token_idx).toLowerCase();
+        const me_before = before.includes(current_name.toLowerCase());
+        const me_after = after.includes(current_name.toLowerCase());
         if (me_before && !me_after) outcome = "W";
         else if (!me_before && me_after) outcome = "L";
       }
 
-      if (outcome === "W") w++;
-      else if (outcome === "L") l++;
-      else if (outcome === "T") t++;
+      return { outcome, counts_in_record, is_varsity };
+    }
 
-      let winner_name = "";
-      if (r.result === "bye" || /\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(r.details)) {
-        winner_name = current_name;
-      } else if (r.token_idx >= 0 && r.names_in_order.length) {
-        winner_name = r.names_in_order[0];
-      } else if (outcome === "W") {
-        winner_name = current_name;
-      } else if (outcome === "L") {
-        winner_name = r.opponent;
+    // Parse current wrestler's first/last once (used for every returned row)
+    const { first_name, last_name } = parse_name(current_name);
+
+    // ------------------------------------------
+    // Loop through rows and accumulate record
+    // ------------------------------------------
+    const with_record = rows.map((row) => {
+      const { outcome, counts_in_record, is_varsity } = classify_row(row, current_name);
+
+      // Update overall (official) record
+      if (counts_in_record) {
+        if (outcome === "W") wins_all++;
+        else if (outcome === "L") losses_all++;
+        else if (outcome === "T") ties_all++;
       }
 
-      if (outcome === "L") winner_name = r.opponent || winner_name;
-      if (outcome === "W") winner_name = current_name;
-      if (outcome === "T") winner_name = "";
+      // Update varsity-only record
+      if (counts_in_record && is_varsity) {
+        if (outcome === "W") wins_var++;
+        else if (outcome === "L") losses_var++;
+        else if (outcome === "T") ties_var++;
+      }
 
-      // parse opponent first/last for this row
-      const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(r.opponent);
+      // Determine winner name (constrain to wrestler or opponent only)
+      const opponent_clean = scrub(row.opponent);
+      const wrestler_clean = current_name;
 
+      let winner_name = "";
+      if (outcome === "W" || outcome === "bye") {
+        // Current wrestler advances/wins (including BYE)
+        winner_name = wrestler_clean;
+      } else if (outcome === "L") {
+        // Opponent wins
+        winner_name = opponent_clean;
+      } else {
+        // For T (tie), U (unknown), exhibitions, etc. → no winner
+        winner_name = "";
+      }
+
+      // Parse opponent name
+      const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(row.opponent);
       const now_utc = new Date().toISOString();
+
+      // Return normalized record row
       return {
         page_url: location.href,
         wrestler_id: (document.querySelector("#wrestler")?.value || "").trim(),
         wrestler: current_name,
         first_name,
         last_name,
-        wrestler_school: scrub(r.wrestler_school),
+        wrestler_school: scrub(row.wrestler_school),
 
-        start_date: r.start_date,
-        end_date: r.end_date,
+        start_date: row.start_date,
+        end_date: row.end_date,
 
-        event: scrub(r.event),
-        weight_category: scrub(r.weight),
-        round: scrub(r.round),
+        event: scrub(row.event),
+        weight_category: scrub(row.weight),
+        round: scrub(row.round),
 
-        opponent: scrub(r.opponent),
-        opponent_id: r.opponent_id || "",
+        opponent: scrub(row.opponent),
+        opponent_id: row.opponent_id || "",
         opponent_first_name,
         opponent_last_name,
-        opponent_school: scrub(r.opponent_school),
+        opponent_school: scrub(row.opponent_school),
 
-        result: scrub(r.result),
-        score_details: scrub(r.score_details),
+        result: scrub(row.result),
+        score_details: scrub(row.score_details),
         winner_name,
-        outcome,
-        record: `${w}-${l}-${t} W-L-T`,
+        outcome,                    // W, L, T, bye, or U
+        counts_in_record,           // true if counted in W-L-T
 
-        raw_details: r.raw_details,
+        record: `${wins_all}-${losses_all}-${ties_all} W-L-T`,
+        record_varsity: `${wins_var}-${losses_var}-${ties_var} W-L-T (Varsity)`,
+
+        raw_details: row.raw_details,
         created_at_utc: now_utc,
       };
     });
@@ -474,6 +592,16 @@ async function main(
 
   let processed = 0;
 
+  // const test_link = [{ //
+  //   i: 0,
+  //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30579778132"
+  // }];
+  // const test_link = [{ // Colt Jones
+  //   i: 0,
+  //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
+  // }];
+
+  // for (const { i, url } of test_link) {
   for await (const { i, url } of iter_name_links_from_db({
     start_at: loop_start,
     limit: matches_page_limit,
@@ -603,3 +731,5 @@ async function main(
 }
 
 export { main as step_3_get_wrestler_match_history };
+
+
