@@ -10,10 +10,8 @@ import { fileURLToPath } from "url";
 import { determine_os_path } from "../../directory_tools/determine_os_path.js";
 import { create_directory } from "../../directory_tools/create_directory.js";
 
-// const { createLocalDBConnection } = require('../../utilities/connectionLocalDB');
 import { get_pool, get_pool_stream } from "../../mysql/mysql_pool.js";
 
-// const { stream_query_to_csv } = require('../../utilities/streaming/stream_query_to_csv');
 import { stream_query_to_csv } from "../../streaming/stream_query_to_csv.js";
 
 import { get_current_date_for_file_naming } from "../../date_time_tools/get_current_datetime.js";

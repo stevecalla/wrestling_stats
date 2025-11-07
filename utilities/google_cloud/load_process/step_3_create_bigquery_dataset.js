@@ -44,7 +44,6 @@ async function execute_create_bigquery_dataset(options, iteration) {
     // Create/replace tables
     const tableOptions = { location: 'US' };
 
-    // for (const table_id of table_ids) {
     const tableRef = datasetRef.table(table_id);
 
     const [tableExists] = await tableRef.exists();

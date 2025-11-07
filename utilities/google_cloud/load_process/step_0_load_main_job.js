@@ -8,8 +8,6 @@ import { execute_load_bigquery_database } from "./step_4_load_biq_query_database
 // // WRESTER DATA
 import { wrestler_list_query } from "../queries/query_wrestler_list.js";
 import { wrestler_match_history_query } from "../queries/query_wrestler_match_history.js";
-import { color_text } from "../../console_logs/console_colors.js";
-// const { localLeadDbConfig } = require('../../utilities/config');
 
 const run_step_1 = true;  // execute_retrieve_data
 const run_step_2 = true;  // execute_upload_csv_to_cloud
@@ -19,29 +17,27 @@ const run_step_4 = true;  // execute_load_bigquery_database
 const directory_prefix = 'wrestling';
 const data_options = {
   wrestler: {
-    data_label: "matches",
-    csv_folder_name: "bigquery",
-    table_ids: ["wrestler_list", "wrestler_match_history"],
+    // data_label: "matches",
+    // csv_folder_name: "bigquery",
+    // table_ids: ["wrestler_list", "wrestler_match_history"],
     get_data: [
       {
-          // poolName: localForecastDbConfig,
           file_name: `wrestler_list`,
           directory_name: `${directory_prefix}_list`,
           query: wrestler_list_query,
           table_ids: ["wrestler_list"],
       },
-      // {
-      //     // poolName: localForecastDbConfig,
-      //     file_name: `wrestler_match_history`,
-      //     directory_name: `${directory_prefix}_match_history_data`,
-      //     query: wrestler_match_history_query,
-      //     table_ids: ["wrestler_match_history"],
-      // },
+      {
+          file_name: `wrestler_match_history`,
+          directory_name: `${directory_prefix}_match_history_data`,
+          query: wrestler_match_history_query,
+          table_ids: ["wrestler_match_history"],
+      },
     ],
   },
 };
 
-async function executeSteps(stepFunctions, options, iteration) {
+async function execute_steps(stepFunctions, options, iteration) {
 
   for (let i = 0; i < stepFunctions.length; i++) {
 
@@ -90,7 +86,7 @@ async function execute_load_data_to_bigquery(data) {
       ];
   
       const iteration = i;
-      await executeSteps(stepFunctions, data_options[data], iteration); // Call the new function
+      await execute_steps(stepFunctions, data_options[data], iteration); // Call the new function
 
     }
 

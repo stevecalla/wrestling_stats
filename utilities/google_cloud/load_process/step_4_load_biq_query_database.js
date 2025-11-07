@@ -32,7 +32,6 @@ import { booking_schema } from "../schemas/schema_booking_data.js";
 async function execute_load_bigquery_database(options, iteration) {
     const start_time = performance.now();
 
-    // const { csv_folder_name } = options;
     const { table_ids, directory_name } = options.get_data[iteration];
 
     // Instantiate clients
