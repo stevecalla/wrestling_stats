@@ -2,16 +2,17 @@
 import { get_pool } from "./mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
-let _ensured_step3 = false;
+let _ensured = false;
 
-async function ensure_table_step3() {
-  if (_ensured_step3) return;
+async function ensure_table() {
+  if (_ensured) return;
   const pool = await get_pool();
 
   const sql = `
     CREATE TABLE IF NOT EXISTS wrestler_match_history (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
+      season          VARCHAR(32)  NOT NULL,
       page_url        VARCHAR(1024) NULL,
       wrestler_id     BIGINT UNSIGNED NOT NULL,
       wrestler        VARCHAR(255)   NOT NULL,
@@ -60,7 +61,7 @@ async function ensure_table_step3() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `;
   await pool.query(sql);
-  _ensured_step3 = true;
+  _ensured = true;
 }
 
 // Minimal MM/DD/YYYY → YYYY-MM-DD (or return null if malformed)
@@ -80,10 +81,10 @@ function to_mysql_date(mdy) {
  *
  * @param {Array<object>} rows rows returned by extractor_source()
  */
-export async function upsert_wrestler_match_history(rows) {
+export async function upsert_wrestler_match_history(rows, meta) {
   if (!rows?.length) return { inserted: 0, updated: 0 };
 
-  await ensure_table_step3();
+  await ensure_table();
   const pool = await get_pool();
 
   // Batch timestamps (UTC → MTN via your offset fn)
@@ -98,11 +99,14 @@ export async function upsert_wrestler_match_history(rows) {
   // For updates (and also initial insert's updated_*):
   const updated_at_utc = now_utc;
   const updated_at_mtn = now_mtn;
+  
+  // shape inbound → DB columns
+  const season = meta?.season || "unknown";
 
   // Insert columns (include both created_* and updated_*; the ON DUPLICATE block
   // will avoid touching created_* but will refresh updated_*).
   const cols = [
-    "page_url",
+    "season", "page_url",
     "wrestler_id", "wrestler", "first_name", "last_name", "wrestler_school", // NEW
     "start_date", "end_date",
     "event", "weight_category", "round",
@@ -120,6 +124,7 @@ export async function upsert_wrestler_match_history(rows) {
     const slice = rows.slice(i, i + chunk_size);
 
     const shaped = slice.map(r => ({
+      season,
       page_url: r.page_url ?? null,
       wrestler_id: Number(r.wrestler_id) || 0,
       wrestler: r.wrestler ?? "",
@@ -166,6 +171,7 @@ export async function upsert_wrestler_match_history(rows) {
       INSERT INTO wrestler_match_history (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
+        season          = VALUES(season),
         page_url        = VALUES(page_url),
         wrestler        = VALUES(wrestler),
         first_name      = VALUES(first_name), 

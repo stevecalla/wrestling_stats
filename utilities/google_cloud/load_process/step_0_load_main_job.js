@@ -104,6 +104,6 @@ async function execute_load_data_to_bigquery(data) {
   return elapsedTime;
 }
 
-execute_load_data_to_bigquery("wrestler");
+// execute_load_data_to_bigquery("wrestler");
 
 export { execute_load_data_to_bigquery }

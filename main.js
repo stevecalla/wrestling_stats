@@ -26,8 +26,7 @@ const step_flags = {
   step_3: false,  // 🏟️ get match history
   step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
 
-  step_7: false, // load data into Google cloud / bigquery
-
+  step_7: true, // load data into Google cloud / bigquery
   step_9: false,  // 🧹 close browser
 };
 
@@ -197,7 +196,7 @@ async function main() {
     const start = Date.now();
     log_step_start(7, "Start Loading Data to Google Cloud & Bigquery 🔗");
 
-    await execute_load_data_to_bigquery();
+    await execute_load_data_to_bigquery("wrestler");
     
     log_step_success(7, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
   } else log_step_skip(7, "Load Data to Google Cloud & Bigquery 🔗");

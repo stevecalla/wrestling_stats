@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-// keep import specifiers but use snake_case bindings locally
+// Save files to csv & msyql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
 import { count_rows_in_db_wrestler_links, iter_name_links_from_db } from "../utilities/mysql/iter_name_links_from_db.js";
@@ -570,7 +570,7 @@ async function main(
 
         console.log("step 7: save to sql db\n");
         try {
-          const { inserted, updated } = await upsert_wrestler_match_history(rows);
+          const { inserted, updated } = await upsert_wrestler_match_history(rows, { season: wrestling_season });
           console.log(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
         } catch (e) {
           console.error("❌ DB upsert failed:", e?.message || e);
