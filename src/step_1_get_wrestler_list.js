@@ -460,9 +460,10 @@ async function main(
 
   for (let j = 0; j < GRADE_CATEGORY.length; j++) {
     for (let i = 0; i < ALPHA_LIMIT; i++) {
-      const prefix = LETTERS[i];
+      const prefix = LETTERS[i]; // last name 1st character
+      // const prefix = "t";
       const grade = GRADE_CATEGORY[j];
-      const level = LEVEL_CATEGORY[0];
+      const level = LEVEL_CATEGORY[0]; // not currently used; level on wrestler list page looks incomplete
       const governing_body = GOVERNING_BODY[0]; // not current used for the selector
 
       // 6) Run one in-page extraction step for this letter+grade
@@ -492,7 +493,7 @@ async function main(
 
       const pages_info = result?.pages_advanced ?? 0;
       console.log(color_text(
-        `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | level="${level}" | pages=${pages_info + 1
+        `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | season=${wrestling_season} |category=${track_wrestling_category} | level=${"All" || level} | pages=${pages_info + 1
         } | rows_written=${wrote} | total_rows=${cumulative_rows}`, "green"
       ));
     }

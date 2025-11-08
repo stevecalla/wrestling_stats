@@ -21,19 +21,19 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 // ====================================================
 const step_flags = {
   step_0: true,  // 🚀 launch chrome
-  step_1: false,  // 📄 get wrestler list
+  step_1: true,  // 📄 get wrestler list
   step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
   step_3: true,  // 🏟️ get match history
   step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
 
-  step_7: false, // load data into Google cloud / bigquery
+  step_7: true, // load data into Google cloud / bigquery
   step_9: false,  // 🧹 close browser
 };
 
 // 🧪 each step can run test or full //todo:
 const test_flags = {
-  step_1_is_test: true, // run small sample for wrestler list
-  step_3_is_test: true, // run small sample for match history
+  step_1_is_test: false, // run small sample for wrestler list
+  step_3_is_test: false, // run small sample for match history
 };
 
 // ====================================================
@@ -43,10 +43,13 @@ const config = {
   wrestling_season: "2024-25", // todo:
   // wrestling_season: "2025-26",
 
-  // track_wrestling_category: "High School Boys",
-  // gender: "M",
-  track_wrestling_category: "High School Girls",
-  gender: "F",
+  // HIGH SCHOOL BOYS = set category & gender
+  track_wrestling_category: "High School Boys",
+  gender: "M",
+
+  // HIGH SCHOOL GIRLS = set category & gender
+  // track_wrestling_category: "High School Girls",
+  // gender: "F",
 
   url_home_page: "https://www.trackwrestling.com/",
   url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
@@ -56,7 +59,7 @@ const config = {
   alpha_list_limit_full: 30,
 
   // Step #3 config
-  matches_page_limit_test: 5,
+  matches_page_limit_test: 150,
   matches_page_limit_full: 10000,
   step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
 };
