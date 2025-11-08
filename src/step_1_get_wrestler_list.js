@@ -399,18 +399,19 @@ function extractor_source() {
  * Executes an A→Z sweep for HS Freshman/Sophomore/Junior/Senior (Varsity),
  * writing each letter’s results as they’re fetched.
  *
- * @param {string} URL_LOGIN_PAGE
- * @param {number} ALPHA_WRESTLER_LIST_LIMIT - max letters to iterate (<=26)
- * @param {string}  WRESTLING_SEASON         - e.g., "2024-2025" or "2025-26"
+ * @param {string} url_login_page
+ * @param {number} alpha_wrestler_list_limit - max letters to iterate (<=26)
+ * @param {string}  wrestling_season         - e.g., "2024-2025" or "2025-26"
  * @param {import('playwright').Page} page
  * @param {import('playwright').Browser} browser
  * @param {string} folder_name               - output folder (your save_to_csv_file handles it)
  * @param {string} file_name                 - base file name
  */
 async function main(
-  URL_LOGIN_PAGE,
-  ALPHA_WRESTLER_LIST_LIMIT = 26,
-  WRESTLING_SEASON = "2024-2025",
+  url_login_page,
+  alpha_wrestler_list_limit = 26,
+  wrestling_season = "2024-2025",
+  track_wrestling_category = "High School Boys",
   page,
   browser,
   folder_name,
@@ -419,12 +420,11 @@ async function main(
   const LOAD_TIMEOUT_MS = 30000;
 
   // 1) Go to season index and complete auto login / season selection
-  const LOGIN_URL = URL_LOGIN_PAGE;
-  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+  await page.goto(url_login_page, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
   await page.waitForTimeout(800);
 
-  console.log("step 1: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
-  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+  console.log("step 1: on index.jsp, starting auto login for season:", wrestling_season, track_wrestling_category);
+  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
 
   // 2) REQUIRE landing on MainFrame
   await page.waitForURL(/seasons\/MainFrame\.jsp/i, { timeout: 20000 });
@@ -452,7 +452,7 @@ async function main(
   const delay_ms = 800;
 
   const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
-  const ALPHA_LIMIT = Math.min(ALPHA_WRESTLER_LIST_LIMIT, LETTERS.length);
+  const ALPHA_LIMIT = Math.min(alpha_wrestler_list_limit, LETTERS.length);
 
   const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
   const LEVEL_CATEGORY = ["Varsity"]; // extend if needed
@@ -481,7 +481,8 @@ async function main(
         //    (await here keeps backpressure simple and avoids piling up too many inserts)
         console.log("Save to sql db\n");
         await upsert_wrestlers_list(rows, {
-          season: WRESTLING_SEASON,
+          wrestling_season,
+          track_wrestling_category,
           prefix,
           grade,
           level,

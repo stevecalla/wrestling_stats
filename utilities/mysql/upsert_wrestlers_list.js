@@ -13,7 +13,8 @@ async function ensure_table() {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       -- SELECTION CRITERIA
-      season             VARCHAR(32)  NOT NULL,
+      wrestling_season   VARCHAR(32)  NOT NULL,
+      track_wrestling_category VARCHAR(32) NOT NULL,
       last_name_prefix   VARCHAR(8)   NOT NULL,
       grade              VARCHAR(64)  NULL,
       level              VARCHAR(64)  NULL,
@@ -47,8 +48,8 @@ async function ensure_table() {
       updated_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
       -- Hybrid uniqueness:
-      UNIQUE KEY uk_wrestler (season, wrestler_id),
-      UNIQUE KEY uk_alpha    (season, last_name_prefix, grade, level, name, team),
+      UNIQUE KEY uk_wrestler (wrestling_season, wrestler_id),
+      UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
 
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
@@ -64,7 +65,7 @@ async function ensure_table() {
  * - created_at_* are immutable (set on insert only)
  * - updated_at_* are refreshed on update (and set on initial insert)
  * @param {Array<object>} rows one batch from a single letter+grade
- * @param {object} meta { season, last_name_prefix, grade, level, governing_body }
+ * @param {object} meta { wrestling_season, track_wrestling_category, last_name_prefix, grade, level, governing_body }
  */
 export async function upsert_wrestlers_list(rows, meta) {
   if (!rows?.length) return { inserted: 0, updated: 0 };
@@ -84,7 +85,8 @@ export async function upsert_wrestlers_list(rows, meta) {
   const updated_at_mtn = now_mtn;
 
   // shape inbound → DB columns
-  const season = meta?.season || "unknown";
+  const wrestling_season = meta?.wrestling_season || "unknown";
+  const track_wrestling_category = meta?.track_wrestling_category || "unknown";
   const last_name_prefix = meta?.last_name_prefix ?? meta?.prefix ?? ""; // fallback if caller still sends 'prefix'
   const grade = meta?.grade || null;
   const level = meta?.level || null;
@@ -98,7 +100,8 @@ export async function upsert_wrestlers_list(rows, meta) {
     const slice = rows.slice(i, i + chunk_size);
 
     const values = slice.map(r => ({
-      season,
+      wrestling_season,
+      track_wrestling_category,
       last_name_prefix,
       grade,
       level,
@@ -141,7 +144,7 @@ export async function upsert_wrestlers_list(rows, meta) {
     }));
 
     const cols = [
-      "season", "last_name_prefix", "grade", "level", "governing_body",
+      "wrestling_season", "track_wrestling_category", "last_name_prefix", "grade", "level", "governing_body",
       "wrestler_id",
       "name", "first_name", "last_name",
       "name_link",
@@ -167,6 +170,8 @@ export async function upsert_wrestlers_list(rows, meta) {
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
         -- If either unique key hits (by wrestler_id or composite), update these fields:
+        wrestling_season = VALUES(wrestling_season),
+        track_wrestling_category = VALUES(track_wrestling_category),
         name_link       = VALUES(name_link),
         team_link       = VALUES(team_link),
         wrestler_id     = VALUES(wrestler_id),

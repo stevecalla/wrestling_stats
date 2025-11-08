@@ -12,7 +12,9 @@ async function ensure_table() {
     CREATE TABLE IF NOT EXISTS wrestler_match_history (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-      season          VARCHAR(32)  NOT NULL,
+      wrestling_season VARCHAR(32)  NOT NULL,
+      track_wrestling_category VARCHAR(32) NOT NULL,
+      gender          VARCHAR(32)  NOT NULL,
       page_url        VARCHAR(1024) NULL,
       wrestler_id     BIGINT UNSIGNED NOT NULL,
       wrestler        VARCHAR(255)   NOT NULL,
@@ -103,12 +105,14 @@ export async function upsert_wrestler_match_history(rows, meta) {
   const updated_at_mtn = now_mtn;
   
   // shape inbound → DB columns
-  const season = meta?.season || "unknown";
+  const wrestling_season = meta?.wrestling_season || "unknown";
+  const track_wrestling_category = meta?.track_wrestling_category || "unknown";
+  const gender = meta?.gender || "unknown";
 
   // Insert columns (include both created_* and updated_*; the ON DUPLICATE block
   // will avoid touching created_* but will refresh updated_*).
   const cols = [
-    "season", "page_url",
+    "wrestling_season", "track_wrestling_category", "gender", "page_url",
     "wrestler_id", "wrestler", "first_name", "last_name", "wrestler_school",
     "start_date", "end_date",
     "event", "weight_category", "round",
@@ -128,7 +132,9 @@ export async function upsert_wrestler_match_history(rows, meta) {
     const slice = rows.slice(i, i + chunk_size);
 
     const shaped = slice.map(r => ({
-      season,
+      wrestling_season,
+      track_wrestling_category,
+      gender,
       page_url: r.page_url ?? null,
       wrestler_id: Number(r.wrestler_id) || 0,
       wrestler: r.wrestler ?? "",
@@ -177,7 +183,9 @@ export async function upsert_wrestler_match_history(rows, meta) {
       INSERT INTO wrestler_match_history (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
-        season             = VALUES(season),
+        wrestling_season      = VALUES(wrestling_season),
+        track_wrestling_category = VALUES(track_wrestling_category),
+        gender             = VALUES(gender),
         page_url           = VALUES(page_url),
         wrestler           = VALUES(wrestler),
         first_name         = VALUES(first_name), 

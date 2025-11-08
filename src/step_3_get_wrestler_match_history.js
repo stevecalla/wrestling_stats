@@ -28,7 +28,7 @@ async function relogin(page, load_timeout_ms, wrestling_season, url_login_page) 
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
-  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
+  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
   await page.waitForTimeout(800);
 }
 
@@ -557,6 +557,8 @@ async function main(
   matches_page_limit = 5,
   loop_start = 0,
   wrestling_season = "2024-25",
+  track_wrestling_category = "High School Boys",
+  gender,
   page,
   browser,
   context,
@@ -565,7 +567,7 @@ async function main(
   const load_timeout_ms = 30000;
 
   // DB: count + cap (memory-efficient streaming)
-  const total_rows_in_db = await count_rows_in_db_wrestler_links();
+  const total_rows_in_db = await count_rows_in_db_wrestler_links( wrestling_season, gender );
   const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
 
   let headers_written = false;
@@ -579,7 +581,7 @@ async function main(
   await page.waitForTimeout(2000);
 
   console.log("step 1: on index.jsp, starting auto login for season:", wrestling_season);
-  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
+  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
   await page.waitForTimeout(1000);
 
   console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links`, "green"));
@@ -605,6 +607,9 @@ async function main(
   for await (const { i, url } of iter_name_links_from_db({
     start_at: loop_start,
     limit: matches_page_limit,
+    batch_size: 500,
+    wrestling_season,
+    gender,
   })) {
     if (handles_dead({ browser, context, page })) {
       console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
@@ -633,7 +638,7 @@ async function main(
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
-          await page.evaluate(auto_login_select_season, { WRESTLING_SEASON: wrestling_season });
+          await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
           await page.waitForTimeout(1000);
           console.log("step 3b: re-navigating to original URL after login:", url);
           await safe_goto(page, url, { timeout: load_timeout_ms });
@@ -698,7 +703,7 @@ async function main(
 
         console.log("step 7: save to sql db\n");
         try {
-          const { inserted, updated } = await upsert_wrestler_match_history(rows, { season: wrestling_season });
+          const { inserted, updated } = await upsert_wrestler_match_history(rows, { wrestling_season, track_wrestling_category, gender });
           console.log(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
         } catch (e) {
           console.error("❌ DB upsert failed:", e?.message || e);

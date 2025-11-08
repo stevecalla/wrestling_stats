@@ -43,6 +43,11 @@ const config = {
   wrestling_season: "2024-25", // todo:
   // wrestling_season: "2025-26",
 
+  // track_wrestling_category: "High School Boys",
+  // gender: "M",
+  track_wrestling_category: "High School Girls",
+  gender: "F",
+
   url_home_page: "https://www.trackwrestling.com/",
   url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
 
@@ -52,7 +57,7 @@ const config = {
 
   // Step #3 config
   matches_page_limit_test: 5,
-  matches_page_limit_full: 2000,
+  matches_page_limit_full: 10000,
   step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
 };
 
@@ -62,6 +67,11 @@ const config = {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const adjusted_season = config.wrestling_season.replace("-", "_");
+const adjusted_gender = config.track_wrestling_category
+  .toLowerCase()           // make lowercase
+  .replace(/\s+/g, "_")
+;   // replace all spaces with underscores
+
 
 const step_icons = {
   0: "0️⃣", 1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣",
@@ -109,9 +119,9 @@ async function main() {
     paths: {
       input_dir,
       output_dir,
-      wrestler_list_csv: path.join(input_dir,  `wrestlers_alpha_${adjusted_season}.csv`),
-      url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}.js`),
-      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}.csv`),
+      wrestler_list_csv: path.join(input_dir,  `wrestlers_alpha_${adjusted_season}_${adjusted_gender}.csv`),
+      url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}_${adjusted_gender}.js`),
+      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}_${adjusted_gender}.csv`),
     },
     browser: null,
     page: null,
@@ -140,6 +150,7 @@ async function main() {
       config.url_login_page,
       limit,
       config.wrestling_season,
+      config.track_wrestling_category,
       ctx.page,
       ctx.browser,
       ctx.paths.wrestler_list_csv,
@@ -180,6 +191,8 @@ async function main() {
       limit,
       loop_start,
       config.wrestling_season,
+      config.track_wrestling_category,
+      config.gender,
       ctx.page,
       ctx.browser,
       ctx.context,

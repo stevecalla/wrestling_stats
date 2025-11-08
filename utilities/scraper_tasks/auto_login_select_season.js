@@ -13,7 +13,7 @@
 
 // === Function to login automatically by selecting the correct season ===
 async function auto_login_select_season(args) {
-  const { WRESTLING_SEASON } = args;
+  const { wrestling_season, track_wrestling_category } = args;
 
   // === tw_auto_login_with_highlight_and_dryrun.js ===
   // Runs on page "seasons/index.jsp" page.
@@ -104,8 +104,8 @@ async function auto_login_select_season(args) {
   await sleep(2000);
 
   // 1) Scroll right (defaultGrid.nextX)
-  if (WRESTLING_SEASON === "2024-25") {
-    toast("WRESTLING_SEASON = 2024-25");
+  if (wrestling_season === "2024-25") {
+    toast("wrestling_season = 2024-25");
     const scrollBtn = document.querySelector('a[href="javascript:defaultGrid.nextX()"]');
     if (scrollBtn) {
       highlight(scrollBtn, "Scroll right");
@@ -122,12 +122,14 @@ async function auto_login_select_season(args) {
   // inserted delay to allow page to load
   await sleep(2000);
 
-  // 2) Open "2024–25 High School Boys"
+  // 2) Open "2024–25 High School Boys" or "2024-25 High School Girls"
   const seasonLink = Array.from(document.querySelectorAll("a[href^='javascript:seasonSelected']"))
-    .find(a => (a.textContent || "").trim().includes(`${WRESTLING_SEASON} High School Boys`));
+    // .find(a => (a.textContent || "").trim().includes(`${wrestling_season} High School Girls`));
+    .find(a => (a.textContent || "").trim().includes(`${wrestling_season} ${track_wrestling_category}`));
   if (seasonLink) {
-    highlight(seasonLink, `Open: ${WRESTLING_SEASON} High School Boys`);
-    toast(`Open: ${WRESTLING_SEASON} High School Boys`);
+    // highlight(seasonLink, `Open: ${wrestling_season} High School Boys`);
+    highlight(seasonLink, `Open: ${wrestling_season} ${track_wrestling_category}`);
+    toast(`Open: ${wrestling_season} ${track_wrestling_category}`);
     await sleep(400);
     if (!DRY_RUN) seasonLink.click();
     await sleep(1500);
