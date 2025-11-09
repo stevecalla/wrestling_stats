@@ -1,5 +1,9 @@
 // step_0_launch_chrome_developer.js (ESM, modular, cross-platform, saves profile at ~/chrome-tw-user-data)
 import dotenv from "dotenv";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -10,10 +14,6 @@ import { chromium } from "playwright";
 import { launch_chrome_win } from "../utilities/chrome_dev_tools/launch_chrome_win.js";
 import { launch_chrome_linux } from "../utilities/chrome_dev_tools/launch_chrome_linux.js";
 import { launch_chrome_mac } from "../utilities/chrome_dev_tools/launch_chrome_mac.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const PORT = String(process.env.CHROME_DEVTOOLS_PORT || 9222);
 const CONNECT_URL = `http://localhost:${PORT}`;

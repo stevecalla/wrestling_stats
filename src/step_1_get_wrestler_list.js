@@ -1,16 +1,18 @@
 // src/step_1_get_wrestler_list.js  (ESM)
-
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 
+import dotenv from "dotenv";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 import { click_on_wrestler_menu } from "../utilities/scraper_tasks/click_on_wrestler_menu.js";
+
+import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
+import { upsert_wrestlers_list } from "../utilities/mysql/upsert_wrestlers_list.js";
+
 import { color_text } from "../utilities/console_logs/console_colors.js";
 
 /* ------------------------------------------
@@ -47,7 +49,7 @@ async function wait_for_wrestlers_frame(page, timeoutMs = 30000) {
   while (Date.now() - start < timeoutMs) {
     const f = page.frames().find(fr => /Wrestlers\.jsp/i.test(fr.url()));
     if (f) {
-      try { await f.waitForLoadState?.("domcontentloaded", { timeout: 3000 }); } catch {}
+      try { await f.waitForLoadState?.("domcontentloaded", { timeout: 3000 }); } catch { }
       try {
         await f.waitForSelector(STABLE_SELECTOR, { state: "attached", timeout: 3000 });
         return f;
@@ -133,7 +135,7 @@ function extractor_source() {
       const before = lastRowSignature();
       input.value = "50";
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      await waitForLastRowChange(before).catch(() => {});
+      await waitForLastRowChange(before).catch(() => { });
     };
 
     const openSearchPanel = async () => {
@@ -176,12 +178,12 @@ function extractor_source() {
         if (!ok) console.warn(`Option "${grade}" not found in #s_gradeId.`);
       }
 
-      // 3) Level (optional)
-      const levelSelect = document.querySelector("#s_levelId");
-      if (levelSelect && level) {
-        const ok = setSelectByText(levelSelect, level);
-        if (!ok) console.warn(`Option "${level}" not found in #s_levelId.`);
-      }
+      // 3) Level (optional) //todo: to include level
+      // const levelSelect = document.querySelector("#s_levelId");
+      // if (levelSelect && level) {
+      //   const ok = setSelectByText(levelSelect, level);
+      //   if (!ok) console.warn(`Option "${level}" not found in #s_levelId.`);
+      // }
 
       // 4) Trigger inner Search
       const go = document.querySelector(
@@ -195,22 +197,166 @@ function extractor_source() {
       await ensure_page_size_50("top");
     };
 
+    const parseRecord = (raw) => {
+      const s = String(raw || "").trim();
+      const m = s.match(/(\d+)\s*-\s*(\d+)/);
+      if (!m) return { wins: null, losses: null, matches: null, win_pct: null, record_text: s || null };
+      const wins = Number(m[1]);
+      const losses = Number(m[2]);
+      const matches = wins + losses;
+      const win_pct = matches > 0 ? Number((wins / matches).toFixed(3)) : 0;
+      return { wins, losses, matches, win_pct, record_text: s || null };
+    };
+
+    // --- helper: pull a numeric id from a link by trying common param keys ---
+    const get_id_from_url = (href, keys = []) => {
+      if (!href) return null;
+      try {
+        const u = new URL(href, location.origin);
+        // 1) Try query params first
+        for (const k of keys) {
+          const v = u.searchParams.get(k);
+          if (v && /^\d+$/.test(v)) return v;
+        }
+        // 2) Fallback: regex over the full href (covers weird casing/aliases)
+        const anyKey = keys.map(k => k.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&")).join("|");
+        const rx = new RegExp(`[?&](?:${anyKey})=(\\d+)`, "i");
+        const m = href.match(rx);
+        if (m) return m[1];
+      } catch { /* ignore */ }
+      return null;
+    };
+
+    // --- helper: sanitize a display name before splitting ---
+    // removes trailing " (…)" bits and common suffixes like Jr., III, etc.
+    function clean_display_name(raw) {
+      let s = String(raw || "").trim();
+
+      // 1) remove any trailing parenthetical, e.g. " (Roman)" or "(JR)"
+      //    only at the END of the string to avoid nuking legitimate middle nicknames
+      s = s.replace(/\s*\([^)]+\)\s*$/u, "");
+
+      // 2) collapse stray multiple spaces
+      s = s.replace(/\s+/g, " ").trim();
+
+      // 3) strip a trailing suffix token if present
+      //    (handles comma or no-comma variants: "Jr", "Jr.", "III", "IV", "II")
+      const suffixRe = /(?:,?\s+(?:Jr\.?|Sr\.?|II|III|IV|V|VI))$/iu;
+      s = s.replace(suffixRe, "").trim();
+
+      return s;
+    }
+
+    // --- improved name parser ---
+    // Cases handled:
+    //  - "Last, First Middle" → last = "Last", first = "First"
+    //  - "First Middle Last"  → last = last token (keeps hyphens, "de la", etc. naïvely)
+    //  - "Boyd Thomas (Roman)" → parenthetical removed, yields first="Boyd", last="Thomas"
+    function parse_name(full) {
+      const cleaned = clean_display_name(full);
+      if (!cleaned) return { first_name: null, last_name: null };
+
+      // Case 1: "Last, First …"
+      if (cleaned.includes(",")) {
+        const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+        const rest = restRaw || "";
+        const first = rest.split(/\s+/)[0] || null;
+        return { first_name: first || null, last_name: last || null };
+      }
+
+      // Case 2: "First … Last"
+      const parts = cleaned.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) {
+        // only one token left → assume it's a last name
+        return { first_name: null, last_name: parts[0] || null };
+      }
+
+      // Optional: light support for multi-word last-name particles (van, de, da, del, de la, di, du, von)
+      // If the penultimate token is a common particle, attach it to the last token.
+      const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
+      let first = parts[0];
+      let last = parts[parts.length - 1];
+      const penult = parts[parts.length - 2]?.toLowerCase();
+
+      if (particles.has(penult)) {
+        last = parts.slice(parts.length - 2).join(" ");
+        if (parts.length > 2) first = parts[0]; // keep simple "First"
+      }
+
+      return { first_name: first || null, last_name: last || null };
+    }
+
+    // // --- NEW helper: parse first/last name from the "name" cell text ---
+    // function parse_name(full) {
+    //   const raw = String(full || "").trim();
+    //   if (!raw) return { first_name: null, last_name: null };
+
+    //   // Case 1: "Last, First Middle"
+    //   if (raw.includes(",")) {
+    //     const [last, rest] = raw.split(",").map(s => s.trim()).filter(Boolean);
+    //     if (!last) return { first_name: null, last_name: null };
+    //     if (!rest) return { first_name: null, last_name: last };
+    //     const first = rest.split(/\s+/)[0] || null;
+    //     return { first_name: first || null, last_name: last || null };
+    //   }
+
+    //   // Case 2: "First Middle Last" → take first token and last token
+    //   const parts = raw.split(/\s+/).filter(Boolean);
+    //   if (parts.length === 1) {
+    //     return { first_name: null, last_name: parts[0] || null };
+    //   }
+    //   const first = parts[0] || null;
+    //   const last = parts[parts.length - 1] || null;
+    //   return { first_name: first || null, last_name: last || null };
+    // }
+
+    // --- update: include wrestler_id & team_id (snake_case) and parsed first/last name ---
     const readTable = () => {
       const rows = document.querySelectorAll("tr.dataGridRow");
       return Array.from(rows).map((row) => {
         const cols = row.querySelectorAll("td div");
         const txt = (i) => (cols[i]?.textContent || "").trim();
         const href = (i) => cols[i]?.querySelector("a")?.href || null;
+
+        const rec = parseRecord(txt(8)); // original record cell
+
+        const name_link = href(2);
+        const team_link = href(3);
+
+        const wrestler_id = get_id_from_url(name_link, [
+          "wrestlerId", "wrestlerID", "wrestlerid", "athleteId", "athleteID"
+        ]);
+        const team_id = get_id_from_url(team_link, [
+          "teamId", "teamID", "teamid", "clubId", "clubID", "organizationId", "orgId"
+        ]);
+
+        const name_text = txt(2);
+        const { first_name, last_name } = parse_name(name_text);
+
         return {
-          name: txt(2),
-          name_link: href(2),
+          wrestler_id,
+          team_id,
+
+          // NEW parsed name fields while retaining the original name field
+          first_name,
+          last_name,
+          name: name_text,
+
           team: txt(3),
-          team_link: href(3),
           weight_class: txt(4),
           gender: txt(5),
           grade: txt(6),
           level: txt(7),
-          record: `${txt(8).trim()} W-L`,
+
+          record: rec.record_text,
+          wins: rec.wins,
+          losses: rec.losses,
+          matches: rec.matches,
+          win_pct: rec.win_pct,
+
+          name_link,
+          team_link,
+
         };
       });
     };
@@ -253,18 +399,19 @@ function extractor_source() {
  * Executes an A→Z sweep for HS Freshman/Sophomore/Junior/Senior (Varsity),
  * writing each letter’s results as they’re fetched.
  *
- * @param {string} URL_LOGIN_PAGE
- * @param {number} ALPHA_WRESTLER_LIST_LIMIT - max letters to iterate (<=26)
- * @param {string}  WRESTLING_SEASON         - e.g., "2024-2025" or "2025-26"
+ * @param {string} url_login_page
+ * @param {number} alpha_wrestler_list_limit - max letters to iterate (<=26)
+ * @param {string}  wrestling_season         - e.g., "2024-2025" or "2025-26"
  * @param {import('playwright').Page} page
  * @param {import('playwright').Browser} browser
  * @param {string} folder_name               - output folder (your save_to_csv_file handles it)
  * @param {string} file_name                 - base file name
  */
 async function main(
-  URL_LOGIN_PAGE,
-  ALPHA_WRESTLER_LIST_LIMIT = 26,
-  WRESTLING_SEASON = "2024-2025",
+  url_login_page,
+  alpha_wrestler_list_limit = 26,
+  wrestling_season = "2024-2025",
+  track_wrestling_category = "High School Boys",
   page,
   browser,
   folder_name,
@@ -273,12 +420,11 @@ async function main(
   const LOAD_TIMEOUT_MS = 30000;
 
   // 1) Go to season index and complete auto login / season selection
-  const LOGIN_URL = URL_LOGIN_PAGE;
-  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
+  await page.goto(url_login_page, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });
   await page.waitForTimeout(800);
 
-  console.log("step 1: on index.jsp, starting auto login for season:", WRESTLING_SEASON);
-  await page.evaluate(auto_login_select_season, { WRESTLING_SEASON });
+  console.log("step 1: on index.jsp, starting auto login for season:", wrestling_season, track_wrestling_category);
+  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
 
   // 2) REQUIRE landing on MainFrame
   await page.waitForURL(/seasons\/MainFrame\.jsp/i, { timeout: 20000 });
@@ -306,16 +452,19 @@ async function main(
   const delay_ms = 800;
 
   const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
-  const ALPHA_LIMIT = Math.min(ALPHA_WRESTLER_LIST_LIMIT, LETTERS.length);
+  const ALPHA_LIMIT = Math.min(alpha_wrestler_list_limit, LETTERS.length);
 
   const GRADE_CATEGORY = ["HS Freshman", "HS Sophomore", "HS Junior", "HS Senior"];
   const LEVEL_CATEGORY = ["Varsity"]; // extend if needed
+  const GOVERNING_BODY = ["Colorado High School Activities Association"]; // extend if needed
 
   for (let j = 0; j < GRADE_CATEGORY.length; j++) {
     for (let i = 0; i < ALPHA_LIMIT; i++) {
-      const prefix = LETTERS[i];
+      const prefix = LETTERS[i]; // last name 1st character
+      // const prefix = "t";
       const grade = GRADE_CATEGORY[j];
-      const level = LEVEL_CATEGORY[0];
+      const level = LEVEL_CATEGORY[0]; // not currently used; level on wrestler list page looks incomplete
+      const governing_body = GOVERNING_BODY[0]; // not current used for the selector
 
       // 6) Run one in-page extraction step for this letter+grade
       const result = await wrestlers_frame.evaluate(extractor_source(), { prefix, grade, level, delay_ms });
@@ -323,16 +472,28 @@ async function main(
       const wrote = rows.length;
 
       if (wrote > 0) {
-        // write (first write can create headers; your util handles deletion/append)
-        const iterationIndex = i; // 0-based index you already use
+        // 1) Write CSV (first write can create headers; your util handles deletion/append)
+        const iterationIndex = i;
         save_to_csv_file(rows, iterationIndex, headers_written, folder_name, file_name);
         headers_written = true;
         cumulative_rows += wrote;
+
+        // 2) NEW: Stream into MySQL
+        //    (await here keeps backpressure simple and avoids piling up too many inserts)
+        console.log("Save to sql db\n");
+        await upsert_wrestlers_list(rows, {
+          wrestling_season,
+          track_wrestling_category,
+          prefix,
+          grade,
+          level,
+          governing_body,
+        });
       }
 
       const pages_info = result?.pages_advanced ?? 0;
       console.log(color_text(
-        `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | level="${level}" | pages=${pages_info + 1
+        `step ${j + 1}-${i + 1}: prefix="${prefix}" | grade="${grade}" | season=${wrestling_season} |category=${track_wrestling_category} | level=${"All" || level} | pages=${pages_info + 1
         } | rows_written=${wrote} | total_rows=${cumulative_rows}`, "green"
       ));
     }

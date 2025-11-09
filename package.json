@@ -37,9 +37,13 @@
     "csv"
   ],
   "dependencies": {
+    "@google-cloud/bigquery": "^8.1.1",
+    "@google-cloud/storage": "^7.17.3",
     "csv-parse": "^6.1.0",
+    "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
-    "fast-csv": "^5.0.5"
+    "fast-csv": "^5.0.5",
+    "mysql2": "^3.15.3"
   },
   "devDependencies": {
     "playwright": "^1.56.1"

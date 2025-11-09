@@ -11,6 +11,9 @@ import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_devel
 import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
 import { step_2_write_wrestler_match_url_array } from "./src/step_2_create_wrestler_match_url_array.js";
 import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_match_history.js";
+import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 7 load google cloud & bigquery
+
+
 import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js";
 
 // ====================================================
@@ -19,33 +22,45 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 const step_flags = {
   step_0: true,  // 🚀 launch chrome
   step_1: true,  // 📄 get wrestler list
-  step_2: false, // 🔗 optional URL array
+  step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
   step_3: true,  // 🏟️ get match history
+  step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
+
+  step_7: true, // load data into Google cloud / bigquery
   step_9: false,  // 🧹 close browser
 };
 
 // 🧪 each step can run test or full //todo:
 const test_flags = {
-  step_1_is_test: true, // run small sample for wrestler list
-  step_3_is_test: true, // run small sample for match history
+  step_1_is_test: false, // run small sample for wrestler list
+  step_3_is_test: false, // run small sample for match history
 };
 
 // ====================================================
 // ⚙️ GLOBAL CONFIG — all tunable numbers here
 // ====================================================
 const config = {
-  url_home_page: "https://www.trackwrestling.com/",
-  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
   wrestling_season: "2024-25", // todo:
   // wrestling_season: "2025-26",
+
+  // HIGH SCHOOL BOYS = set category & gender
+  track_wrestling_category: "High School Boys",
+  gender: "M",
+
+  // HIGH SCHOOL GIRLS = set category & gender
+  // track_wrestling_category: "High School Girls",
+  // gender: "F",
+
+  url_home_page: "https://www.trackwrestling.com/",
+  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
 
   // Step #1 config
   alpha_list_limit_test: 1,
   alpha_list_limit_full: 30,
 
   // Step #3 config
-  matches_page_limit_test: 5,
-  matches_page_limit_full: 2000,
+  matches_page_limit_test: 150,
+  matches_page_limit_full: 10000,
   step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
 };
 
@@ -55,6 +70,11 @@ const config = {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const adjusted_season = config.wrestling_season.replace("-", "_");
+const adjusted_gender = config.track_wrestling_category
+  .toLowerCase()           // make lowercase
+  .replace(/\s+/g, "_")
+;   // replace all spaces with underscores
+
 
 const step_icons = {
   0: "0️⃣", 1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣",
@@ -102,9 +122,9 @@ async function main() {
     paths: {
       input_dir,
       output_dir,
-      wrestler_list_csv: path.join(input_dir,  `wrestlers_alpha_${adjusted_season}.csv`),
-      url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}.js`),
-      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}.csv`),
+      wrestler_list_csv: path.join(input_dir,  `wrestlers_alpha_${adjusted_season}_${adjusted_gender}.csv`),
+      url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}_${adjusted_gender}.js`),
+      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}_${adjusted_gender}.csv`),
     },
     browser: null,
     page: null,
@@ -133,6 +153,7 @@ async function main() {
       config.url_login_page,
       limit,
       config.wrestling_season,
+      config.track_wrestling_category,
       ctx.page,
       ctx.browser,
       ctx.paths.wrestler_list_csv,
@@ -146,6 +167,7 @@ async function main() {
   if (step_flags.step_2) {
     const start = Date.now();
     log_step_start(2, "Building match URL array 🔗");
+
     await step_2_write_wrestler_match_url_array(
       ctx.paths.wrestler_list_csv,
       ctx.paths.url_array_js,
@@ -172,6 +194,8 @@ async function main() {
       limit,
       loop_start,
       config.wrestling_season,
+      config.track_wrestling_category,
+      config.gender,
       ctx.page,
       ctx.browser,
       ctx.context,
@@ -182,12 +206,24 @@ async function main() {
 
     log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
   } else log_step_skip(3, "match history");
+  
+    // === STEP 7 ===
+  if (step_flags.step_7) {
+    const start = Date.now();
+    log_step_start(7, "Start Loading Data to Google Cloud & Bigquery 🔗");
+
+    await execute_load_data_to_bigquery("wrestler");
+    
+    log_step_success(7, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
+  } else log_step_skip(7, "Load Data to Google Cloud & Bigquery 🔗");
 
   // === STEP 9 ===
   if (step_flags.step_9) {
     const start = Date.now();
     log_step_start(9, "Closing Chrome DevTools 🧹");
+
     await step_9_close_chrome_dev(ctx.browser, ctx.context);
+
     log_step_success(9, "Browser closed successfully", Date.now() - start);
   } else log_step_skip(9, "close browser");
 
