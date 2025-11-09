@@ -1,12 +1,12 @@
 USE wrestling_stats;
--- DROP TABLE `wrestler_list`;
+-- DROP TABLE `wrestler_list_scrape_data`;
 -- DROP TABLE `wrestler_match_history`;
 
-SELECT * FROM wrestler_list ORDER BY id LIMIT 60;
-SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list; -- COUNT RECORDS
-SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_list GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
-SELECT * FROM wrestler_list WHERE gender IN ("F") ORDER BY name; -- CHECK FOR GIRLS
-SELECT * FROM wrestler_list WHERE wrestler_id IN ("30579778132");
+SELECT * FROM wrestler_list_scrape_data ORDER BY id LIMIT 60;
+SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data; -- COUNT RECORDS
+SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_list_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
+SELECT * FROM wrestler_list_scrape_data WHERE gender IN ("F") ORDER BY name; -- CHECK FOR GIRLS
+SELECT * FROM wrestler_list_scrape_data WHERE wrestler_id IN ("30579778132");
 
 SELECT * FROM wrestler_match_history LIMIT 10;
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history; -- COUNT RECORDS

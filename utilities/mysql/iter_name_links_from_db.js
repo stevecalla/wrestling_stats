@@ -7,7 +7,7 @@ export async function count_rows_in_db_wrestler_links(wrestling_season, gender) 
   const [rows] = await pool.query(
     `SELECT 
       COUNT(*) AS cnt 
-    FROM wrestler_list 
+    FROM wrestler_list_scrape_data 
     WHERE 1 = 1
       AND name_link IS NOT NULL AND name_link <> ''
       AND wrestling_season = "${wrestling_season}"
@@ -36,7 +36,7 @@ export async function* iter_name_links_from_db({
   const link_query = `
       SELECT 
         id, name_link
-      FROM wrestler_list
+      FROM wrestler_list_scrape_data
       WHERE 1 = 1
         AND name_link IS NOT NULL AND name_link <> ''
         AND wrestling_season = "${wrestling_season}"

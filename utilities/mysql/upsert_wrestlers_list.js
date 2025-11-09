@@ -9,7 +9,7 @@ async function ensure_table() {
   const pool = await get_pool();
 
   const sql = `
-    CREATE TABLE IF NOT EXISTS wrestler_list (
+    CREATE TABLE IF NOT EXISTS wrestler_list_scrape_data (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       -- SELECTION CRITERIA
@@ -166,7 +166,7 @@ export async function upsert_wrestlers_list(rows, meta) {
     });
 
     const sql = `
-      INSERT INTO wrestler_list (${cols.join(",")})
+      INSERT INTO wrestler_list_scrape_data (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
         -- If either unique key hits (by wrestler_id or composite), update these fields:

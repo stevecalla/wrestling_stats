@@ -294,8 +294,8 @@ Step 5: format strings like JS
         ) AS opponent_name
     FROM step_5_format s5
         LEFT JOIN wrestler_match_history h ON h.id = s5.id
-        LEFT JOIN wrestler_list l ON l.wrestler_id = s5.wrestler_id
-        LEFT JOIN wrestler_list o ON o.wrestler_id = h.opponent_id
+        LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s5.wrestler_id
+        LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = h.opponent_id
 )
 
 , step_7_opponent_team AS (
@@ -316,8 +316,8 @@ Step 5: format strings like JS
         ) AS opponent_team
     FROM step_6_opponent_name s6
     LEFT JOIN wrestler_match_history h ON h.id = s6.id
-    LEFT JOIN wrestler_list l ON l.wrestler_id = s6.wrestler_id
-    LEFT JOIN wrestler_list o ON o.wrestler_id = s6.opponent_id
+    LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s6.wrestler_id
+    LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s6.opponent_id
 )
 
 -- 1) Clean display names (strip trailing "(...)" and suffixes)
@@ -439,7 +439,7 @@ SELECT
   h.page_url, h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
 
 FROM step_9_winner s9
-    LEFT JOIN wrestler_list l ON l.wrestler_id = s9.wrestler_id
+    LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
     LEFT JOIN wrestler_match_history h ON h.id = s9.id
 
 ORDER BY s9.wrestler_id, s9.id
