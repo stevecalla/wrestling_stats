@@ -22,12 +22,12 @@ const data_options = {
     // csv_folder_name: "bigquery",
     // table_ids: ["wrestler_list", "wrestler_match_history"],
     get_data: [
-      {
-          file_name: `wrestler_list`,
-          directory_name: `${directory_prefix}_list`,
-          query: wrestler_list_query,
-          table_ids: ["wrestler_list"],
-      },
+      // {
+      //     file_name: `wrestler_list`,
+      //     directory_name: `${directory_prefix}_list`,
+      //     query: wrestler_list_query,
+      //     table_ids: ["wrestler_list"],
+      // },
       {
           file_name: `wrestler_match_history`,
           directory_name: `${directory_prefix}_match_history_data`,

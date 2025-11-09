@@ -118,7 +118,7 @@ async function execute_retrieve_data(options, iteration) {
     
         do {
             const sql = typeof query === 'function' ? await query(retrieval_batch_size, offset) : query;
-            console.log(`sql query = `, sql);
+            // console.log(`sql query = `, sql);
 
             // Create export directory if needed
             const directory_path = await create_directory(directory_name);
@@ -156,13 +156,13 @@ async function execute_retrieve_data(options, iteration) {
                 rowsReturned = retrieval_batch_size;
             }
 
-            // offset += retrieval_batch_size;
+            offset += retrieval_batch_size;
             batchCounter++;
 
             await trigger_garbage_collection();
 
-        } while (batchCounter < 1);  //testing
-        // } while (rowsReturned > 0);
+        // } while (batchCounter < 1);  //testing
+        } while (rowsReturned > 0);
 
         stop_timer(`0_get_data`);
 
