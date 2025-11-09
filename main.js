@@ -21,9 +21,9 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 // ====================================================
 const step_flags = {
   step_0: true,  // 🚀 launch chrome
-  step_1: true,  // 📄 get wrestler list
+  step_1: false,  // 📄 get wrestler list
   step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
-  step_3: false,  // 🏟️ get match history
+  step_3: true,  // 🏟️ get match history
   step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
 
   step_7: false, // load data into Google cloud / bigquery
@@ -59,7 +59,7 @@ const config = {
   alpha_list_limit_full: 30,
 
   // Step #3 config
-  matches_page_limit_test: 150,
+  matches_page_limit_test: 5,
   matches_page_limit_full: 10000,
   step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
 };
@@ -124,7 +124,7 @@ async function main() {
       output_dir,
       wrestler_list_csv: path.join(input_dir,  `wrestler_list_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
       url_array_js:      path.join(input_dir,  `wrestler_match_urls_${adjusted_season}_${adjusted_gender}.js`),
-      match_csv:         path.join(output_dir, `tw_matches_full_${adjusted_season}_${adjusted_gender}.csv`),
+      match_csv:         path.join(output_dir, `wrestler_match_history_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
     },
     browser: null,
     page: null,

@@ -9,7 +9,7 @@ async function ensure_table() {
   const pool = await get_pool();
 
   const sql = `
-    CREATE TABLE IF NOT EXISTS wrestler_match_history (
+    CREATE TABLE IF NOT EXISTS wrestler_match_history_scrape_data (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       wrestling_season VARCHAR(32)  NOT NULL,
@@ -188,7 +188,7 @@ export async function upsert_wrestler_match_history(rows, meta) {
     });
 
     const sql = `
-      INSERT INTO wrestler_match_history (${cols.join(",")})
+      INSERT INTO wrestler_match_history_scrape_data (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
         wrestling_season      = VALUES(wrestling_season),

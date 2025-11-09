@@ -21,7 +21,7 @@ WITH base AS (
         TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' '))             AS raw_details,
         LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
         
-    FROM wrestler_match_history h
+    FROM wrestler_match_history_scrape_data h
     -- WHERE h.wrestler_id IN (29790065132, 30579778132)
     -- ORDER BY here forces a sort; remove it in a CTE for speed; step 4 partions by wrestler id over the id to ensure correct order for record calc
     -- ORDER BY h.id, h.start_date
@@ -293,7 +293,7 @@ Step 5: format strings like JS
         END
         ) AS opponent_name
     FROM step_5_format s5
-        LEFT JOIN wrestler_match_history h ON h.id = s5.id
+        LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s5.id
         LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s5.wrestler_id
         LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = h.opponent_id
 )
@@ -315,7 +315,7 @@ Step 5: format strings like JS
         END
         ) AS opponent_team
     FROM step_6_opponent_name s6
-    LEFT JOIN wrestler_match_history h ON h.id = s6.id
+    LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s6.id
     LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s6.wrestler_id
     LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s6.opponent_id
 )
@@ -440,7 +440,7 @@ SELECT
 
 FROM step_9_winner s9
     LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
-    LEFT JOIN wrestler_match_history h ON h.id = s9.id
+    LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
 
 ORDER BY s9.wrestler_id, s9.id
 ;
