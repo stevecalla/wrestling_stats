@@ -5,16 +5,22 @@ WITH base AS (
         h.id,
         h.wrestling_season,
         h.track_wrestling_category,
+
         h.wrestler_id,
         h.wrestler        AS wrestler_name,
+
         h.opponent_id,
+
+        h.event,
         h.start_date,
         h.end_date,
-        h.event,
+
         h.weight_category,
+
         -- normalize once
         TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' '))             AS raw_details,
         LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
+        
     FROM wrestler_match_history h
     -- WHERE h.wrestler_id IN (29790065132, 30579778132)
     -- ORDER BY here forces a sort; remove it in a CTE for speed; step 4 partions by wrestler id over the id to ensure correct order for record calc

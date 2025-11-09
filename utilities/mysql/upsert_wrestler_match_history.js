@@ -61,6 +61,14 @@ async function ensure_table() {
         opponent(120)
       ),
       KEY idx_wrestler_id_start (wrestler_id, start_date),
+      KEY idx_wmh_wrestler_season (wrestler_id, wrestling_season),
+      KEY idx_wmh_season_cat (wrestling_season, track_wrestling_category, wrestler_id),
+      KEY idx_wmh_date (start_date),
+      
+      /* INDEXES for running totals and season-based queries */
+      KEY idx_wmh_season_wrestler_id (wrestling_season, wrestler_id, id),
+      KEY idx_wmh_season_wrestler_start (wrestling_season, wrestler_id, start_date),
+
       PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `;

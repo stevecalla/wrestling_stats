@@ -13,9 +13,7 @@ SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id),
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_match_history GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
 
 SELECT * FROM wrestler_match_history WHERE wrestler_id IN ('29790065132') ORDER BY id, start_date;
-
 SELECT * FROM wrestler_match_history WHERE id IN (189, 239, 399);
-
 SELECT wrestler, wrestler_school, opponent, opponent_school, opponent_id, raw_details FROM wrestler_match_history history;
 
 -- Normalize to compare “logical” duplicates regardless of NULL/unknown/case/space
