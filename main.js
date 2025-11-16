@@ -91,7 +91,6 @@ function format_duration(ms) {
     .toString()
     .padStart(2, "0")}`;
 }
-
 function log_step_start(n, msg) {
   console.log(color_text(`${step_icons[n] || "🔹"}  Step #${n}: ${msg}`, "cyan"));
 }
