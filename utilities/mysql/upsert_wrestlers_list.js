@@ -51,8 +51,9 @@ async function ensure_table() {
 
       -- Hybrid uniqueness:
       UNIQUE KEY uk_wrestler (wrestling_season, wrestler_id),
-      UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
+      -- UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
 
+      KEY idx_alpha (wrestling_season, last_name_prefix, grade, level, name, team)
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
       PRIMARY KEY (id)
