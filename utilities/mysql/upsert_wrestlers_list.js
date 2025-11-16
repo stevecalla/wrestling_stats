@@ -46,14 +46,14 @@ async function ensure_table() {
       created_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       updated_at_mtn     DATETIME     NOT NULL,
-      -- updated_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       updated_at_utc  DATETIME      NOT NULL,          -- *** CHANGED: removed ON UPDATE CURRENT_TIMESTAMP
 
       -- Hybrid uniqueness:
       UNIQUE KEY uk_wrestler (wrestling_season, wrestler_id),
-      -- UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
 
-      KEY idx_alpha (wrestling_season, last_name_prefix, grade, level, name, team)
+      -- UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
+      KEY idx_alpha (wrestling_season, last_name_prefix, grade, level, name, team),
+      
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
       PRIMARY KEY (id)
