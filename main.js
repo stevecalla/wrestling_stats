@@ -21,10 +21,10 @@ import { step_9_close_chrome_dev } from "./src/step_9_close_chrome_developer.js"
 // ====================================================
 const step_flags = {
   step_0: true,  // 🚀 launch chrome
-  step_1: false,  // 📄 get wrestler list
+  step_1: true,  // 📄 get wrestler list
   step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
-  step_3: true,  // 🏟️ get match history
-  
+  step_3: false,  // 🏟️ get match history
+
   step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
 
   step_7: false, // load data into Google cloud / bigquery

@@ -1,6 +1,6 @@
 USE wrestling_stats;
 -- DROP TABLE `wrestler_list_scrape_data`;
-DROP TABLE `wrestler_match_history_scrape_data`;
+-- DROP TABLE `wrestler_match_history_scrape_data`;
 
 -- ============================
 -- wrestler list

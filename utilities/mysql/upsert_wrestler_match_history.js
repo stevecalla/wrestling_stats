@@ -13,6 +13,15 @@ function normalize_raw_details(s) {
     .toLowerCase();                      // optional: make case-insensitive
 }
 
+// Minimal MM/DD/YYYY → YYYY-MM-DD (or return null if malformed)
+function to_mysql_date(mdy) {
+  if (!mdy) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(mdy);
+  if (!m) return null;
+  const [, mm, dd, yyyy] = m;
+  return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
 async function ensure_table() {
   if (_ensured) return;
   const pool = await get_pool();
@@ -68,15 +77,6 @@ async function ensure_table() {
   `;
   await pool.query(sql);
   _ensured = true;
-}
-
-// Minimal MM/DD/YYYY → YYYY-MM-DD (or return null if malformed)
-function to_mysql_date(mdy) {
-  if (!mdy) return null;
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(mdy);
-  if (!m) return null;
-  const [, mm, dd, yyyy] = m;
-  return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 
 /**
@@ -186,7 +186,6 @@ export async function upsert_wrestler_match_history(rows, meta) {
 
         start_date         = VALUES(start_date),
         end_date           = VALUES(end_date),
-
 
         event              = VALUES(event),
         weight_category    = VALUES(weight_category),
