@@ -22,6 +22,7 @@ WITH base AS (
         LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
         
     FROM wrestler_match_history_scrape_data h
+
     -- WHERE h.wrestler_id IN (29790065132, 30579778132)
     -- ORDER BY here forces a sort; remove it in a CTE for speed; step 4 partions by wrestler id over the id to ensure correct order for record calc
     -- ORDER BY h.id, h.start_date
@@ -162,71 +163,6 @@ step_3_outcome_detail AS (
 /* -------------------------
 Step 4: running record per match (W/L/T) + varsity-only running record
 -------------------------- */
-
--- , step_4_running_record AS (
---     SELECT
---         m.*,
-
---         /* running ALL-matches record (counts_in_record = 1) */
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_all_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_all_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_all_run,
-
---         /* running VARSITY-only record */
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_var_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_var_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_var_run
---     FROM step_3_outcome_detail m
--- ),
-
--- , step_4_running_record AS (
---     SELECT
---         m.*,
-
---         /* running ALL-matches record (counts_in_record = 1) */
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_all_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_all_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_all_run,
-
---         /* running VARSITY-only record */
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_var_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_var_run,
-
---         SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
---         OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
---                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_var_run
---     FROM step_3_outcome_detail m
--- )
-
 , step_4_running_record AS (
   SELECT
     m.*,
@@ -395,7 +331,7 @@ Step 5: format strings like JS
 
 -- final select uses the CTE result
 SELECT
-  s9.id,
+  h.id,
   s9.wrestling_season,
   s9.track_wrestling_category,
   l.governing_body,
@@ -436,11 +372,14 @@ SELECT
   
   s9.record, s9.record_varsity,
   s9.raw_details,
-  h.page_url, h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
+  l.name_link, l.team_link, l.page_url,
+  
+  h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
 
 FROM step_9_winner s9
     LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
     LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
 
-ORDER BY s9.wrestler_id, s9.id
+ORDER BY h.id, h.wrestler_id
+-- s9.wrestler_id, s9.id
 ;

@@ -24,6 +24,7 @@ const step_flags = {
   step_1: false,  // 📄 get wrestler list
   step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
   step_3: true,  // 🏟️ get match history
+  
   step_4: false, // todo: reserved for get team list &/or team results (but should be able to use step 3)
 
   step_7: false, // load data into Google cloud / bigquery

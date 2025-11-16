@@ -2,12 +2,18 @@ USE wrestling_stats;
 -- DROP TABLE `wrestler_list_scrape_data`;
 -- DROP TABLE `wrestler_match_history_scrape_data`;
 
+-- ============================
+-- wrestler list
+-- ============================
 SELECT * FROM wrestler_list_scrape_data ORDER BY id LIMIT 60;
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data; -- COUNT RECORDS
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_list_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
 SELECT * FROM wrestler_list_scrape_data WHERE gender IN ("F") ORDER BY name; -- CHECK FOR GIRLS
+SELECT * FROM wrestler_list_scrape_data WHERE grade LIKE "%Senior%" ORDER BY id; -- CHECK FOR GIRLS
 SELECT * FROM wrestler_list_scrape_data WHERE wrestler_id IN ("30579778132");
-
+-- ============================
+-- wrestler match history
+-- ============================
 SELECT * FROM wrestler_match_history_scrape_data LIMIT 10;
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_data; -- COUNT RECORDS
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_match_history_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
@@ -36,5 +42,17 @@ GROUP BY 1,2,3,4,5,6
 HAVING ct > 1
 ORDER BY ct DESC, wrestler_id
 LIMIT 50;
+
+-- ============================
+-- wrestler match history
+-- ============================
+SELECT * FROM wrestler_list_2024_2025_boys_all LIMIT 10;
+SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_2024_2025_boys_all; -- COUNT RECORDS
+
+-- ============================
+-- wrestler match history
+-- ============================
+SELECT * FROM wrestler_match_history_2024_2025_boys_all LIMIT 10;
+SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history_2024_2025_boys_all; -- COUNT RECORDS
 
 
