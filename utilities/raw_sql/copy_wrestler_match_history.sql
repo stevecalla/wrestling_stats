@@ -67,7 +67,7 @@ INSERT INTO wrestler_list_scrape_data_2024_2025_boys_backup SELECT * FROM wrestl
 -- TRANSFER BACKUP TO WRESTLER LIST TABLE
 -- =================================
 TRUNCATE TABLE wrestler_list_scrape_data;
-INSERT INTO wrestler_list_scrape_data SELECT * FROM wrestler_list_2024_2025_boys_all;
+INSERT INTO wrestler_list_scrape_data SELECT * FROM wrestler_list_scrape_data_2024_2025_boys_backup;
 -- ================================
 -- OTHER STUFF
 -- ================================

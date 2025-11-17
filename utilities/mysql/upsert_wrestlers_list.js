@@ -183,8 +183,8 @@ export async function upsert_wrestlers_list(rows, meta) {
             WHEN NOT (
               wrestling_season         <=> VALUES(wrestling_season) AND
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              name_link                <=> VALUES(name_link) AND
-              team_link                <=> VALUES(team_link) AND
+              -- name_link                <=> VALUES(name_link) AND
+              -- team_link                <=> VALUES(team_link) AND
               wrestler_id              <=> VALUES(wrestler_id) AND
               team_id                  <=> VALUES(team_id) AND
               weight_class             <=> VALUES(weight_class) AND
@@ -208,8 +208,8 @@ export async function upsert_wrestlers_list(rows, meta) {
             WHEN NOT (
               wrestling_season         <=> VALUES(wrestling_season) AND
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              name_link                <=> VALUES(name_link) AND
-              team_link                <=> VALUES(team_link) AND
+              -- name_link                <=> VALUES(name_link) AND
+              -- team_link                <=> VALUES(team_link) AND
               wrestler_id              <=> VALUES(wrestler_id) AND
               team_id                  <=> VALUES(team_id) AND
               weight_class             <=> VALUES(weight_class) AND
