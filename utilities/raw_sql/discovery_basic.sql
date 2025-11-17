@@ -5,7 +5,8 @@ USE wrestling_stats;
 -- ============================
 -- wrestler list
 -- ============================
-SELECT * FROM wrestler_list_scrape_data ORDER BY id LIMIT 60;
+SELECT * FROM wrestler_list_scrape_data ORDER BY id DESC LIMIT 60;
+SELECT MAX(updated_at_mtn) FROM wrestler_list_scrape_data LIMIT 60;
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data; -- COUNT RECORDS
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_list_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
 
@@ -16,6 +17,10 @@ SELECT * FROM wrestler_list_scrape_data WHERE wrestler_id IN ("30579778132");
 -- wrestler match history
 -- ============================
 SELECT * FROM wrestler_match_history_scrape_data LIMIT 10;
+SELECT MAX(updated_at_mtn), FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_data GROUP BY 1 LIMIT 10;
+SELECT DATE_FORMAT(updated_at_mtn, '%Y-%m-%d'), FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_data GROUP BY 1 WITH ROLLUP;
+SELECT * FROM wrestler_match_history_scrape_data WHERE updated_at_mtn = MAX(updated_at_mtn) LIMIT 10;
+
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_data; -- COUNT RECORDS
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_match_history_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
 
@@ -47,13 +52,34 @@ LIMIT 50;
 -- ============================
 -- wrestler match history
 -- ============================
-SELECT * FROM wrestler_list_2024_2025_boys_all LIMIT 10;
-SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_2024_2025_boys_all; -- COUNT RECORDS
+SELECT * FROM wrestler_list_scrape_data_2024_2025_boys_backup LIMIT 10;
+SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data_2024_2025_boys_backup; -- COUNT RECORDS
 
 -- ============================
 -- wrestler match history
 -- ============================
-SELECT * FROM wrestler_match_history_2024_2025_boys_all LIMIT 10;
+SELECT * FROM wrestler_match_history_2024_2025_boys_all ORDER BY id DESC LIMIT 10;
+SELECT MAX(updated_at_mtn) FROM wrestler_match_history_2024_2025_boys_all LIMIT 10;
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history_2024_2025_boys_all; -- COUNT RECORDS
+
+-- ============================
+-- add match_order to wrestler_match_history_2024_2025_boys_all
+-- ============================
+ALTER TABLE wrestler_match_history_2024_2025_boys_all
+  ADD COLUMN match_order INT UNSIGNED NULL
+  AFTER round;
+  
+UPDATE wrestler_match_history_2024_2025_boys_all t
+JOIN (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY wrestler_id
+      ORDER BY id
+    ) AS match_order
+  FROM wrestler_match_history_2024_2025_boys_all
+) AS x
+  USING (id)
+SET t.match_order = x.match_order;
 
 

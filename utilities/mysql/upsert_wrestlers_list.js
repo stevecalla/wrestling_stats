@@ -175,27 +175,9 @@ export async function upsert_wrestlers_list(rows, meta) {
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
 
-        -- If either unique key hits (by wrestler_id or composite), update these fields:
-        wrestling_season      = VALUES(wrestling_season),
-        track_wrestling_category = VALUES(track_wrestling_category),
-        name_link             = VALUES(name_link),
-        team_link             = VALUES(team_link),
-        wrestler_id           = VALUES(wrestler_id),
-        team_id               = VALUES(team_id),
-        weight_class          = VALUES(weight_class),
-        gender                = VALUES(gender),
-        level                 = VALUES(level),
-        governing_body        = VALUES(governing_body),
-        record_text           = VALUES(record_text),
-        wins                  = VALUES(wins),
-        losses                = VALUES(losses),
-        matches               = VALUES(matches),
-        win_pct               = VALUES(win_pct),
-        page_url              = VALUES(page_url),
-        first_name            = VALUES(first_name),
-        last_name             = VALUES(last_name),
-
+        -- do NOT touch created_* on update:
         -- Only bump updated_* if any tracked column actually changed (NULL-safe)
+        -- updated_at_* must be listed first here / at the top of ths insert to detect the change
         updated_at_mtn =
           CASE
             WHEN NOT (
@@ -214,7 +196,6 @@ export async function upsert_wrestlers_list(rows, meta) {
               losses                   <=> VALUES(losses) AND
               matches                  <=> VALUES(matches) AND
               win_pct                  <=> VALUES(win_pct) AND
-              page_url                 <=> VALUES(page_url) AND
               first_name               <=> VALUES(first_name) AND
               last_name                <=> VALUES(last_name)
             )
@@ -240,13 +221,32 @@ export async function upsert_wrestlers_list(rows, meta) {
               losses                   <=> VALUES(losses) AND
               matches                  <=> VALUES(matches) AND
               win_pct                  <=> VALUES(win_pct) AND
-              page_url                 <=> VALUES(page_url) AND
               first_name               <=> VALUES(first_name) AND
               last_name                <=> VALUES(last_name)
             )
             THEN CURRENT_TIMESTAMP
             ELSE updated_at_utc
-          END
+          END,
+
+        -- If either unique key hits (by wrestler_id or composite), update these fields:
+        wrestling_season          = VALUES(wrestling_season),
+        track_wrestling_category  = VALUES(track_wrestling_category),
+        name_link                 = VALUES(name_link),
+        team_link                 = VALUES(team_link),
+        wrestler_id               = VALUES(wrestler_id),
+        team_id                   = VALUES(team_id),
+        weight_class              = VALUES(weight_class),
+        gender                    = VALUES(gender),
+        level                     = VALUES(level),
+        governing_body            = VALUES(governing_body),
+        record_text               = VALUES(record_text),
+        wins                      = VALUES(wins),
+        losses                    = VALUES(losses),
+        matches                   = VALUES(matches),
+        win_pct                   = VALUES(win_pct),
+        page_url                  = VALUES(page_url),
+        first_name                = VALUES(first_name),
+        last_name                 = VALUES(last_name)
     `;
 
     const [res] = await pool.query({ sql, values: params });

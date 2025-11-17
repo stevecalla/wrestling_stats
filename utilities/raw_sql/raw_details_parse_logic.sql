@@ -9,6 +9,7 @@ WITH base AS (
         h.wrestler_id,
         h.wrestler        AS wrestler_name,
 
+        h.match_order,
         h.opponent_id,
 
         h.event,
@@ -39,6 +40,7 @@ WITH base AS (
     b.track_wrestling_category,
     b.wrestler_id,
     b.wrestler_name,
+    b.match_order,
     b.event,
     b.start_date,
     b.raw_details,
@@ -169,33 +171,33 @@ Step 4: running record per match (W/L/T) + varsity-only running record
 
     /* running ALL-matches record (counts_in_record = 1) */
     SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_all_run,
 
     SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_all_run,
 
     SUM(CASE WHEN m.counts_in_record = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_all_run,
 
     /* total matches (for record running total) */
     SUM(CASE WHEN m.counts_in_record = 1 THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS total_matches,
 
     /* running VARSITY-only record */
     SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'W' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS wins_var_run,
 
     SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'L' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS losses_var_run,
 
     SUM(CASE WHEN m.counts_in_record = 1 AND m.is_varsity = 1 AND m.outcome = 'T' THEN 1 ELSE 0 END)
-      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.id
+      OVER (PARTITION BY m.wrestling_season, m.wrestler_id ORDER BY m.match_order, m.id
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ties_var_run
 
   FROM step_3_outcome_detail m
@@ -349,6 +351,7 @@ SELECT
 
   h.event, h.start_date, h.end_date, h.weight_category,
 
+  s9.match_order,
   s9.opponent_id,
   s9.opponent_name, 
   s9.opponent_first_name,
@@ -380,6 +383,9 @@ FROM step_9_winner s9
     LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
     LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
 
-ORDER BY h.id, h.wrestler_id
--- s9.wrestler_id, s9.id
+ORDER BY
+  s9.wrestling_season,
+  s9.wrestler_id,
+  s9.match_order,     -- primary sequence
+  h.id;               -- tiebreaker
 ;

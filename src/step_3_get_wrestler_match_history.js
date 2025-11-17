@@ -69,6 +69,135 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 /* ------------------------------------------
    extractor_source runs in the page (frame) context
 -------------------------------------------*/
+// function extractor_source() {
+//   return () => {
+//     // === basic helper ===
+//     const norm = (s) =>
+//       (s || "")
+//         .normalize("NFKD")
+//         .replace(/[\u0300-\u036f]/g, "")
+//         .replace(/\s+/g, " ")
+//         .trim();
+
+//     const to_date = (y, m, d) => {
+//       const yy = +y < 100 ? +y + 2000 : +y;
+//       const dt = new Date(yy, +m - 1, +d);
+//       return isNaN(+dt) ? null : dt;
+//     };
+
+//     const fmt_mdy = (d) => {
+//       if (!(d instanceof Date) || isNaN(+d)) return "";
+//       const mm = String(d.getMonth() + 1).padStart(2, "0");
+//       const dd = String(d.getDate()).padStart(2, "0");
+//       const yy = String(d.getFullYear());
+//       return `${mm}/${dd}/${yy}`;
+//     };
+
+//     const parse_date_range_text = (raw) => {
+//       const t = norm(raw);
+//       if (!t) return { start_date: "", end_date: "" };
+
+//       // A: MM/DD - MM/DD/YYYY
+//       let m =
+//         t.match(
+//           /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+//         );
+//       if (m) {
+//         const [, m1, d1, m2, d2, y2] = m;
+//         const start_obj = to_date(y2, m1, d1);
+//         const end_obj = to_date(y2, m2, d2);
+//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
+//       }
+
+//       // B: MM/DD/YYYY - MM/DD/YYYY
+//       m =
+//         t.match(
+//           /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+//         );
+//       if (m) {
+//         const [, m1, d1, y1, m2, d2, y2] = m;
+//         const start_obj = to_date(y1, m1, d1);
+//         const end_obj = to_date(y2, m2, d2);
+//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
+//       }
+
+//       // C: MM/DD/YYYY
+//       m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+//       if (m) {
+//         const [, mm, dd, yy] = m;
+//         const d = to_date(yy, mm, dd);
+//         return { start_date: fmt_mdy(d), end_date: "" };
+//       }
+
+//       // fallback: first full date token
+//       m = t.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+//       if (m) {
+//         const [token] = m;
+//         const [mm, dd, yy] = token.split(/[\/\-]/);
+//         const d = to_date(yy, mm, dd);
+//         return { start_date: fmt_mdy(d), end_date: "" };
+//       }
+
+//       return { start_date: "", end_date: "" };
+//     };
+
+//     // current wrestler context (from dropdown)
+//     const sel = document.querySelector("#wrestler");
+//     const sel_opt =
+//       sel?.selectedOptions?.[0] ||
+//       document.querySelector("#wrestler option[selected]");
+
+//     const wrestler_id = (sel_opt?.value || "").trim();
+//     const opt_text = norm(sel_opt?.textContent || "");
+//     const wrestler = opt_text.includes(" - ")
+//       ? opt_text.split(" - ").slice(1).join(" - ").trim()
+//       : opt_text;
+
+//     const rows = [];
+
+//     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
+//       const tds = tr.querySelectorAll("td");
+//       // “If this row does not have at least five cells, skip it because it’s not a data row.”
+//       if (tds.length < 5) continue;
+
+//       const date_raw = norm(tds[1]?.innerText);
+//       const { start_date, end_date } = parse_date_range_text(date_raw);
+
+//       const event_raw = norm(tds[2]?.innerText);
+//       const weight_raw = norm(tds[3]?.innerText);
+//       const details_cell = tds[4];
+//       const details_text_raw = norm(details_cell?.innerText);
+
+//       // opponent_id: first wrestlerId in the cell that is NOT the current wrestler_id
+//       let opponent_id = "";
+//       const link_nodes = Array.from(
+//         details_cell.querySelectorAll('a[href*="wrestlerId="]')
+//       );
+//       for (const a of link_nodes) {
+//         const href = a.getAttribute("href") || "";
+//         const m = href.match(/wrestlerId=(\d+)/);
+//         if (m && m[1] && m[1] !== wrestler_id) {
+//           opponent_id = m[1];
+//           break;
+//         }
+//       }
+
+//       rows.push({
+//         wrestler_id,
+//         wrestler,
+//         start_date,
+//         end_date,
+//         event: event_raw,
+//         weight_category: weight_raw,
+//         opponent_id,
+//         raw_details: details_text_raw,
+//       });
+//     }
+
+//     return rows;
+//   };
+// }
+
 function extractor_source() {
   return () => {
     // === basic helper ===
@@ -154,10 +283,10 @@ function extractor_source() {
       : opt_text;
 
     const rows = [];
+    let match_order = 1;   // 👈 per wrestler-page order
 
     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
       const tds = tr.querySelectorAll("td");
-      // “If this row does not have at least five cells, skip it because it’s not a data row.”
       if (tds.length < 5) continue;
 
       const date_raw = norm(tds[1]?.innerText);
@@ -168,7 +297,6 @@ function extractor_source() {
       const details_cell = tds[4];
       const details_text_raw = norm(details_cell?.innerText);
 
-      // opponent_id: first wrestlerId in the cell that is NOT the current wrestler_id
       let opponent_id = "";
       const link_nodes = Array.from(
         details_cell.querySelectorAll('a[href*="wrestlerId="]')
@@ -183,20 +311,25 @@ function extractor_source() {
       }
 
       rows.push({
+        page_url: location.href,
         wrestler_id,
         wrestler,
         start_date,
         end_date,
         event: event_raw,
         weight_category: weight_raw,
+        match_order,         // 👈 store the order
         opponent_id,
         raw_details: details_text_raw,
       });
+
+      match_order += 1;      // 👈 increment for next row
     }
 
     return rows;
   };
 }
+
 
 /* ------------------------------------------
    main orchestrator (DB-backed)
