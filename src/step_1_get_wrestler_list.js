@@ -252,6 +252,40 @@ function extractor_source() {
     //  - "Last, First Middle" → last = "Last", first = "First"
     //  - "First Middle Last"  → last = last token (keeps hyphens, "de la", etc. naïvely)
     //  - "Boyd Thomas (Roman)" → parenthetical removed, yields first="Boyd", last="Thomas"
+    // function parse_name(full) {
+    //   const cleaned = clean_display_name(full);
+    //   if (!cleaned) return { first_name: null, last_name: null };
+
+    //   // Case 1: "Last, First …"
+    //   if (cleaned.includes(",")) {
+    //     const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+    //     const rest = restRaw || "";
+    //     const first = rest.split(/\s+/)[0] || null;
+    //     return { first_name: first || null, last_name: last || null };
+    //   }
+
+    //   // Case 2: "First … Last"
+    //   const parts = cleaned.split(/\s+/).filter(Boolean);
+    //   if (parts.length === 1) {
+    //     // only one token left → assume it's a last name
+    //     return { first_name: null, last_name: parts[0] || null };
+    //   }
+
+    //   // Optional: light support for multi-word last-name particles (van, de, da, del, de la, di, du, von)
+    //   // If the penultimate token is a common particle, attach it to the last token.
+    //   const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
+    //   let first = parts[0];
+    //   let last = parts[parts.length - 1];
+    //   const penult = parts[parts.length - 2]?.toLowerCase();
+
+    //   if (particles.has(penult)) {
+    //     last = parts.slice(parts.length - 2).join(" ");
+    //     if (parts.length > 2) first = parts[0]; // keep simple "First"
+    //   }
+
+    //   return { first_name: first || null, last_name: last || null };
+    // }
+
     function parse_name(full) {
       const cleaned = clean_display_name(full);
       if (!cleaned) return { first_name: null, last_name: null };
@@ -264,15 +298,23 @@ function extractor_source() {
         return { first_name: first || null, last_name: last || null };
       }
 
-      // Case 2: "First … Last"
+      // ---------- NEW RULE ----------
+      // If the cleaned name has exactly ONE space → simple First Last
+      const spaceCount = (cleaned.split(" ").filter(Boolean).length - 1);
+      if (spaceCount === 1) {
+        const [first, last] = cleaned.split(" ").filter(Boolean);
+        return { first_name: first || null, last_name: last || null };
+      }
+      // --------------------------------
+
+      // Case 2: "First … Last" (multi-token)
       const parts = cleaned.split(/\s+/).filter(Boolean);
       if (parts.length === 1) {
-        // only one token left → assume it's a last name
+        // only one token → assume it's a last name
         return { first_name: null, last_name: parts[0] || null };
       }
 
-      // Optional: light support for multi-word last-name particles (van, de, da, del, de la, di, du, von)
-      // If the penultimate token is a common particle, attach it to the last token.
+      // Optional: support for multi-word last-name particles
       const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
       let first = parts[0];
       let last = parts[parts.length - 1];
@@ -280,7 +322,7 @@ function extractor_source() {
 
       if (particles.has(penult)) {
         last = parts.slice(parts.length - 2).join(" ");
-        if (parts.length > 2) first = parts[0]; // keep simple "First"
+        if (parts.length > 2) first = parts[0];
       }
 
       return { first_name: first || null, last_name: last || null };

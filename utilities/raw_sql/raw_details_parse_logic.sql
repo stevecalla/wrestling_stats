@@ -24,9 +24,14 @@ WITH base AS (
         
     FROM wrestler_match_history_scrape_data h
 
-    -- WHERE h.wrestler_id IN (29790065132, 30579778132)
-    -- ORDER BY here forces a sort; remove it in a CTE for speed; step 4 partions by wrestler id over the id to ensure correct order for record calc
-    -- ORDER BY h.id, h.start_date
+    WHERE 1 = 1
+        -- AND h.wrestler_id IN (29790065132, 30579778132)
+
+    ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
+        
+    LIMIT 15 OFFSET 0
+    -- LIMIT ${limit_size} OFFSET ${offset_size}
+
 )
 -- SELECT * FROM base;
 
@@ -59,11 +64,17 @@ WITH base AS (
         ELSE NULL
     END AS result,
 
-    /* SCORE DETAILS (paren strip, with bye) */
+    /* SCORE DETAILS (last (...) group, with bye) */
     CASE
+        WHEN REGEXP_LIKE(b.lower_raw, ' vs. ') THEN 'vs. no winner info' -- contains "vs.", "VS.", 
         WHEN REGEXP_LIKE(b.lower_raw, 'received a bye') THEN 'Bye'
-        ELSE TRIM(REGEXP_REPLACE(REGEXP_SUBSTR(b.raw_details, '\\([^)]*\\)$'), '[()]', ''))
+        WHEN INSTR(b.raw_details, '(') = 0 THEN NULL
+        ELSE TRIM(
+            TRAILING ')' FROM
+            SUBSTRING_INDEX(b.raw_details, '(', -1)
+            )
     END AS score_details,
+
 
     /* Precompute positions and slices for outcome W/L */
     INSTR(b.lower_raw, ' over ') AS pos_over,
@@ -240,21 +251,31 @@ Step 5: format strings like JS
     SELECT
         s6.*,
         COALESCE(
-        o.team,
-        CASE
-            WHEN s6.result = 'bye' OR s6.opponent_id IS NULL OR INSTR(h.raw_details,' over ') = 0 THEN NULL
-            /* our wrestler on LEFT → opponent is RIGHT: grab text inside parentheses on right side */
-            WHEN INSTR(LOWER(SUBSTRING_INDEX(h.raw_details,' over ',1)), LOWER(l.name)) > 0
-            THEN TRIM(REGEXP_REPLACE(REGEXP_SUBSTR(SUBSTRING(h.raw_details, INSTR(h.raw_details,' over ')+6), '\\([^)]*\\)'),'[()]',''))
-            /* our wrestler on RIGHT → opponent is LEFT: grab text inside parentheses on left side */
-            WHEN INSTR(LOWER(SUBSTRING(h.raw_details, INSTR(h.raw_details,' over ')+6)), LOWER(l.name)) > 0
-            THEN TRIM(REGEXP_REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(h.raw_details,' over ',1), '\\([^)]*\\)'),'[()]',''))
-            ELSE NULL
-        END
+          o.team,
+          CASE
+            WHEN s6.result = 'bye'
+                 OR s6.opponent_id IS NULL
+                 OR s6.opponent_name IS NULL
+                 OR LOCATE(s6.opponent_name, h.raw_details) = 0
+            THEN NULL
+            ELSE
+              TRIM(
+                REGEXP_REPLACE(
+                  REGEXP_SUBSTR(
+                    SUBSTRING(
+                      h.raw_details,
+                      LOCATE(s6.opponent_name, h.raw_details) + CHAR_LENGTH(s6.opponent_name)
+                    ),
+                    '\\([^)]*\\)'
+                  ),
+                  '[()]',
+                  ''
+                )
+              )
+          END
         ) AS opponent_team
     FROM step_6_opponent_name s6
     LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s6.id
-    LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s6.wrestler_id
     LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s6.opponent_id
 )
 
@@ -264,9 +285,6 @@ Step 5: format strings like JS
         s7.*,
         TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s7.wrestler_name, '\\s*\\([^)]*\\)\\s*$', ''), '\\s*,?\\s*(Jr\\.?|Sr\\.?|II|III|IV|V|VI)\\s*$', '')) AS w_clean,
         TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s7.opponent_name, '\\s*\\([^)]*\\)\\s*$', ''), '\\s*,?\\s*(Jr\\.?|Sr\\.?|II|III|IV|V|VI)\\s*$', '')) AS o_clean
-
-        -- TRIM(REGEXP_REPLACE(s7.wrestler_name, '\\s*\\([^)]*\\)\\s*$', '')) AS w_clean,
-        -- TRIM(REGEXP_REPLACE(s7.opponent_name, '\\s*\\([^)]*\\)\\s*$', '')) AS o_clean
 
     FROM step_7_opponent_team s7
 )
@@ -280,12 +298,14 @@ Step 5: format strings like JS
         TRIM(SUBSTRING(x.w_clean, 1,
             CHAR_LENGTH(x.w_clean) - CHAR_LENGTH(x.w_last) - CASE WHEN CHAR_LENGTH(x.w_clean) > CHAR_LENGTH(x.w_last) THEN 1 ELSE 0 END
         )) AS wrestler_first_name,
+
         x.w_last AS wrestler_last_name,
 
         /* final opponent names */
         TRIM(SUBSTRING(x.o_clean, 1,
             CHAR_LENGTH(x.o_clean) - CHAR_LENGTH(x.o_last) - CASE WHEN CHAR_LENGTH(x.o_clean) > CHAR_LENGTH(x.o_last) THEN 1 ELSE 0 END
         )) AS opponent_first_name,
+
         x.o_last AS opponent_last_name
 
     FROM (
@@ -340,8 +360,15 @@ SELECT
 
   s9.wrestler_id,
   l.name                    AS wrestler_name,
-  s9.wrestler_first_name,
-  s9.wrestler_last_name,
+  l.first_name              AS wrestler_first_name,
+  last_name                 AS wrestler_last_name,
+  -- CASE
+  --     -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
+  --     WHEN (LENGTH(l.name) - LENGTH(REPLACE(l.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
+  --     -- fallback to stored last_name
+  --    ELSE l.last_name
+  -- END AS wrestler_last_name,
+  
   l.gender                  AS wrestler_gender,
 
   l.team        AS wrestler_team,
@@ -353,10 +380,37 @@ SELECT
 
   s9.match_order,
   s9.opponent_id,
-  s9.opponent_name, 
-  s9.opponent_first_name,
-  s9.opponent_last_name,
-  s9.opponent_team, 
+  o.name                    AS opponent_name, 
+
+  CASE
+    WHEN o.first_name IS NOT NULL THEN o.first_name
+    WHEN s9.opponent_first_name IS NOT NULL AND s9.opponent_first_name <> '' THEN s9.opponent_first_name
+    -- Fallback: derive from opponent_name if split failed
+    WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN SUBSTRING_INDEX(s9.opponent_name, ' ', 1)
+    ELSE NULL
+  END AS opponent_first_name,
+        
+  CASE
+    -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
+    -- WHEN (LENGTH(o.name) - LENGTH(REPLACE(o.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
+    WHEN o.last_name IS NOT NULL THEN o.last_name
+    WHEN s9.opponent_last_name IS NOT NULL AND s9.opponent_last_name <> '' THEN s9.opponent_last_name
+    -- Fallback: derive from opponent_name if split failed
+    WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN SUBSTRING_INDEX(s9.opponent_name, ' ', -1)
+    ELSE NULL
+  END AS opponent_last_name,
+  o.gender AS opponent_gender,
+
+  -- o.team    AS opponent_team, 
+  CASE
+    WHEN o.team IS NOT NULL THEN o.team
+    WHEN s9.opponent_team IS NOT NULL AND CHAR_LENGTH(s9.opponent_team) > 3 THEN s9.opponent_team
+    -- WHEN s9.opponent_team IS NOT NULL THEN s9.opponent_team
+    ELSE NULL
+  END AS opponent_team,
+  o.team_id     AS opponent_team_id,
+  o.grade       AS opponent_grade,
+  o.level       AS opponent_level,
 
   s9.winner_id,
   s9.winner_name,
@@ -368,7 +422,7 @@ SELECT
   ROUND(
     CASE WHEN s9.total_matches > 0
         THEN s9.wins_all_run / s9.total_matches * 100
-        ELSE NULL END, 1
+        ELSE NULL END, 3
   ) AS total_matches_win_pct,
 
   s9.wins_var_run, s9.losses_var_run, s9.ties_var_run,
@@ -382,6 +436,7 @@ SELECT
 FROM step_9_winner s9
     LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
     LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
+    LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s9.opponent_id
 
 ORDER BY
   s9.wrestling_season,

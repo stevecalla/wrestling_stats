@@ -46,7 +46,7 @@ async function ensure_table() {
       created_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       updated_at_mtn     DATETIME     NOT NULL,
-      updated_at_utc  DATETIME      NOT NULL,          -- *** CHANGED: removed ON UPDATE CURRENT_TIMESTAMP
+      updated_at_utc     DATETIME      NOT NULL,          -- *** CHANGED: removed ON UPDATE CURRENT_TIMESTAMP
 
       -- Hybrid uniqueness:
       UNIQUE KEY uk_wrestler (wrestling_season, wrestler_id),
