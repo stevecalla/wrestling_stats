@@ -33,33 +33,33 @@ import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
 // 🧩 STEP TOGGLES todo:
 // ====================================================
 const step_flags = {
-  step_0: false,  // 🚀 launch chrome
+  step_0:  false,  // 🚀 launch chrome
 
   // MATCH LIST
-  step_1: false,  // 📄 get wrestler list
+  step_1:  false,  // 📄 get wrestler list
 
   // OLD url list source; now pulled from step 3
   // step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
 
   // MATCH HISTORY
-  step_3: false,  // 🏟️ get match history
-  step_4: false, // 📄 create match history metrics
+  step_3:  false,  // 🏟️ get match history
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5: false, // create team division
-  step_6: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7: false, // append team division to match history metrics
-  step_8: false, // append team division to wrestler list
+  step_5:  true, // create team division
+  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  true, // append team division to match history metrics
+  step_8:  true, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9: false, // create 2024-25 state qualifier list
+  step_9:  true, // create 2024-25 state qualifier list
   step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data) --todo:
 
-  step_11: false, // append state qualifier to match history metrics
-  step_12: false, // append state qualifier to wrestler list
+  step_11: true, // append state qualifier to match history metrics
+  step_12: true, // append state qualifier to wrestler list
 
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: false, // load data into Google cloud / bigquery
+  step_14: true, // load data into Google cloud / bigquery
 
   step_15: false,  // 🧹 close browser
 };

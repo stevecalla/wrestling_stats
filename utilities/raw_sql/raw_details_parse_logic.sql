@@ -502,11 +502,11 @@ SELECT
   l.governing_body,
 
   s9.wrestler_id,
-  l.name                    AS wrestler_name,
-  l.first_name              AS wrestler_first_name,
-  l.last_name               AS wrestler_last_name,
+  l.name            AS wrestler_name,
+  l.first_name      AS wrestler_first_name,
+  l.last_name       AS wrestler_last_name,
   
-  l.gender                  AS wrestler_gender,
+  l.gender          AS wrestler_gender,
 
   l.team        AS wrestler_team,
   l.team_id     AS wrestler_team_id,
