@@ -208,3 +208,74 @@ GROUP BY state_tournament_place WITH ROLLUP
 ORDER BY state_tournament_place
 ;
 
+-- **************************
+-- check append to match history table
+-- **************************
+SELECT * FROM wrestler_match_history_metrics_data LIMIT 10;
+-- check the counts
+SELECT
+    wrestler_state_tournament_place,
+
+    COUNT(DISTINCT CASE WHEN wrestler_grade = 'HS Freshman'  THEN wrestler_id END) AS freshman,
+    COUNT(DISTINCT CASE WHEN wrestler_grade = 'HS Sophomore' THEN wrestler_id END) AS sophomore,
+    COUNT(DISTINCT CASE WHEN wrestler_grade = 'HS Junior'    THEN wrestler_id END) AS junior,
+    COUNT(DISTINCT CASE WHEN wrestler_grade = 'HS Senior'    THEN wrestler_id END) AS senior,
+
+    COUNT(DISTINCT wrestler_id) AS total
+
+FROM wrestler_match_history_metrics_data
+WHERE wrestler_state_tournament_place IS NOT NULL
+GROUP BY wrestler_state_tournament_place WITH ROLLUP
+ORDER BY wrestler_state_tournament_place
+;
+
+SELECT
+    opponent_state_tournament_place,
+
+    COUNT(DISTINCT CASE WHEN opponent_grade = 'HS Freshman'  THEN opponent_id END) AS freshman,
+    COUNT(DISTINCT CASE WHEN opponent_grade = 'HS Sophomore' THEN opponent_id END) AS sophomore,
+    COUNT(DISTINCT CASE WHEN opponent_grade = 'HS Junior'    THEN opponent_id END) AS junior,
+    COUNT(DISTINCT CASE WHEN opponent_grade = 'HS Senior'    THEN opponent_id END) AS senior,
+
+    COUNT(DISTINCT opponent_id) AS total
+
+FROM wrestler_match_history_metrics_data
+WHERE opponent_state_tournament_place IS NOT NULL
+GROUP BY opponent_state_tournament_place WITH ROLLUP
+ORDER BY opponent_state_tournament_place
+;
+
+-- ALTER TABLE wrestler_match_history_metrics_data
+--   DROP COLUMN wrestler_is_state_tournament_qualifier,
+--   DROP COLUMN wrestler_state_tournament_place,
+--   DROP COLUMN opponent_is_state_tournament_qualifier,
+--   DROP COLUMN opponent_state_tournament_place
+-- ;
+
+-- **************************
+-- check append to wrestler list table
+-- **************************
+SELECT * FROM wrestler_list_scrape_data LIMIT 10;
+SELECT * FROM wrestler_list_scrape_data WHERE wrestler_state_tournament_place IS NOT NULL LIMIT 10;
+-- check the counts
+SELECT
+    wrestler_state_tournament_place,
+
+    COUNT(DISTINCT CASE WHEN grade = 'HS Freshman'  THEN wrestler_id END) AS freshman,
+    COUNT(DISTINCT CASE WHEN grade = 'HS Sophomore' THEN wrestler_id END) AS sophomore,
+    COUNT(DISTINCT CASE WHEN grade = 'HS Junior'    THEN wrestler_id END) AS junior,
+    COUNT(DISTINCT CASE WHEN grade = 'HS Senior'    THEN wrestler_id END) AS senior,
+
+    COUNT(DISTINCT wrestler_id) AS total
+
+FROM wrestler_list_scrape_data
+WHERE wrestler_state_tournament_place IS NOT NULL
+GROUP BY wrestler_state_tournament_place WITH ROLLUP
+ORDER BY wrestler_state_tournament_place
+;
+
+-- ALTER TABLE wrestler_list_scrape_data
+--   DROP COLUMN wrestler_is_state_tournament_qualifier,
+--   DROP COLUMN wrestler_state_tournament_place
+-- ;
+

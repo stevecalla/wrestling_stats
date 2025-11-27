@@ -1,4 +1,4 @@
-// src\step_8_append_team_division_to_wreslter_list.js
+// src/step_12_append_state_qualifier_to_wrestler_list.js
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -14,11 +14,11 @@ async function ensure_team_columns(pool) {
   const alters = [
     `
       ALTER TABLE wrestler_list_scrape_data
-        ADD COLUMN team_division VARCHAR(255) NULL AFTER team_id
+        ADD COLUMN wrestler_is_state_tournament_qualifier VARCHAR(50) NULL AFTER win_pct
     `,
     `
       ALTER TABLE wrestler_list_scrape_data
-        ADD COLUMN team_region VARCHAR(255) NULL AFTER team_division
+        ADD COLUMN wrestler_state_tournament_place VARCHAR(50) NULL AFTER wrestler_is_state_tournament_qualifier
     `,
   ];
 
@@ -35,7 +35,7 @@ async function ensure_team_columns(pool) {
   }
 }
 
-async function step_8_append_team_division_to_wrestler_list() {
+async function step_12_append_state_qualifier_to_wrestler_list() {
   const pool = await get_pool();
 
   // 1) Ensure columns exist (safe to run multiple times)
@@ -53,15 +53,15 @@ async function step_8_append_team_division_to_wrestler_list() {
   const sql = `
     UPDATE wrestler_list_scrape_data l
 
-    -- JOIN for wrestler team
-    LEFT JOIN wrestler_team_division_reference r_w ON  r_w.wrestler_team_id         = l.team_id
+    -- JOIN for wrestler
+    LEFT JOIN wrestler_state_qualifier_and_place_reference r_w ON  r_w.wrestler_id         = l.wrestler_id
       AND r_w.wrestling_season         = l.wrestling_season
       AND r_w.track_wrestling_category = l.track_wrestling_category
 
     SET
       -- wrestler team fields
-      l.team_division = r_w.team_division,
-      l.team_region   = r_w.team_region,
+      l.wrestler_is_state_tournament_qualifier = r_w.is_state_tournament_qualifier,
+      l.wrestler_state_tournament_place   = r_w.state_tournament_place,
 
       -- timestamps
       l.updated_at_mtn         = ?,
@@ -69,17 +69,16 @@ async function step_8_append_team_division_to_wrestler_list() {
   `;
 
   const [result] = await pool.query(sql, [updated_at_mtn, updated_at_utc]);
-  // await pool.query(sql, [updated_at_mtn, updated_at_utc]);
 
   console.log(
-    "team division/region updates complete 🔗",
+    "state qualifier & place updates complete 🔗",
     "affectedRows =", result.affectedRows,
     "changedRows =", result.changedRows
   );
 
-  console.log("team division/region updates complete 🔗");
+  console.log("state qualifier & place updates complete 🔗");
 }
 
-// await step_8_append_team_division_to_wrestler_list();
+// await step_12_append_state_qualifier_to_wrestler_list();
 
-export { step_8_append_team_division_to_wrestler_list };
+export { step_12_append_state_qualifier_to_wrestler_list };

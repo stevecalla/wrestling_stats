@@ -1,4 +1,4 @@
-// src/step_7_append_team_division_to_match_metrics.js
+// src/step_11_append_state_qualifier_to_match_metrics.js
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -14,19 +14,19 @@ async function ensure_team_columns(pool) {
   const alters = [
     `
       ALTER TABLE wrestler_match_history_metrics_data
-        ADD COLUMN wrestler_is_state_tournament_qualifier VARCHAR(255) NULL AFTER raw_details
+        ADD COLUMN wrestler_is_state_tournament_qualifier VARCHAR(50) NULL AFTER raw_details
     `,
     `
       ALTER TABLE wrestler_match_history_metrics_data
-        ADD COLUMN wrestler_state_tournament_place VARCHAR(255) NULL AFTER wrestler_is_state_tournament_qualifier
+        ADD COLUMN wrestler_state_tournament_place VARCHAR(50) NULL AFTER wrestler_is_state_tournament_qualifier
     `,
     `
       ALTER TABLE wrestler_match_history_metrics_data
-        ADD COLUMN opponent_is_state_tournament_qualifier VARCHAR(255) NULL AFTER opponent_team_id
+        ADD COLUMN opponent_is_state_tournament_qualifier VARCHAR(50) NULL AFTER wrestler_state_tournament_place
     `,
     `
       ALTER TABLE wrestler_match_history_metrics_data
-        ADD COLUMN opponent_state_tournament_place VARCHAR(255) NULL AFTER opponent_is_state_tournament_qualifier
+        ADD COLUMN opponent_state_tournament_place VARCHAR(50) NULL AFTER opponent_is_state_tournament_qualifier
     `,
   ];
 
@@ -43,7 +43,7 @@ async function ensure_team_columns(pool) {
   }
 }
 
-async function step_7_append_team_division_to_match_metrics() {
+async function step_11_append_state_qualifier_to_match_metrics() {
   const pool = await get_pool();
 
   // 1) Ensure columns exist (safe to run multiple times)
@@ -61,26 +61,24 @@ async function step_7_append_team_division_to_match_metrics() {
   const sql = `
     UPDATE wrestler_match_history_metrics_data m
 
-    -- JOIN for wrestler team (main athlete)
-    LEFT JOIN wrestler_team_division_reference r_w
-      ON  r_w.wrestler_team_id         = m.wrestler_team_id
+    -- JOIN for wrestler
+    LEFT JOIN wrestler_state_qualifier_and_place_reference r_w ON  r_w.wrestler_id         = m.wrestler_id
       AND r_w.wrestling_season         = m.wrestling_season
       AND r_w.track_wrestling_category = m.track_wrestling_category
 
-    -- JOIN for opponent team
-    LEFT JOIN wrestler_team_division_reference r_o
-      ON  r_o.wrestler_team_id         = m.opponent_team_id
+    -- JOIN for opponent
+    LEFT JOIN wrestler_state_qualifier_and_place_reference r_o ON  r_o.wrestler_id         = m.opponent_id
       AND r_o.wrestling_season         = m.wrestling_season
       AND r_o.track_wrestling_category = m.track_wrestling_category
 
     SET
       -- wrestler team fields
-      m.wrestler_team_division = r_w.team_division,
-      m.wrestler_team_region   = r_w.team_region,
+      m.wrestler_is_state_tournament_qualifier = r_w.is_state_tournament_qualifier,
+      m.wrestler_state_tournament_place   = r_w.state_tournament_place,
 
       -- opponent team fields
-      m.opponent_team_division = r_o.team_division,
-      m.opponent_team_region   = r_o.team_region,
+      m.opponent_is_state_tournament_qualifier = r_o.is_state_tournament_qualifier,
+      m.opponent_state_tournament_place   = r_o.state_tournament_place,
 
       -- timestamps
       m.updated_at_mtn         = ?,
@@ -90,14 +88,14 @@ async function step_7_append_team_division_to_match_metrics() {
   const [result] = await pool.query(sql, [updated_at_mtn, updated_at_utc]);
 
   console.log(
-    "team division/region updates complete 🔗",
+    "state qualifier & place updates complete 🔗",
     "affectedRows =", result.affectedRows,
     "changedRows =", result.changedRows
   );
 
-  console.log("team division/region updates complete 🔗");
+  console.log("state qualifier & place updates complete 🔗");
 }
 
-// await step_7_append_team_division_to_match_metrics();
+// await step_11_append_state_qualifier_to_match_metrics();
 
-export { step_7_append_team_division_to_match_metrics };
+export { step_11_append_state_qualifier_to_match_metrics };

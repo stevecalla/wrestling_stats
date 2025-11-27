@@ -96,4 +96,7 @@ ORDER BY 1
 ;
 
 SELECT * FROM wrestler_team_division_reference;
+SELECT * FROM wrestler_team_division_reference WHERE wrestler_team_id = 1596622147;
+SELECT * FROM wrestler_team_division_reference WHERE team_division = "unknown";
+SELECT wrestler_team, COUNT(*) AS count FROM wrestler_team_division_reference GROUP BY 1 HAVING count >= 1 ORDER BY 1;
 SELECT team, COUNT(*) AS count FROM wrestler_list_scrape_data GROUP BY team ORDER BY count DESC;

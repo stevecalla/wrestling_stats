@@ -9,6 +9,7 @@ import { execute_load_bigquery_database } from "./step_4_load_biq_query_database
 import { wrestler_list_query } from "../queries/query_wrestler_list.js";
 import { wrestler_match_history_query } from "../queries/query_wrestler_match_history.js";
 import { wrestler_team_division_reference } from "../queries/query_wrestler_team_division_reference.js";
+import { wrestler_state_qualifier_and_place_reference } from "../queries/query_wrestler_state_qualifier_and_place_reference.js";
 
 const run_step_1 = true;  // execute_retrieve_data
 const run_step_2 = true;  // execute_upload_csv_to_cloud
@@ -37,9 +38,15 @@ const data_options = {
       },
       {
           file_name: `wrestler_team_division_reference`,
-          directory_name: `${directory_prefix}_ wrestler_team_division_reference`,
+          directory_name: `${directory_prefix}_wrestler_team_division_reference`,
           query:  wrestler_team_division_reference,
           table_ids: ["wrestler_team_division_reference"],
+      },
+      {
+          file_name: `wrestler_state_qualifier_and_place_reference`,
+          directory_name: `${directory_prefix}_wrestler_state_qualifier_and_place_reference`,
+          query:  wrestler_state_qualifier_and_place_reference,
+          table_ids: ["wrestler_state_qualifier_and_place_reference"],
       },
     ],
   },

@@ -16,13 +16,17 @@ import { step_4_create_wrestler_match_history_data } from "./src/step_4_create_w
 import { step_5_create_team_division_data } from "./src/step_5_create_team_division_data.js";
 import { step_6_append_team_division_updates } from "./src/step_6_append_team_division_data.js"; // ad hoc updates for missing records
 import { step_7_append_team_division_to_match_metrics } from "./src/step_7_append_team_division_to_match_metrics.js";
+import { step_8_append_team_division_to_wrestler_list } from "./src/step_8_append_team_division_to_wreslter_list.js";
 
-import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 12 load google cloud & bigquery
+import { step_9_create_state_qualfier_reference } from "./src/step_9_create_state_qualfier_reference.js";
+import { step_11_append_state_qualifier_to_match_metrics } from "./src/step_11_append_state_qualifier_to_match_metrics.js";
+import { step_12_append_state_qualifier_to_wrestler_list } from "./src/step_12_append_state_qualifier_to_wrestler_list.js";
+
+import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 14 load google cloud & bigquery
 
 import { step_15_close_chrome_dev } from "./src/step_15_close_chrome_developer.js";
 
 import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
-import { step_8_append_team_division_to_wrestler_list } from "./src/step_8_append_team_division_to_wreslter_list.js";
 
 // ====================================================
 // 🧩 STEP TOGGLES todo:
@@ -42,12 +46,19 @@ const step_flags = {
 
   // CREATE TEAM REGION / DIVISION
   step_5: false, // create team division
-  step_6: false, // append team division to table; // ad hoc updates for missing records
+  step_6: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
   step_7: false, // append team division to match history metrics
   step_8: false, // append team division to wrestler list
 
+  // CREATE 2024-25 STATE QUALIFIER LIST
+  step_9: false, // create 2024-25 state qualifier list
+  // step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+
+  step_11: false, // append state qualifier to match history metrics
+  step_12: false, // append state qualifier to wrestler list
+
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_12: true, // load data into Google cloud / bigquery
+  step_14: false, // load data into Google cloud / bigquery
 
   step_15: false,  // 🧹 close browser
 };
@@ -278,16 +289,49 @@ async function main() {
       log_step_success(8, `Append team division updates to wrestler list`, Date.now() - start);
     } else log_step_skip(8, "Append team division updates to wrestler list");
 
-    // === STEP 12 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    // === STEP 9 CREATE STATE QUALIFIER PLACE REFERENCE ===
+    if (step_flags.step_9) {
+      const start = Date.now();
+
+      log_step_start(9,  "Start creating state qualifier place reference 🔗");
+
+      await step_9_create_state_qualfier_reference();
+
+      log_step_success(9, `Create state qualifier place reference`, Date.now() - start);
+    } else log_step_skip(9, "Create state qualifier place reference");
+    
+    // === STEP 11 APPEND STATE QUALIFIER & PLACE TO MATCH HISTORY ===
+    if (step_flags.step_11) {
+      const start = Date.now();
+
+      log_step_start(11,  "Start append state qualifier & place updates to match history 🔗");
+
+      await step_11_append_state_qualifier_to_match_metrics();
+
+      log_step_success(11, `Append state qualifier & place updates to match history`, Date.now() - start);
+    } else log_step_skip(11, "Append state qualifier & place updates to match history");
+    
+    // === STEP 12 APPEND STATE QUALIFIER & PLACE TO WRESTLER LIST ===
     if (step_flags.step_12) {
       const start = Date.now();
 
-      log_step_start(12, "Start Loading Data to Google Cloud & Bigquery 🔗");
+      log_step_start(12,  "Start append state qualifier & place updates to wrestler list 🔗");
+
+      await step_12_append_state_qualifier_to_wrestler_list();
+
+      log_step_success(12, `Append state qualifier & place updates to wrestler list`, Date.now() - start);
+    } else log_step_skip(12, "Append state qualifier & place updates to wrestler list");
+
+    // === STEP 14 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    if (step_flags.step_14) {
+      const start = Date.now();
+
+      log_step_start(14, "Start Loading Data to Google Cloud & Bigquery 🔗");
 
       await execute_load_data_to_bigquery("wrestler");
 
-      log_step_success(12, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
-    } else log_step_skip(12, "Load Data to Google Cloud & Bigquery 🔗");
+      log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
+    } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
 
     // === STEP 15 CLOSE BROWSER ===
     if (step_flags.step_15) {
