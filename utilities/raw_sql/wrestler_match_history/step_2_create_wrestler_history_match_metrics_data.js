@@ -53,6 +53,7 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
             -- AND h.wrestler_id IN (29790065132, 30579778132)
             -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
             -- AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
+            -- AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
 
         ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
     )
@@ -389,16 +390,16 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
         SELECT
             s5.*,
             h.opponent_id,
-            COALESCE(
-            o.name,
-            CASE
-                WHEN s5.result = 'bye' OR h.opponent_id IS NULL OR INSTR(h.raw_details, ' over ') = 0 THEN NULL
-                WHEN INSTR(LOWER(SUBSTRING_INDEX(h.raw_details, ' over ', 1)), LOWER(l.name)) > 0
-                THEN TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING(h.raw_details, INSTR(h.raw_details, ' over ') + 6), ' (', 1), ' - ', -1))
-                WHEN INSTR(LOWER(SUBSTRING(h.raw_details, INSTR(h.raw_details, ' over ') + 6)), LOWER(l.name)) > 0
-                THEN TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(h.raw_details, ' over ', 1), ' (', 1), ' - ', -1))
-                ELSE NULL
-            END
+            COALESCE(   
+                o.name,
+                CASE
+                    WHEN s5.result = 'bye' OR h.opponent_id IS NULL OR INSTR(h.raw_details, ' over ') = 0 THEN NULL
+                    WHEN INSTR(LOWER(SUBSTRING_INDEX(h.raw_details, ' over ', 1)), LOWER(l.name)) > 0
+                        THEN TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING(h.raw_details, INSTR(h.raw_details, ' over ') + 6), ' (', 1), ' - ', -1))
+                    WHEN INSTR(LOWER(SUBSTRING(h.raw_details, INSTR(h.raw_details, ' over ') + 6)), LOWER(l.name)) > 0
+                        THEN TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(h.raw_details, ' over ', 1), ' (', 1), ' - ', -1))
+                    ELSE NULL
+                END
             ) AS opponent_name
         FROM step_5_format s5
             LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s5.id
@@ -527,13 +528,7 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
       s9.wrestler_id,
       l.name                    AS wrestler_name,
       l.first_name              AS wrestler_first_name,
-      l.last_name              AS wrestler_last_name,
-      -- CASE
-      --     -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
-      --     WHEN (LENGTH(l.name) - LENGTH(REPLACE(l.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
-      --     -- fallback to stored last_name
-      --     ELSE l.last_name
-      -- END AS wrestler_last_name,
+      l.last_name              AS wrestler_last_name,,
 
       l.gender                  AS wrestler_gender,
 
@@ -546,7 +541,12 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
 
       s9.match_order,
       s9.opponent_id,
-      o.name AS opponent_name, 
+
+      CASE
+          WHEN o.name IS NOT NULL THEN o.name
+          WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN s9.opponent_name
+          ELSE NULL
+      END AS opponent_name,
 
       CASE
           WHEN o.first_name IS NOT NULL THEN o.first_name
@@ -565,17 +565,17 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
           WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN SUBSTRING_INDEX(s9.opponent_name, ' ', -1)
           ELSE NULL
       END AS opponent_last_name,
-      o.gender AS opponent_gender,
+
+      o.gender AS opponent_gender, -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
  
       CASE
         WHEN o.team IS NOT NULL THEN o.team
         WHEN s9.opponent_team IS NOT NULL AND CHAR_LENGTH(s9.opponent_team) > 3 THEN s9.opponent_team
         ELSE NULL
       END AS opponent_team,
-
-      o.team_id     AS opponent_team_id,
-      o.grade       AS opponent_grade,
-      o.level       AS opponent_level,
+      o.team_id     AS opponent_team_id,    -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
+      o.grade       AS opponent_grade,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
+      o.level       AS opponent_level,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
 
       s9.winner_id,
       s9.winner_name,
@@ -599,8 +599,8 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
       h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
 
     FROM step_9_winner s9
-        LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
         LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
+        LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
         LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s9.opponent_id
 
     ORDER BY
