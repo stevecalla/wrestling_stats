@@ -57,8 +57,6 @@ async function step_4_create_wrestler_match_history_data(config) {
     create_table_query = await query_create_wrestler_match_history_metrics_table(table_name);
     get_data_query = step_2_create_wrestler_history_match_metrics_data;
 
-    // await execute_transfer_data_between_tables(batch_size, table_name, create_table_query, get_data_query, QUERY_OPTIONS);
-
     const LIMIT_SIZE = 1000;
     count = is_not_test ? count : 1; // NOTE: only run loop once is_not_test = false
 

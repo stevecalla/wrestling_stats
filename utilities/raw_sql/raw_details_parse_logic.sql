@@ -31,11 +31,12 @@ WITH base AS (
         -- AND h.wrestler_id IN (29790065132, 30579778132)
         -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
         -- AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
-        AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
+        -- AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
+        AND h.wrestler_id IN ('30586917132') -- issue with max match labeling
 
     ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
         
-    LIMIT 15 OFFSET 0
+    LIMIT 100 OFFSET 0
     -- LIMIT ${limit_size} OFFSET ${offset_size}
 
 )
@@ -507,18 +508,20 @@ Step 5: format strings like JS
       -- Priority-based final match order:
       -- 1st Place Match → 3rd Place Match → 5th Place Match → max(match_order)
       COALESCE(
-        MAX(CASE WHEN s9.round LIKE '%1st Place Match%' THEN s9.match_order END)
+        MAX(CASE WHEN s9.round LIKE '%1st Place Match%' AND s9.event LIKE '%State Championships%' THEN s9.match_order END)
           OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
 
-        MAX(CASE WHEN s9.round LIKE '%3rd Place Match%' THEN s9.match_order END)
+        MAX(CASE WHEN s9.round LIKE '%3rd Place Match%' AND s9.event LIKE '%State Championships%' THEN s9.match_order END)
           OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
 
-        MAX(CASE WHEN s9.round LIKE '%5th Place Match%' THEN s9.match_order END)
+        MAX(CASE WHEN s9.round LIKE '%5th Place Match%' AND s9.event LIKE '%State Championships%' THEN s9.match_order END)
           OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
 
         MAX(s9.match_order)
           OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id)
-      ) AS final_match_order
+
+      ) AS max_state_place_match_order
+
     FROM step_9_winner s9
   )
   SELECT
@@ -531,20 +534,23 @@ Step 5: format strings like JS
 
     -- "State placement" final flag (1st/3rd/5th place) based on the priority logic
     CASE
-      WHEN r.match_order = r.final_match_order
-           AND (
-             r.round LIKE '%1st Place Match%'
-             OR r.round LIKE '%3rd Place Match%'
-             OR r.round LIKE '%5th Place Match%'
-           )
-      THEN 1
-      ELSE 0
+        WHEN 
+            r.event LIKE '%State Championships%'
+            AND 
+            (
+                r.round LIKE '%1st Place Match%'
+                OR r.round LIKE '%3rd Place Match%'
+                OR r.round LIKE '%5th Place Match%'
+                OR r.match_order = r.max_state_place_match_order
+            )
+        THEN 1
+        ELSE 0
     END AS is_final_match_state,
 
-    -- Overall final flag using the priority-based final_match_order
+    -- Overall final flag using the priority-based max_state_place_match_order
     CASE
-      WHEN r.match_order = r.final_match_order THEN 1 ELSE 0
-    END AS is_final_match
+      WHEN r.match_order = r.max_state_place_match_order THEN 1 ELSE 0
+    END AS is_final_match_by_state_place
   FROM ranked r
 )
 
@@ -627,11 +633,11 @@ SELECT
   l.name_link, l.team_link, l.page_url,
 
 -- MAX MATCH FIELDS TO FILTER TO FINAL RECORD
-  s10.max_match_order,         -- highest match_order the wrestler had (raw sequence max)
-  s10.is_final_match_by_order, -- 1 = wrestler’s last match by pure match_order, regardless of round/placement
-  s10.is_final_match_state,    -- 1 = match was a placement match (1st/3rd/5th Place), chosen by priority logic
-  s10.final_match_order,       -- prioritized final match order (1st → 3rd → 5th → fallback to max(match_order))
-  s10.is_final_match,          -- 1 = this is the final match for the wrestler/season using priority logic
+  s10.max_match_order,                      -- highest match_order the wrestler had (raw sequence max)
+  s10.is_final_match_by_order,              -- 1 = wrestler’s last match by pure match_order, regardless of round/placement
+  s10.is_final_match_state,                 -- 1 = match was a placement match (1st/3rd/5th Place), chosen by priority logic
+  s10.max_state_place_match_order,          -- prioritized final match order (1st → 3rd → 5th → fallback to max(match_order))
+  s10.is_final_match_by_state_place,        -- 1 = this is the final match for the wrestler/season using priority logic
 
   h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
 

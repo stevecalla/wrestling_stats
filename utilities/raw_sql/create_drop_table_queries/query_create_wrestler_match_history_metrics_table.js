@@ -69,11 +69,11 @@ const id_fields = `
   
 
   -- NEW COLUMNS you can filter on
-  max_match_order           INT,
-  is_final_match_by_order   INT,
-  is_final_match_state      INT,
-  final_match_order         INT,
-  is_final_match            INT,
+  max_match_order                 INT,
+  is_final_match_by_order         INT,
+  is_final_match_state            INT,
+  max_state_place_match_order     INT,
+  is_final_match_by_state_place   INT,
 
   -- TIMESTAMPS
   created_at_mtn            DATETIME,
