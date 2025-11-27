@@ -29,18 +29,18 @@ const data_options = {
           query: wrestler_list_query,
           table_ids: [`wrestler_list_scrape_data`],
       },
-      // {
-      //     file_name: `wrestler_match_history_metrics_data`,
-      //     directory_name: `${directory_prefix}_match_history_data`,
-      //     query: wrestler_match_history_query,
-      //     table_ids: ["wrestler_match_history_metrics_data"],
-      // },
-      // {
-      //     file_name: `wrestler_team_division_reference`,
-      //     directory_name: `${directory_prefix}_ wrestler_team_division_reference`,
-      //     query:  wrestler_team_division_reference,
-      //     table_ids: ["wrestler_team_division_reference"],
-      // },
+      {
+          file_name: `wrestler_match_history_metrics_data`,
+          directory_name: `${directory_prefix}_match_history_data`,
+          query: wrestler_match_history_query,
+          table_ids: ["wrestler_match_history_metrics_data"],
+      },
+      {
+          file_name: `wrestler_team_division_reference`,
+          directory_name: `${directory_prefix}_ wrestler_team_division_reference`,
+          query:  wrestler_team_division_reference,
+          table_ids: ["wrestler_team_division_reference"],
+      },
     ],
   },
 };

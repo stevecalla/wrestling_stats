@@ -7,7 +7,9 @@ WITH base AS (
         h.track_wrestling_category,
 
         h.wrestler_id,
-        h.wrestler        AS wrestler_name,
+        h.wrestler                                  AS wrestler_name,
+        SUBSTRING_INDEX(l.team, ',', 1)             AS wrestler_team, -- removed the ", CO" from team name for comparsion in step 2
+        l.team_id                                   AS wrestler_team_id,
 
         h.match_order,
         h.opponent_id,
@@ -23,9 +25,12 @@ WITH base AS (
         LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
         
     FROM wrestler_match_history_scrape_data h
+        LEFT JOIN wrestler_list_scrape_data AS l ON h.wrestler_id = l.wrestler_id
 
     WHERE 1 = 1
         -- AND h.wrestler_id IN (29790065132, 30579778132)
+        -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
+        AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
 
     ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
         
@@ -51,8 +56,40 @@ WITH base AS (
     b.raw_details,
 
     /* ROUND (simple: text before first ' - ' unless looks like a name '(') */
+    -- CASE
+    --     WHEN INSTR(b.raw_details, ' - ') = 0 THEN NULL
+    --     WHEN INSTR(TRIM(SUBSTRING_INDEX(b.raw_details, ' - ', 1)), '(') > 0 THEN NULL
+    --     ELSE TRIM(SUBSTRING_INDEX(b.raw_details, ' - ', 1))
+    -- END AS round,
+
+    /* ROUND:
+   - Normally: text before first ' - ', unless it looks like a name '('
+   - If first segment is just a level label (Varsity/JV/etc.), use second segment instead
+    */
     CASE
+        WHEN b.raw_details IS NULL OR b.raw_details = '' THEN NULL
         WHEN INSTR(b.raw_details, ' - ') = 0 THEN NULL
+
+        -- If first piece is a level label (e.g. 'Varsity'), take the second segment as the round
+        WHEN LOWER(TRIM(SUBSTRING_INDEX(b.raw_details, ' - ', 1))) IN ('varsity','jv','junior varsity','exhibition','scrimmage')
+            AND INSTR(
+                TRIM(
+                    SUBSTRING_INDEX(
+                    SUBSTRING_INDEX(b.raw_details, ' - ', 2),  -- first two segments
+                    ' - ',
+                    -1                                         -- the second segment
+                    )
+                ),
+                '('
+                ) = 0
+        THEN TRIM(
+            SUBSTRING_INDEX(
+                SUBSTRING_INDEX(b.raw_details, ' - ', 2),
+                ' - ',
+                -1
+            )
+        )
+        -- Otherwise, use the first segment as before, unless it looks like a name
         WHEN INSTR(TRIM(SUBSTRING_INDEX(b.raw_details, ' - ', 1)), '(') > 0 THEN NULL
         ELSE TRIM(SUBSTRING_INDEX(b.raw_details, ' - ', 1))
     END AS round,
@@ -75,7 +112,6 @@ WITH base AS (
             )
     END AS score_details,
 
-
     /* Precompute positions and slices for outcome W/L */
     INSTR(b.lower_raw, ' over ') AS pos_over,
     CASE
@@ -89,28 +125,127 @@ WITH base AS (
         ELSE NULL
     END AS after_over,
 
+    -- new code
     /* Name checks (lower once) */
     LOWER(b.wrestler_name) AS me_name_lower,
+    
+    /* me_before: full-name OR (last-name + team) OR (team-only) match before ' over ' */
     CASE
-        WHEN INSTR(b.lower_raw, ' over ') > 0 AND LOWER(b.wrestler_name) <> ''
-        THEN (INSTR(
-                CASE WHEN INSTR(b.lower_raw, ' over ') > 0
-                    THEN SUBSTRING(b.lower_raw, 1, INSTR(b.lower_raw, ' over ') - 1)
-                    ELSE ''
-                END, LOWER(b.wrestler_name)
-            ) > 0)
+        WHEN INSTR(b.lower_raw, ' over ') > 0 AND LOWER(b.wrestler_name) <> '' THEN
+            (
+                -- 1) Original logic: full wrestler_name match
+                INSTR(
+                    CASE
+                        WHEN INSTR(b.lower_raw, ' over ') > 0
+                        THEN SUBSTRING(b.lower_raw, 1, INSTR(b.lower_raw, ' over ') - 1)
+                        ELSE ''
+                    END,
+                    LOWER(b.wrestler_name)
+                ) > 0
+
+                OR
+
+                -- 2) Fallback: last name + team city/school, OR team-only
+                (
+                    -- define the slice once
+                    (
+                        INSTR(
+                            CASE
+                                WHEN INSTR(b.lower_raw, ' over ') > 0
+                                THEN SUBSTRING(b.lower_raw, 1, INSTR(b.lower_raw, ' over ') - 1)
+                                ELSE ''
+                            END,
+                            LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_name, ' ', -1))) -- last name
+                        ) > 0
+                        AND
+                        (
+                            LOWER(COALESCE(b.wrestler_team, '')) = ''          -- no team recorded
+                            OR INSTR(
+                                  CASE
+                                      WHEN INSTR(b.lower_raw, ' over ') > 0
+                                      THEN SUBSTRING(b.lower_raw, 1, INSTR(b.lower_raw, ' over ') - 1)
+                                      ELSE ''
+                                  END,
+                                  LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_team, ',', 1)))  -- 'trinidad', 'rocky mountain high school'
+                               ) > 0
+                        )
+                    )
+                    OR
+                    (
+                        -- team-only match (handles nicknames / spelling issues)
+                        LOWER(COALESCE(b.wrestler_team, '')) <> '' AND
+                        INSTR(
+                            CASE
+                                WHEN INSTR(b.lower_raw, ' over ') > 0
+                                THEN SUBSTRING(b.lower_raw, 1, INSTR(b.lower_raw, ' over ') - 1)
+                                ELSE ''
+                            END,
+                            LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_team, ',', 1)))
+                        ) > 0
+                    )
+                )
+            )
         ELSE 0
     END AS me_before,
+
+    /* me_after: full-name OR (last-name + team) OR (team-only) match after ' over ' */
     CASE
-        WHEN INSTR(b.lower_raw, ' over ') > 0 AND LOWER(b.wrestler_name) <> ''
-        THEN (INSTR(
-                CASE WHEN INSTR(b.lower_raw, ' over ') > 0
-                    THEN SUBSTRING(b.lower_raw, INSTR(b.lower_raw, ' over ') + 6)
-                    ELSE ''
-                END, LOWER(b.wrestler_name)
-            ) > 0)
+        WHEN INSTR(b.lower_raw, ' over ') > 0 AND LOWER(b.wrestler_name) <> '' THEN
+            (
+                -- 1) Original logic: full wrestler_name match
+                INSTR(
+                    CASE
+                        WHEN INSTR(b.lower_raw, ' over ') > 0
+                        THEN SUBSTRING(b.lower_raw, INSTR(b.lower_raw, ' over ') + 6)
+                        ELSE ''
+                    END,
+                    LOWER(b.wrestler_name)
+                ) > 0
+
+                OR
+
+                -- 2) Fallback: last name + team city/school, OR team-only
+                (
+                    (
+                        INSTR(
+                            CASE
+                                WHEN INSTR(b.lower_raw, ' over ') > 0
+                                THEN SUBSTRING(b.lower_raw, INSTR(b.lower_raw, ' over ') + 6)
+                                ELSE ''
+                            END,
+                            LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_name, ' ', -1))) -- last name
+                        ) > 0
+                        AND
+                        (
+                            LOWER(COALESCE(b.wrestler_team, '')) = ''          -- no team recorded
+                            OR INSTR(
+                                  CASE
+                                      WHEN INSTR(b.lower_raw, ' over ') > 0
+                                      THEN SUBSTRING(b.lower_raw, INSTR(b.lower_raw, ' over ') + 6)
+                                      ELSE ''
+                                  END,
+                                  LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_team, ',', 1)))
+                               ) > 0
+                        )
+                    )
+                    OR
+                    (
+                        -- team-only match
+                        LOWER(COALESCE(b.wrestler_team, '')) <> '' AND
+                        INSTR(
+                            CASE
+                                WHEN INSTR(b.lower_raw, ' over ') > 0
+                                THEN SUBSTRING(b.lower_raw, INSTR(b.lower_raw, ' over ') + 6)
+                                ELSE ''
+                            END,
+                            LOWER(TRIM(SUBSTRING_INDEX(b.wrestler_team, ',', 1)))
+                        ) > 0
+                    )
+                )
+            )
         ELSE 0
     END AS me_after,
+    -- end of new code
 
     /* Cheap boolean flags (prefer LIKE/INSTR to REGEXP where possible) */
     (REGEXP_LIKE(b.lower_raw, '\\breceived a bye\\b') OR INSTR(b.lower_raw,' bye')>0) AS is_bye,
@@ -169,7 +304,14 @@ step_3_outcome_detail AS (
     END AS counts_in_record,
 
     /* is_varsity (simple prefix test on round) */
-    CASE WHEN REGEXP_LIKE(COALESCE(m.round,''), '^varsity', 'i') THEN 1 ELSE 0 END AS is_varsity
+    -- CASE WHEN REGEXP_LIKE(COALESCE(m.round,''), '^varsity', 'i') THEN 1 ELSE 0 END AS is_varsity
+
+    /* is_varsity: flag if raw_details contains 'varsity' anywhere (case-insensitive) */
+    CASE 
+        WHEN REGEXP_LIKE(COALESCE(m.raw_details, ''), 'varsity', 'i') THEN 1 
+        ELSE 0 
+    END AS is_varsity
+    
     FROM step_2_match_detail m
 )
 
@@ -361,11 +503,11 @@ SELECT
   s9.wrestler_id,
   l.name                    AS wrestler_name,
   l.first_name              AS wrestler_first_name,
-  last_name                 AS wrestler_last_name,
+  l.last_name               AS wrestler_last_name,
   -- CASE
   --     -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
   --     WHEN (LENGTH(l.name) - LENGTH(REPLACE(l.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
-  --     -- fallback to stored last_name
+  --     -- fallback to stored l.last_name
   --    ELSE l.last_name
   -- END AS wrestler_last_name,
   

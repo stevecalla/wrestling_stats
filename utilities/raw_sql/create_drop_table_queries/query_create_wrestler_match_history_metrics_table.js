@@ -51,7 +51,6 @@ const id_fields = `
   ties_all_run              INT,
   total_matches             INT,
 
-  -- total_matches_win_pct     DECIMAL(5,3),
   total_matches_win_pct     FLOAT,
 
   wins_var_run              INT, 

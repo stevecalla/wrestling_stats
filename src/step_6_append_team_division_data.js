@@ -44,7 +44,7 @@ async function step_6_append_team_division_updates() {
         AND track_wrestling_category = ?
       `,
       [
-        // order must mathc the order in the update query
+        // order must match the order in the update query
         team.team_division,
         team.team_region,
         updated_at_mtn,

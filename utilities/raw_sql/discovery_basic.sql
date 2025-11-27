@@ -84,4 +84,16 @@ JOIN (
   USING (id)
 SET t.match_order = x.match_order;
 
+-- ============================
+-- wrestler match history
+-- ============================
+SELECT * FROM wrestler_match_history_metrics_data ORDER BY id DESC LIMIT 10;
+SELECT MAX(updated_at_mtn) FROM wrestler_match_history_metrics_data LIMIT 10;
+SELECT * FROM wrestler_match_history_metrics_data WHERE wrestler_last_name LIKE "%salazar%" AND wrestler_first_name LIKE "%matthew%" ORDER BY match_order LIMIT 100;
+SELECT * FROM wrestler_match_history_metrics_data WHERE wrestler_id = '30213719132' ORDER BY match_order;
+SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_match_history_metrics_data; -- COUNT RECORDS
+
+
+
+
 
