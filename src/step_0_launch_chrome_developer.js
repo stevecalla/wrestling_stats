@@ -1,13 +1,14 @@
 // step_0_launch_chrome_developer.js (ESM, modular, cross-platform, saves profile at ~/chrome-tw-user-data)
-import dotenv from "dotenv";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
-
 import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
 import { chromium } from "playwright";
 
 // import all three launchers
