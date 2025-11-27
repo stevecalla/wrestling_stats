@@ -19,6 +19,7 @@ import { step_7_append_team_division_to_match_metrics } from "./src/step_7_appen
 import { step_8_append_team_division_to_wrestler_list } from "./src/step_8_append_team_division_to_wreslter_list.js";
 
 import { step_9_create_state_qualfier_reference } from "./src/step_9_create_state_qualfier_reference.js";
+import { step_10_append_ad_hoc_wrestler_to_state_qualifier_list } from "./src/step_10_append_ad_hoc_wrestler_to_state_qualifier_list.js";
 import { step_11_append_state_qualifier_to_match_metrics } from "./src/step_11_append_state_qualifier_to_match_metrics.js";
 import { step_12_append_state_qualifier_to_wrestler_list } from "./src/step_12_append_state_qualifier_to_wrestler_list.js";
 
@@ -52,7 +53,7 @@ const step_flags = {
 
   // CREATE 2024-25 STATE QUALIFIER LIST
   step_9: false, // create 2024-25 state qualifier list
-  // step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data) --todo:
 
   step_11: false, // append state qualifier to match history metrics
   step_12: false, // append state qualifier to wrestler list
@@ -249,18 +250,18 @@ async function main() {
     if (step_flags.step_5) {
       const start = Date.now();
 
-      log_step_start(5,  "Start creating team division 🔗");
+      log_step_start(5, "Start creating team division 🔗");
 
       await step_5_create_team_division_data();
 
       log_step_success(5, `Create team division`, Date.now() - start);
     } else log_step_skip(5, "Create team division");
 
-    // === STEP 6 APPEND TEAM DIVISION UPDATES ===
+    // === STEP 6 APPEND TEAM DIVISION UPDATES / MISSING REGION / DIVISION ===
     if (step_flags.step_6) {
       const start = Date.now();
 
-      log_step_start(6,  "Start append team division updates 🔗");
+      log_step_start(6, "Start append team division updates 🔗");
 
       await step_6_append_team_division_updates();
 
@@ -271,7 +272,7 @@ async function main() {
     if (step_flags.step_7) {
       const start = Date.now();
 
-      log_step_start(7,  "Start append team division updates to match history 🔗");
+      log_step_start(7, "Start append team division updates to match history 🔗");
 
       await step_7_append_team_division_to_match_metrics();
 
@@ -282,7 +283,7 @@ async function main() {
     if (step_flags.step_8) {
       const start = Date.now();
 
-      log_step_start(8,  "Start append team division updates to wrestler list 🔗");
+      log_step_start(8, "Start append team division updates to wrestler list 🔗");
 
       await step_8_append_team_division_to_wrestler_list();
 
@@ -293,18 +294,29 @@ async function main() {
     if (step_flags.step_9) {
       const start = Date.now();
 
-      log_step_start(9,  "Start creating state qualifier place reference 🔗");
+      log_step_start(9, "Start creating state qualifier place reference 🔗");
 
       await step_9_create_state_qualfier_reference();
 
       log_step_success(9, `Create state qualifier place reference`, Date.now() - start);
     } else log_step_skip(9, "Create state qualifier place reference");
+
+    // === STEP 10 APPEND TEAM DIVISION UPDATES ===
+    if (step_flags.step_10) {
+      const start = Date.now();
+
+      log_step_start(10, "Start ad hoc wrestler to state qualifier list 🔗");
+
+      await step_10_append_ad_hoc_wrestler_to_state_qualifier_list();
+
+      log_step_success(10, `Append ad hoc wrestler to state qualifier list`, Date.now() - start);
+    } else log_step_skip(10, "Append ad hoc wrestler to state qualifier list");
     
     // === STEP 11 APPEND STATE QUALIFIER & PLACE TO MATCH HISTORY ===
     if (step_flags.step_11) {
       const start = Date.now();
 
-      log_step_start(11,  "Start append state qualifier & place updates to match history 🔗");
+      log_step_start(11, "Start append state qualifier & place updates to match history 🔗");
 
       await step_11_append_state_qualifier_to_match_metrics();
 
@@ -315,7 +327,7 @@ async function main() {
     if (step_flags.step_12) {
       const start = Date.now();
 
-      log_step_start(12,  "Start append state qualifier & place updates to wrestler list 🔗");
+      log_step_start(12, "Start append state qualifier & place updates to wrestler list 🔗");
 
       await step_12_append_state_qualifier_to_wrestler_list();
 

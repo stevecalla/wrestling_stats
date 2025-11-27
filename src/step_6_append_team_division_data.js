@@ -14,7 +14,7 @@ import { get_mountain_time_offset_hours } from "../utilities/date_time_tools/get
 // included below
 
 const updates = [
-  {wrestler_team_id: 1596622147, wrestling_season: "2024-25", track_wrestling_category: "High School Boys", team_division: "unknown", team_region: "unknown"},
+  {wrestler_id: 1596622147, wrestling_season: "2024-25", track_wrestling_category: "High School Boys", team_division: "unknown", team_region: "unknown"},
 ];
 
 async function step_6_append_team_division_updates() {

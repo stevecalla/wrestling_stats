@@ -257,6 +257,7 @@ ORDER BY opponent_state_tournament_place
 -- **************************
 SELECT * FROM wrestler_list_scrape_data LIMIT 10;
 SELECT * FROM wrestler_list_scrape_data WHERE wrestler_state_tournament_place IS NOT NULL LIMIT 10;
+SELECT MIN(created_at_mtn), MAX(created_at_mtn), MIN(updated_at_mtn), MAX(updated_at_mtn) FROM wrestler_list_scrape_data LIMIT 10;
 -- check the counts
 SELECT
     wrestler_state_tournament_place,
@@ -279,3 +280,21 @@ ORDER BY wrestler_state_tournament_place
 --   DROP COLUMN wrestler_state_tournament_place
 -- ;
 
+-- **************************
+-- create query to use wrestler id to append wrestler_state_qualifier_and_place_reference with appropriate info from wrestler_match_history_metrics_data
+-- **************************
+SELECT * FROM wrestler_state_qualifier_and_place_reference LIMIT 10;
+SELECT state_tournament_place, COUNT(*) AS count FROM wrestler_state_qualifier_and_place_reference GROUP BY 1 WITH ROLLUP ORDER BY 1;
+
+-- validate wrestler was added
+SELECT * FROM wrestler_state_qualifier_and_place_reference WHERE wrestler_id = 29790065132;
+
+-- remove / delete record
+SELECT wrestling_season, track_wrestling_category, wrestler_id
+FROM wrestler_state_qualifier_and_place_reference
+WHERE wrestler_id = 29790065132;
+
+DELETE FROM wrestler_state_qualifier_and_place_reference
+WHERE wrestler_id = 29790065132
+  AND wrestling_season = '2024-25'
+  AND track_wrestling_category = 'High School Boys';
