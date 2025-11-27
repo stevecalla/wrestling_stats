@@ -76,5 +76,21 @@ function get_pool_stream() {
     return _pool_stream;
 }
 
-export { get_pool, get_pool_stream }
+async function close_pools() {
+  // Close promise pool
+  if (_pool_promise) {
+    const pool = await _pool_promise; // handle case where _initPromise is still resolving
+    await pool.end();
+    _pool_promise = undefined;
+    _initPromise  = undefined;
+  }
+
+  // Close stream pool
+  if (_pool_stream) {
+    await _pool_stream.end();
+    _pool_stream = undefined;
+  }
+}
+
+export { get_pool, get_pool_stream, close_pools };
 

@@ -71,21 +71,20 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 -------------------------------------------*/
 // function extractor_source() {
 //   return () => {
-//     // === helpers in-page ===
+//     // === basic helper ===
 //     const norm = (s) =>
 //       (s || "")
 //         .normalize("NFKD")
 //         .replace(/[\u0300-\u036f]/g, "")
 //         .replace(/\s+/g, " ")
 //         .trim();
-//     const lc = (s) => norm(s).toLowerCase();
-//     const esc_reg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 //     const to_date = (y, m, d) => {
 //       const yy = +y < 100 ? +y + 2000 : +y;
 //       const dt = new Date(yy, +m - 1, +d);
 //       return isNaN(+dt) ? null : dt;
 //     };
+
 //     const fmt_mdy = (d) => {
 //       if (!(d instanceof Date) || isNaN(+d)) return "";
 //       const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -96,7 +95,7 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 
 //     const parse_date_range_text = (raw) => {
 //       const t = norm(raw);
-//       if (!t) return { start_date: "", end_date: "", start_obj: null, end_obj: null };
+//       if (!t) return { start_date: "", end_date: "" };
 
 //       // A: MM/DD - MM/DD/YYYY
 //       let m =
@@ -107,7 +106,7 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 //         const [, m1, d1, m2, d2, y2] = m;
 //         const start_obj = to_date(y2, m1, d1);
 //         const end_obj = to_date(y2, m2, d2);
-//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
+//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
 //       }
 
 //       // B: MM/DD/YYYY - MM/DD/YYYY
@@ -119,7 +118,7 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 //         const [, m1, d1, y1, m2, d2, y2] = m;
 //         const start_obj = to_date(y1, m1, d1);
 //         const end_obj = to_date(y2, m2, d2);
-//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
+//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
 //       }
 
 //       // C: MM/DD/YYYY
@@ -127,7 +126,7 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 //       if (m) {
 //         const [, mm, dd, yy] = m;
 //         const d = to_date(yy, mm, dd);
-//         return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
+//         return { start_date: fmt_mdy(d), end_date: "" };
 //       }
 
 //       // fallback: first full date token
@@ -136,409 +135,85 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 //         const [token] = m;
 //         const [mm, dd, yy] = token.split(/[\/\-]/);
 //         const d = to_date(yy, mm, dd);
-//         return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
+//         return { start_date: fmt_mdy(d), end_date: "" };
 //       }
 
-//       return { start_date: "", end_date: "", start_obj: null, end_obj: null };
+//       return { start_date: "", end_date: "" };
 //     };
-
-//     // --- helper: sanitize a display name before splitting ---
-//     function clean_display_name(raw) {
-//       let s = String(raw || "").trim();
-//       s = s.replace(/\s*\([^)]+\)\s*$/u, "");  // remove ONE trailing (...), e.g. "(JR)"
-//       s = s.replace(/\s+/g, " ").trim();
-//       const suffixRe = /(?:,?\s+(?:Jr\.?|Sr\.?|II|III|IV|V|VI))$/iu;
-//       s = s.replace(suffixRe, "").trim();
-//       return s;
-//     }
-
-//     function parse_name(full) {
-//       const cleaned = clean_display_name(full);
-//       if (!cleaned) return { first_name: null, last_name: null };
-
-//       if (cleaned.includes(",")) {
-//         const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
-//         const rest = restRaw || "";
-//         const first = rest.split(/\s+/)[0] || null;
-//         return { first_name: first || null, last_name: last || null };
-//       }
-
-//       const parts = cleaned.split(/\s+/).filter(Boolean);
-//       if (parts.length === 1) return { first_name: null, last_name: parts[0] || null };
-
-//       const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
-//       let first = parts[0];
-//       let last = parts[parts.length - 1];
-//       const penult = parts[parts.length - 2]?.toLowerCase();
-//       if (particles.has(penult)) last = parts.slice(parts.length - 2).join(" ");
-//       return { first_name: first || null, last_name: last || null };
-//     }
-
-//     // NEW: parenthetical looks like a school (not score/time/result tokens)
-//     const looks_like_school = (s) =>
-//       !!s &&
-//       !/\d|:/.test(s) &&
-//       !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(s);
 
 //     // current wrestler context (from dropdown)
 //     const sel = document.querySelector("#wrestler");
-//     const sel_opt = sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
-//     const current_id = (sel_opt?.value || "").trim();
+//     const sel_opt =
+//       sel?.selectedOptions?.[0] ||
+//       document.querySelector("#wrestler option[selected]");
+
+//     const wrestler_id = (sel_opt?.value || "").trim();
 //     const opt_text = norm(sel_opt?.textContent || "");
-//     const current_name = opt_text.includes(" - ")
+//     const wrestler = opt_text.includes(" - ")
 //       ? opt_text.split(" - ").slice(1).join(" - ").trim()
 //       : opt_text;
-//     const current_name_n = lc(current_name);
-
-//     const name_re = new RegExp(`\\b${esc_reg(current_name)}\\b`, "gi");
-//     const scrub = (s) => norm((s || "").replace(name_re, "").replace(/\s{2,}/g, " "));
 
 //     const rows = [];
+
 //     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
 //       const tds = tr.querySelectorAll("td");
+//       // “If this row does not have at least five cells, skip it because it’s not a data row.”
 //       if (tds.length < 5) continue;
 
 //       const date_raw = norm(tds[1]?.innerText);
-//       const { start_date, end_date, start_obj, end_obj } = parse_date_range_text(date_raw);
+//       const { start_date, end_date } = parse_date_range_text(date_raw);
 
 //       const event_raw = norm(tds[2]?.innerText);
 //       const weight_raw = norm(tds[3]?.innerText);
-//       const details_text_raw = norm(tds[4]?.innerText);
 //       const details_cell = tds[4];
+//       const details_text_raw = norm(details_cell?.innerText);
 
-//       const round = (details_text_raw.match(/^(.*?)\s*-\s*/)?.[1] || "").trim();
-//       const is_bye = /\b(received a bye|bye)\b/i.test(details_text_raw);
-//       const is_unknown_forfeit = /\bover\s+Unknown\s*\(\s*For\.\s*\)/i.test(details_text_raw);
-
-//       const link_infos = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="], td a'))
-//         .map((a) => {
-//           const href = a.getAttribute("href") || "";
-//           const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
-//           const name = norm(a.textContent || "");
-//           return { id, name, name_n: lc(name) };
-//         })
-//         .filter((x) => x.name_n);
-
-//       // Build name→school pairs
-//       const name_school_pairs = [];
-
-//       // Pass 1: catch "Name (Alias) (School)" → map to School (2nd paren)
-//       for (const m of details_text_raw.matchAll(/([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)\s*\(([^)]+)\)/g)) {
-//         const nm = (m[1] || "").trim();
-//         const maybeSchool = (m[3] || "").trim();
-//         if (nm && looks_like_school(maybeSchool)) {
-//           name_school_pairs.push({ name: nm, name_n: lc(nm), school: maybeSchool });
-//         }
-//       }
-
-//       // Pass 2: regular "Name (School)" — ignore score/time/result tokens
-//       for (const m of details_text_raw.matchAll(/([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)/g)) {
-//         const nm = (m[1] || "").trim();
-//         const sc = (m[2] || "").trim();
-//         if (!nm || !looks_like_school(sc)) continue;
-//         name_school_pairs.push({ name: nm, name_n: lc(nm), school: sc });
-//       }
-
-//       // identify "me"
-//       let me = { id: current_id, name: current_name, name_n: current_name_n };
-//       const me_by_id = current_id && link_infos.find((li) => li.id === current_id);
-//       if (me_by_id) me = me_by_id;
-//       const me_by_name = link_infos.find((li) => li.name_n === current_name_n);
-//       if (!me_by_id && me_by_name) me = me_by_name;
-
-//       // opponent candidates
-//       const candidates = [];
-//       for (const li of link_infos) {
-//         if (li.name_n && li.name_n !== me.name_n) candidates.push({ id: li.id || "", name: li.name, name_n: li.name_n });
-//       }
-//       for (const ns of name_school_pairs) {
-//         if (ns.name_n && ns.name_n !== me.name_n && !candidates.some((c) => c.name_n === ns.name_n)) {
-//           candidates.push({ id: "", name: ns.name, name_n: ns.name_n });
-//         }
-//       }
-
-//       // resolve opponent + opponent_school
-//       let opponent = { id: "", name: "", name_n: "" };
-//       let opponent_school = "";
-
-//       if (is_unknown_forfeit && !is_bye) {
-//         opponent = { id: "", name: "Unknown", name_n: "unknown" };
-//       } else {
-//         opponent = candidates[0] || opponent;
-//         if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
-
-//         if (opponent.name && lc(opponent.name) !== "unknown") {
-//           // First: if the opponent name itself contains a paren (alias), the next paren is likely the school
-//           if (!opponent_school && /\)/.test(opponent.name)) {
-//             const reNext = new RegExp(`${esc_reg(opponent.name)}\\s*\\(([^)]+)\\)`, "i");
-//             const m = details_text_raw.match(reNext);
-//             if (m && looks_like_school(m[1])) opponent_school = m[1].trim();
-//           }
-
-//           // Pair-map
-//           if (!opponent_school) {
-//             const hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
-//             if (hit) opponent_school = hit.school;
-//           }
-
-//           // Fallback: generic single-paren after opponent name
-//           if (!opponent_school) {
-//             const re = new RegExp(`\\b${esc_reg(opponent.name)}\\b\\s*\\(([^)]+)\\)`, "i");
-//             const m = details_text_raw.match(re);
-//             if (m) {
-//               const sc = (m[1] || "").trim();
-//               if (looks_like_school(sc)) opponent_school = sc;
-//             }
-//           }
-//         }
-//       }
-
-//       // opponent_id by matched name
+//       // opponent_id: first wrestlerId in the cell that is NOT the current wrestler_id
 //       let opponent_id = "";
-//       if (!is_bye && !is_unknown_forfeit && opponent?.name) {
-//         const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
-//         const li = link_nodes
-//           .map(a => {
-//             const href = a.getAttribute("href") || "";
-//             const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
-//             const name = norm(a.textContent || "");
-//             return { id, name_n: lc(name) };
-//           })
-//           .find(x => x.id && x.id !== current_id && x.name_n === lc(opponent.name));
-//         if (li) opponent_id = li.id;
-//       }
-
-//       // Resolve wrestler_school
-//       let wrestler_school = "";
-
-//       // If current name includes an alias paren, the very next paren in details is the school
-//       if (!wrestler_school && /\)/.test(me.name)) {
-//         const reNext = new RegExp(`${esc_reg(me.name)}\\s*\\(([^)]+)\\)`, "i");
-//         const m = details_text_raw.match(reNext);
-//         if (m && looks_like_school(m[1])) wrestler_school = m[1].trim();
-//       }
-
-//       // Pair-map fallback
-//       if (!wrestler_school) {
-//         const me_hit = name_school_pairs.find((ns) => ns.name_n === me.name_n);
-//         if (me_hit) wrestler_school = me_hit.school;
-//       }
-
-//       // Generic fallback: "Me (School)"
-//       if (!wrestler_school && me.name) {
-//         const reMe = new RegExp(`\\b${esc_reg(me.name)}\\b\\s*\\(([^)]+)\\)`, "i");
-//         const m = details_text_raw.match(reMe);
-//         if (m) {
-//           const sc = (m[1] || "").trim();
-//           if (looks_like_school(sc)) wrestler_school = sc;
+//       const link_nodes = Array.from(
+//         details_cell.querySelectorAll('a[href*="wrestlerId="]')
+//       );
+//       for (const a of link_nodes) {
+//         const href = a.getAttribute("href") || "";
+//         const m = href.match(/wrestlerId=(\d+)/);
+//         if (m && m[1] && m[1] !== wrestler_id) {
+//           opponent_id = m[1];
+//           break;
 //         }
 //       }
-
-//       const result_token =
-//         (
-//           details_text_raw.match(
-//             /\b(over|def\.?|maj\.?\s*dec\.?|dec(?:ision)?|tech(?:nical)?\s*fall|fall|pinned|bye)\b/i
-//           ) || []
-//         )[0]?.toLowerCase() || (is_unknown_forfeit ? "over" : "");
-
-//       let score_details = (details_text_raw.match(/\(([^()]+)\)\s*$/)?.[1] || "").trim();
-//       if (/^for\.?$/i.test(score_details)) score_details = "";
-//       if (lc(opponent.name) === "unknown") score_details = "Unknown";
-//       if (result_token === "bye" || is_bye) score_details = "Bye";
-
-//       const details_lc = lc(details_text_raw);
-//       const over_idx = details_lc.indexOf(" over ");
-//       const def_idx = details_lc.indexOf(" def.");
-//       const token_idx = over_idx >= 0 ? over_idx : def_idx;
-//       const names_in_order = [...details_text_raw.matchAll(/([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g)].map((m) =>
-//         m[1].trim()
-//       );
 
 //       rows.push({
+//         wrestler_id,
+//         wrestler,
 //         start_date,
 //         end_date,
-//         sort_date_obj: start_obj || end_obj || new Date(NaN),
-//         raw_details: details_text_raw,
-
 //         event: event_raw,
-//         weight: weight_raw,
-//         round,
-//         opponent: is_bye ? "" : opponent.name || "",
-//         opponent_id: is_bye ? "" : opponent.id || "",
-//         opponent_school,
-//         wrestler_school,
-//         result: result_token || (is_bye ? "bye" : ""),
-//         score_details,
-//         details: details_text_raw,
-//         token_idx,
-//         names_in_order,
+//         weight_category: weight_raw,
+//         opponent_id,
+//         raw_details: details_text_raw,
 //       });
 //     }
 
-//     // ------------------------------------------
-//     // Compute win-loss-tie record for wrestler
-//     // ------------------------------------------
-//     rows.sort(
-//       (a, b) =>
-//         +a.sort_date_obj - +b.sort_date_obj ||
-//         String(a.start_date).localeCompare(String(b.start_date))
-//     );
-
-//     let wins_all = 0, losses_all = 0, ties_all = 0;
-//     let wins_var = 0, losses_var = 0, ties_var = 0;
-
-//     function classify_row(row, current_name) {
-//       const txt = (row.details || "").toLowerCase();
-
-//       const is_bye = row.result === "bye" || /\b(received a bye|bye)\b/i.test(row.details);
-//       const is_exhibition = /\bexhibition\b/i.test(txt);
-//       const is_unknown_forfeit = /\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(row.details);
-//       const is_forfeit = /\b(for\.|fft|forfeit)\b/i.test(txt);
-//       const is_med_forfeit = /\b(mff|med(?:ical)?\s*for(?:feit)?)\b/i.test(txt);
-//       const is_injury_default = /\b(inj\.?\s*def\.?|injury\s*default)\b/i.test(txt);
-//       const is_dq = /\b(dq|disqualification)\b/i.test(txt);
-//       const is_tie = /\b(tie|draw)\b/i.test(txt);
-
-//       const is_varsity = /^varsity\b/i.test(String(row.round || ""));
-
-//       let outcome = "U";
-//       let counts_in_record = true;
-
-//       if (is_bye) {
-//         outcome = "bye";
-//         counts_in_record = false;
-//         return { outcome, counts_in_record, is_varsity };
-//       }
-
-//       if (is_exhibition) {
-//         outcome = "U";
-//         counts_in_record = false;
-//         return { outcome, counts_in_record, is_varsity };
-//       }
-
-//       if (is_tie) {
-//         outcome = "T";
-//         return { outcome, counts_in_record, is_varsity };
-//       }
-
-//       if (is_unknown_forfeit || is_forfeit || is_med_forfeit || is_injury_default || is_dq) {
-//         if (is_unknown_forfeit) {
-//           outcome = "W";
-//           return { outcome, counts_in_record, is_varsity };
-//         }
-
-//         if (row.token_idx >= 0) {
-//           const before = row.details.slice(0, row.token_idx).toLowerCase();
-//           const after = row.details.slice(row.token_idx).toLowerCase();
-//           const me_before = before.includes(current_name.toLowerCase());
-//           const me_after = after.includes(current_name.toLowerCase());
-//           outcome = (me_before && !me_after) ? "W" : (!me_before && me_after) ? "L" : "U";
-//         } else {
-//           outcome = "U";
-//         }
-//         return { outcome, counts_in_record, is_varsity };
-//       }
-
-//       if (row.token_idx >= 0) {
-//         const before = row.details.slice(0, row.token_idx).toLowerCase();
-//         const after = row.details.slice(row.token_idx).toLowerCase();
-//         const me_before = before.includes(current_name.toLowerCase());
-//         const me_after = after.includes(current_name.toLowerCase());
-//         if (me_before && !me_after) outcome = "W";
-//         else if (!me_before && me_after) outcome = "L";
-//       }
-
-//       return { outcome, counts_in_record, is_varsity };
-//     }
-
-//     const { first_name, last_name } = parse_name(current_name);
-
-//     const with_record = rows.map((row) => {
-//       const { outcome, counts_in_record, is_varsity } = classify_row(row, current_name);
-
-//       if (counts_in_record) {
-//         if (outcome === "W") wins_all++;
-//         else if (outcome === "L") losses_all++;
-//         else if (outcome === "T") ties_all++;
-//       }
-
-//       if (counts_in_record && is_varsity) {
-//         if (outcome === "W") wins_var++;
-//         else if (outcome === "L") losses_var++;
-//         else if (outcome === "T") ties_var++;
-//       }
-
-//       const opponent_clean = scrub(row.opponent);
-//       const wrestler_clean = current_name;
-
-//       let winner_name = "";
-//       if (outcome === "W" || outcome === "bye") {
-//         winner_name = wrestler_clean;
-//       } else if (outcome === "L") {
-//         winner_name = opponent_clean;
-//       } else {
-//         winner_name = "";
-//       }
-
-//       const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(row.opponent);
-//       const now_utc = new Date().toISOString();
-
-//       return {
-//         page_url: location.href,
-//         wrestler_id: (document.querySelector("#wrestler")?.value || "").trim(),
-//         wrestler: current_name,
-//         first_name,
-//         last_name,
-//         wrestler_school: scrub(row.wrestler_school),
-
-//         start_date: row.start_date,
-//         end_date: row.end_date,
-
-//         event: scrub(row.event),
-//         weight_category: scrub(row.weight),
-//         round: scrub(row.round),
-
-//         opponent: scrub(row.opponent),
-//         opponent_id: row.opponent_id || "",
-//         opponent_first_name,
-//         opponent_last_name,
-//         opponent_school: scrub(row.opponent_school),
-
-//         result: scrub(row.result),
-//         score_details: scrub(row.score_details),
-//         winner_name,
-//         outcome,
-//         counts_in_record,
-
-//         record: `${wins_all}-${losses_all}-${ties_all} W-L-T`,
-//         record_varsity: `${wins_var}-${losses_var}-${ties_var} W-L-T (Varsity)`,
-
-//         raw_details: row.raw_details,
-//         created_at_utc: now_utc,
-//       };
-//     });
-
-//     return with_record;
+//     return rows;
 //   };
 // }
 
 function extractor_source() {
   return () => {
-    // === helpers in-page ===
+    // === basic helper ===
     const norm = (s) =>
       (s || "")
         .normalize("NFKD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/\s+/g, " ")
         .trim();
-    const lc = (s) => norm(s).toLowerCase();
-    const esc_reg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     const to_date = (y, m, d) => {
       const yy = +y < 100 ? +y + 2000 : +y;
       const dt = new Date(yy, +m - 1, +d);
       return isNaN(+dt) ? null : dt;
     };
+
     const fmt_mdy = (d) => {
       if (!(d instanceof Date) || isNaN(+d)) return "";
       const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -549,7 +224,7 @@ function extractor_source() {
 
     const parse_date_range_text = (raw) => {
       const t = norm(raw);
-      if (!t) return { start_date: "", end_date: "", start_obj: null, end_obj: null };
+      if (!t) return { start_date: "", end_date: "" };
 
       // A: MM/DD - MM/DD/YYYY
       let m =
@@ -560,7 +235,7 @@ function extractor_source() {
         const [, m1, d1, m2, d2, y2] = m;
         const start_obj = to_date(y2, m1, d1);
         const end_obj = to_date(y2, m2, d2);
-        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
+        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
       // B: MM/DD/YYYY - MM/DD/YYYY
@@ -572,7 +247,7 @@ function extractor_source() {
         const [, m1, d1, y1, m2, d2, y2] = m;
         const start_obj = to_date(y1, m1, d1);
         const end_obj = to_date(y2, m2, d2);
-        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj), start_obj, end_obj };
+        return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
       // C: MM/DD/YYYY
@@ -580,7 +255,7 @@ function extractor_source() {
       if (m) {
         const [, mm, dd, yy] = m;
         const d = to_date(yy, mm, dd);
-        return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
+        return { start_date: fmt_mdy(d), end_date: "" };
       }
 
       // fallback: first full date token
@@ -589,421 +264,72 @@ function extractor_source() {
         const [token] = m;
         const [mm, dd, yy] = token.split(/[\/\-]/);
         const d = to_date(yy, mm, dd);
-        return { start_date: fmt_mdy(d), end_date: "", start_obj: d, end_obj: null };
+        return { start_date: fmt_mdy(d), end_date: "" };
       }
 
-      return { start_date: "", end_date: "", start_obj: null, end_obj: null };
+      return { start_date: "", end_date: "" };
     };
-
-    // --- helper: sanitize a display name before splitting ---
-    function clean_display_name(raw) {
-      let s = String(raw || "").trim();
-      s = s.replace(/\s*\([^)]+\)\s*$/u, "");  // remove ONE trailing (...), e.g. "(JR)"
-      s = s.replace(/\s+/g, " ").trim();
-      const suffixRe = /(?:,?\s+(?:Jr\.?|Sr\.?|II|III|IV|V|VI))$/iu;
-      s = s.replace(suffixRe, "").trim();
-      return s;
-    }
-
-    function parse_name(full) {
-      const cleaned = clean_display_name(full);
-      if (!cleaned) return { first_name: null, last_name: null };
-
-      if (cleaned.includes(",")) {
-        const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
-        const rest = restRaw || "";
-        const first = rest.split(/\s+/)[0] || null;
-        return { first_name: first || null, last_name: last || null };
-      }
-
-      const parts = cleaned.split(/\s+/).filter(Boolean);
-      if (parts.length === 1) return { first_name: null, last_name: parts[0] || null };
-
-      const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
-      let first = parts[0];
-      let last = parts[parts.length - 1];
-      const penult = parts[parts.length - 2]?.toLowerCase();
-      if (particles.has(penult)) last = parts.slice(parts.length - 2).join(" ");
-      return { first_name: first || null, last_name: last || null };
-    }
-
-    // NEW: parenthetical looks like a school (not score/time/result tokens)
-    const looks_like_school = (s) =>
-      !!s &&
-      !/\d|:/.test(s) &&
-      !/^(fall|tf|tech|dec|maj|md|sv|ot|for)\b/i.test(s);
 
     // current wrestler context (from dropdown)
     const sel = document.querySelector("#wrestler");
-    const sel_opt = sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
-    const current_id = (sel_opt?.value || "").trim();
+    const sel_opt =
+      sel?.selectedOptions?.[0] ||
+      document.querySelector("#wrestler option[selected]");
+
+    const wrestler_id = (sel_opt?.value || "").trim();
     const opt_text = norm(sel_opt?.textContent || "");
-    const current_name = opt_text.includes(" - ")
+    const wrestler = opt_text.includes(" - ")
       ? opt_text.split(" - ").slice(1).join(" - ").trim()
       : opt_text;
-    const current_name_n = lc(current_name);
-
-    const name_re = new RegExp(`\\b${esc_reg(current_name)}\\b`, "gi");
-    const scrub = (s) => norm((s || "").replace(name_re, "").replace(/\s{2,}/g, " "));
 
     const rows = [];
+    let match_order = 1;   // 👈 per wrestler-page order
+
     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
       const tds = tr.querySelectorAll("td");
       if (tds.length < 5) continue;
 
       const date_raw = norm(tds[1]?.innerText);
-      const { start_date, end_date, start_obj, end_obj } = parse_date_range_text(date_raw);
+      const { start_date, end_date } = parse_date_range_text(date_raw);
 
       const event_raw = norm(tds[2]?.innerText);
       const weight_raw = norm(tds[3]?.innerText);
-      const details_text_raw = norm(tds[4]?.innerText);
       const details_cell = tds[4];
+      const details_text_raw = norm(details_cell?.innerText);
 
-      // (CHANGED) capture raw round first; final round decided later
-      const round_raw = (details_text_raw.match(/^(.*?)\s*-\s*/)?.[1] || "").trim();
-
-      const is_bye = /\b(received a bye|bye)\b/i.test(details_text_raw);
-      const is_unknown_forfeit = /\bover\s+Unknown\s*\(\s*For\.\s*\)/i.test(details_text_raw);
-
-      const link_infos = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="], td a'))
-        .map((a) => {
-          const href = a.getAttribute("href") || "";
-          const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
-          const name = norm(a.textContent || "");
-          return { id, name, name_n: lc(name) };
-        })
-        .filter((x) => x.name_n);
-
-      // Build name→school pairs
-      const name_school_pairs = [];
-
-      // Pass 1: catch "Name (Alias) (School)" → map to School (2nd paren)
-      for (const m of details_text_raw.matchAll(/([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)\s*\(([^)]+)\)/g)) {
-        const nm = (m[1] || "").trim();
-        const maybeSchool = (m[3] || "").trim();
-        if (nm && looks_like_school(maybeSchool)) {
-          name_school_pairs.push({ name: nm, name_n: lc(nm), school: maybeSchool });
-        }
-      }
-
-      // Pass 2: regular "Name (School)" — ignore score/time/result tokens
-      for (const m of details_text_raw.matchAll(/([A-Za-z][A-Za-z'’.\- ]+?)\s*\(([^)]+)\)/g)) {
-        const nm = (m[1] || "").trim();
-        const sc = (m[2] || "").trim();
-        if (!nm || !looks_like_school(sc)) continue;
-        name_school_pairs.push({ name: nm, name_n: lc(nm), school: sc });
-      }
-
-      // identify "me"
-      let me = { id: current_id, name: current_name, name_n: current_name_n };
-      const me_by_id = current_id && link_infos.find((li) => li.id === current_id);
-      if (me_by_id) me = me_by_id;
-      const me_by_name = link_infos.find((li) => li.name_n === current_name_n);
-      if (!me_by_id && me_by_name) me = me_by_name;
-
-      // opponent candidates
-      const candidates = [];
-      for (const li of link_infos) {
-        if (li.name_n && li.name_n !== me.name_n) candidates.push({ id: li.id || "", name: li.name, name_n: li.name_n });
-      }
-      for (const ns of name_school_pairs) {
-        if (ns.name_n && ns.name_n !== me.name_n && !candidates.some((c) => c.name_n === ns.name_n)) {
-          candidates.push({ id: "", name: ns.name, name_n: ns.name_n });
-        }
-      }
-
-      // resolve opponent + opponent_school
-      let opponent = { id: "", name: "", name_n: "" };
-      let opponent_school = "";
-
-      if (is_unknown_forfeit && !is_bye) {
-        opponent = { id: "", name: "Unknown", name_n: "unknown" };
-      } else {
-        opponent = candidates[0] || opponent;
-        if (opponent.name && lc(opponent.name) === me.name_n) opponent = { id: "", name: "", name_n: "" };
-
-        if (opponent.name && lc(opponent.name) !== "unknown") {
-          // First: if the opponent name itself contains a paren (alias), the next paren is likely the school
-          if (!opponent_school && /\)/.test(opponent.name)) {
-            const reNext = new RegExp(`${esc_reg(opponent.name)}\\s*\\(([^)]+)\\)`, "i");
-            const m = details_text_raw.match(reNext);
-            if (m && looks_like_school(m[1])) opponent_school = m[1].trim();
-          }
-
-          // Pair-map
-          if (!opponent_school) {
-            const hit = name_school_pairs.find((ns) => ns.name_n === lc(opponent.name));
-            if (hit) opponent_school = hit.school;
-          }
-
-          // Fallback: generic single-paren after opponent name
-          if (!opponent_school) {
-            const re = new RegExp(`\\b${esc_reg(opponent.name)}\\b\\s*\\(([^)]+)\\)`, "i");
-            const m = details_text_raw.match(re);
-            if (m) {
-              const sc = (m[1] || "").trim();
-              if (looks_like_school(sc)) opponent_school = sc;
-            }
-          }
-        }
-      }
-
-      // opponent_id by matched name
       let opponent_id = "";
-      if (!is_bye && !is_unknown_forfeit && opponent?.name) {
-        const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
-        const li = link_nodes
-          .map(a => {
-            const href = a.getAttribute("href") || "";
-            const id = (href.match(/wrestlerId=(\d+)/) || [])[1] || "";
-            const name = norm(a.textContent || "");
-            return { id, name_n: lc(name) };
-          })
-          .find(x => x.id && x.id !== current_id && x.name_n === lc(opponent.name));
-        if (li) opponent_id = li.id;
-      }
-
-      // Resolve wrestler_school
-      let wrestler_school = "";
-
-      // If current name includes an alias paren, the very next paren in details is the school
-      if (!wrestler_school && /\)/.test(me.name)) {
-        const reNext = new RegExp(`${esc_reg(me.name)}\\s*\\(([^)]+)\\)`, "i");
-        const m = details_text_raw.match(reNext);
-        if (m && looks_like_school(m[1])) wrestler_school = m[1].trim();
-      }
-
-      // Pair-map fallback
-      if (!wrestler_school) {
-        const me_hit = name_school_pairs.find((ns) => ns.name_n === me.name_n);
-        if (me_hit) wrestler_school = me_hit.school;
-      }
-
-      // Generic fallback: "Me (School)"
-      if (!wrestler_school && me.name) {
-        const reMe = new RegExp(`\\b${esc_reg(me.name)}\\b\\s*\\(([^)]+)\\)`, "i");
-        const m = details_text_raw.match(reMe);
-        if (m) {
-          const sc = (m[1] || "").trim();
-          if (looks_like_school(sc)) wrestler_school = sc;
-        }
-      }
-
-      const result_token =
-        (
-          details_text_raw.match(
-            /\b(over|def\.?|maj\.?\s*dec\.?|dec(?:ision)?|tech(?:nical)?\s*fall|fall|pinned|bye)\b/i
-          ) || []
-        )[0]?.toLowerCase() || (is_unknown_forfeit ? "over" : "");
-
-      let score_details = (details_text_raw.match(/\(([^()]+)\)\s*$/)?.[1] || "").trim();
-      if (/^for\.?$/i.test(score_details)) score_details = "";
-      if (lc(opponent.name) === "unknown") score_details = "Unknown";
-      if (result_token === "bye" || is_bye) score_details = "Bye";
-
-      const details_lc = lc(details_text_raw);
-      const over_idx = details_lc.indexOf(" over ");
-      const def_idx = details_lc.indexOf(" def.");
-      const token_idx = over_idx >= 0 ? over_idx : def_idx;
-      const names_in_order = [...details_text_raw.matchAll(/([A-Z][A-Za-z'’.\- ]+)\s*\(([^)]+)\)/g)].map((m) =>
-        m[1].trim()
+      const link_nodes = Array.from(
+        details_cell.querySelectorAll('a[href*="wrestlerId="]')
       );
-
-      // ===== ROUND FILTERING (ONLY CHANGE) =====
-      let round = round_raw;
-
-      // If the full raw details starts with wrestler or opponent name, treat as individual match => no round
-      const starts_with_wrestler = current_name
-        ? new RegExp(`^\\s*${esc_reg(current_name)}\\b`, "i").test(details_text_raw)
-        : false;
-      const starts_with_opponent = opponent?.name
-        ? new RegExp(`^\\s*${esc_reg(opponent.name)}\\b`, "i").test(details_text_raw)
-        : false;
-
-      if (starts_with_wrestler || starts_with_opponent) {
-        round = "";
-      } else if (round) {
-        const rlc = lc(round);
-        const badTokens = [
-          lc(current_name || ""),
-          lc(opponent?.name || ""),
-          lc(wrestler_school || ""),
-          lc(opponent_school || "")
-        ].filter(Boolean);
-
-        if (badTokens.some(tok => tok && rlc.includes(tok))) {
-          round = "";
+      for (const a of link_nodes) {
+        const href = a.getAttribute("href") || "";
+        const m = href.match(/wrestlerId=(\d+)/);
+        if (m && m[1] && m[1] !== wrestler_id) {
+          opponent_id = m[1];
+          break;
         }
       }
-      // ===== END ROUND FILTERING =====
 
       rows.push({
+        page_url: location.href,
+        wrestler_id,
+        wrestler,
         start_date,
         end_date,
-        sort_date_obj: start_obj || end_obj || new Date(NaN),
-        raw_details: details_text_raw,
-
         event: event_raw,
-        weight: weight_raw,
-        round, // <- filtered round
-        opponent: is_bye ? "" : opponent.name || "",
-        opponent_id: is_bye ? "" : opponent.id || "",
-        opponent_school,
-        wrestler_school,
-        result: result_token || (is_bye ? "bye" : ""),
-        score_details,
-        details: details_text_raw,
-        token_idx,
-        names_in_order,
+        weight_category: weight_raw,
+        match_order,         // 👈 store the order
+        opponent_id,
+        raw_details: details_text_raw,
       });
+
+      match_order += 1;      // 👈 increment for next row
     }
 
-    // ------------------------------------------
-    // Compute win-loss-tie record for wrestler
-    // ------------------------------------------
-    rows.sort(
-      (a, b) =>
-        +a.sort_date_obj - +b.sort_date_obj ||
-        String(a.start_date).localeCompare(String(b.start_date))
-    );
-
-    let wins_all = 0, losses_all = 0, ties_all = 0;
-    let wins_var = 0, losses_var = 0, ties_var = 0;
-
-    function classify_row(row, current_name) {
-      const txt = (row.details || "").toLowerCase();
-
-      const is_bye = row.result === "bye" || /\b(received a bye|bye)\b/i.test(row.details);
-      const is_exhibition = /\bexhibition\b/i.test(txt);
-      const is_unknown_forfeit = /\bover\s+unknown\s*\(\s*for\.\s*\)/i.test(row.details);
-      const is_forfeit = /\b(for\.|fft|forfeit)\b/i.test(txt);
-      const is_med_forfeit = /\b(mff|med(?:ical)?\s*for(?:feit)?)\b/i.test(txt);
-      const is_injury_default = /\b(inj\.?\s*def\.?|injury\s*default)\b/i.test(txt);
-      const is_dq = /\b(dq|disqualification)\b/i.test(txt);
-      const is_tie = /\b(tie|draw)\b/i.test(txt);
-
-      const is_varsity = /^varsity\b/i.test(String(row.round || ""));
-
-      let outcome = "U";
-      let counts_in_record = true;
-
-      if (is_bye) {
-        outcome = "bye";
-        counts_in_record = false;
-        return { outcome, counts_in_record, is_varsity };
-      }
-
-      if (is_exhibition) {
-        outcome = "U";
-        counts_in_record = false;
-        return { outcome, counts_in_record, is_varsity };
-      }
-
-      if (is_tie) {
-        outcome = "T";
-        return { outcome, counts_in_record, is_varsity };
-      }
-
-      if (is_unknown_forfeit || is_forfeit || is_med_forfeit || is_injury_default || is_dq) {
-        if (is_unknown_forfeit) {
-          outcome = "W";
-          return { outcome, counts_in_record, is_varsity };
-        }
-
-        if (row.token_idx >= 0) {
-          const before = row.details.slice(0, row.token_idx).toLowerCase();
-          const after = row.details.slice(row.token_idx).toLowerCase();
-          const me_before = before.includes(current_name.toLowerCase());
-          const me_after = after.includes(current_name.toLowerCase());
-          outcome = (me_before && !me_after) ? "W" : (!me_before && me_after) ? "L" : "U";
-        } else {
-          outcome = "U";
-        }
-        return { outcome, counts_in_record, is_varsity };
-      }
-
-      if (row.token_idx >= 0) {
-        const before = row.details.slice(0, row.token_idx).toLowerCase();
-        const after = row.details.slice(row.token_idx).toLowerCase();
-        const me_before = before.includes(current_name.toLowerCase());
-        const me_after = after.includes(current_name.toLowerCase());
-        if (me_before && !me_after) outcome = "W";
-        else if (!me_before && me_after) outcome = "L";
-      }
-
-      return { outcome, counts_in_record, is_varsity };
-    }
-
-    const { first_name, last_name } = parse_name(current_name);
-
-    const with_record = rows.map((row) => {
-      const { outcome, counts_in_record, is_varsity } = classify_row(row, current_name);
-
-      if (counts_in_record) {
-        if (outcome === "W") wins_all++;
-        else if (outcome === "L") losses_all++;
-        else if (outcome === "T") ties_all++;
-      }
-
-      if (counts_in_record && is_varsity) {
-        if (outcome === "W") wins_var++;
-        else if (outcome === "L") losses_var++;
-        else if (outcome === "T") ties_var++;
-      }
-
-      const opponent_clean = scrub(row.opponent);
-      const wrestler_clean = current_name;
-
-      let winner_name = "";
-      if (outcome === "W" || outcome === "bye") {
-        winner_name = wrestler_clean;
-      } else if (outcome === "L") {
-        winner_name = opponent_clean;
-      } else {
-        winner_name = "";
-      }
-
-      const { first_name: opponent_first_name, last_name: opponent_last_name } = parse_name(row.opponent);
-      const now_utc = new Date().toISOString();
-
-      return {
-        page_url: location.href,
-        wrestler_id: (document.querySelector("#wrestler")?.value || "").trim(),
-        wrestler: current_name,
-        first_name,
-        last_name,
-        wrestler_school: scrub(row.wrestler_school),
-
-        start_date: row.start_date,
-        end_date: row.end_date,
-
-        event: scrub(row.event),
-        weight_category: scrub(row.weight),
-        round: scrub(row.round),
-
-        opponent: scrub(row.opponent),
-        opponent_id: row.opponent_id || "",
-        opponent_first_name,
-        opponent_last_name,
-        opponent_school: scrub(row.opponent_school),
-
-        result: scrub(row.result),
-        score_details: scrub(row.score_details),
-        winner_name,
-        outcome,
-        counts_in_record,
-
-        record: `${wins_all}-${losses_all}-${ties_all} W-L-T`,
-        record_varsity: `${wins_var}-${losses_var}-${ties_var} W-L-T (Varsity)`,
-
-        raw_details: row.raw_details,
-        created_at_utc: now_utc,
-      };
-    });
-
-    return with_record;
+    return rows;
   };
 }
+
 
 /* ------------------------------------------
    main orchestrator (DB-backed)

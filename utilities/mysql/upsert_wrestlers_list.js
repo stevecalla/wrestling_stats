@@ -9,7 +9,7 @@ async function ensure_table() {
   const pool = await get_pool();
 
   const sql = `
-    CREATE TABLE IF NOT EXISTS wrestler_list (
+    CREATE TABLE IF NOT EXISTS wrestler_list_scrape_data (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       -- SELECTION CRITERIA
@@ -44,13 +44,16 @@ async function ensure_table() {
       -- timestamps
       created_at_mtn     DATETIME     NOT NULL,
       created_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
       updated_at_mtn     DATETIME     NOT NULL,
-      updated_at_utc     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      updated_at_utc     DATETIME      NOT NULL,          -- *** CHANGED: removed ON UPDATE CURRENT_TIMESTAMP
 
       -- Hybrid uniqueness:
       UNIQUE KEY uk_wrestler (wrestling_season, wrestler_id),
-      UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
 
+      -- UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
+      KEY idx_alpha (wrestling_season, last_name_prefix, grade, level, name, team),
+      
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
       PRIMARY KEY (id)
@@ -63,7 +66,7 @@ async function ensure_table() {
 /**
  * Upsert an array of rows from step 1.
  * - created_at_* are immutable (set on insert only)
- * - updated_at_* are refreshed on update (and set on initial insert)
+ * - updated_at_* only refreshed when the existing row’s data differs from the incoming row
  * @param {Array<object>} rows one batch from a single letter+grade
  * @param {object} meta { wrestling_season, track_wrestling_category, last_name_prefix, grade, level, governing_body }
  */
@@ -81,6 +84,8 @@ export async function upsert_wrestlers_list(rows, meta) {
   // Insert-side (immutable created_*), and update-side (updated_*)
   const created_at_utc = now_utc;
   const created_at_mtn = now_mtn;
+  
+  // For updates (and also initial insert's updated_*):
   const updated_at_utc = now_utc;
   const updated_at_mtn = now_mtn;
 
@@ -166,37 +171,87 @@ export async function upsert_wrestlers_list(rows, meta) {
     });
 
     const sql = `
-      INSERT INTO wrestler_list (${cols.join(",")})
+      INSERT INTO wrestler_list_scrape_data (${cols.join(",")})
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
+
+        -- do NOT touch created_* on update:
+        -- Only bump updated_* if any tracked column actually changed (NULL-safe)
+        -- updated_at_* must be listed first here / at the top of ths insert to detect the change
+        updated_at_mtn =
+          CASE
+            WHEN NOT (
+              wrestling_season         <=> VALUES(wrestling_season) AND
+              track_wrestling_category <=> VALUES(track_wrestling_category) AND
+              wrestler_id              <=> VALUES(wrestler_id) AND
+              team_id                  <=> VALUES(team_id) AND
+              weight_class             <=> VALUES(weight_class) AND
+              gender                   <=> VALUES(gender) AND
+              level                    <=> VALUES(level) AND
+              governing_body           <=> VALUES(governing_body) AND
+              record_text              <=> VALUES(record_text) AND
+              wins                     <=> VALUES(wins) AND
+              losses                   <=> VALUES(losses) AND
+              matches                  <=> VALUES(matches) AND
+              win_pct                  <=> VALUES(win_pct) AND
+              first_name               <=> VALUES(first_name) AND
+              last_name                <=> VALUES(last_name)
+            )
+            THEN VALUES(updated_at_mtn)
+            ELSE updated_at_mtn
+          END,
+
+        updated_at_utc =
+          CASE
+            WHEN NOT (
+              wrestling_season         <=> VALUES(wrestling_season) AND
+              track_wrestling_category <=> VALUES(track_wrestling_category) AND
+              wrestler_id              <=> VALUES(wrestler_id) AND
+              team_id                  <=> VALUES(team_id) AND
+              weight_class             <=> VALUES(weight_class) AND
+              gender                   <=> VALUES(gender) AND
+              level                    <=> VALUES(level) AND
+              governing_body           <=> VALUES(governing_body) AND
+              record_text              <=> VALUES(record_text) AND
+              wins                     <=> VALUES(wins) AND
+              losses                   <=> VALUES(losses) AND
+              matches                  <=> VALUES(matches) AND
+              win_pct                  <=> VALUES(win_pct) AND
+              first_name               <=> VALUES(first_name) AND
+              last_name                <=> VALUES(last_name)
+            )
+            THEN CURRENT_TIMESTAMP
+            ELSE updated_at_utc
+          END,
+
         -- If either unique key hits (by wrestler_id or composite), update these fields:
-        wrestling_season = VALUES(wrestling_season),
-        track_wrestling_category = VALUES(track_wrestling_category),
-        name_link       = VALUES(name_link),
-        team_link       = VALUES(team_link),
-        wrestler_id     = VALUES(wrestler_id),
-        team_id         = VALUES(team_id),
-        weight_class    = VALUES(weight_class),
-        gender          = VALUES(gender),
-        level           = VALUES(level),
-        governing_body  = VALUES(governing_body),
-        record_text     = VALUES(record_text),
-        wins            = VALUES(wins),
-        losses          = VALUES(losses),
-        matches         = VALUES(matches),
-        win_pct         = VALUES(win_pct),
-        page_url        = VALUES(page_url),
-        first_name      = VALUES(first_name),
-        last_name       = VALUES(last_name),
-        -- keep created_* immutable; refresh only updated_*:
-        updated_at_mtn  = VALUES(updated_at_mtn),
-        updated_at_utc  = CURRENT_TIMESTAMP
+        wrestling_season          = VALUES(wrestling_season),
+        track_wrestling_category  = VALUES(track_wrestling_category),
+        name_link                 = VALUES(name_link),
+        team_link                 = VALUES(team_link),
+        wrestler_id               = VALUES(wrestler_id),
+        team_id                   = VALUES(team_id),
+        weight_class              = VALUES(weight_class),
+        gender                    = VALUES(gender),
+        level                     = VALUES(level),
+        governing_body            = VALUES(governing_body),
+        record_text               = VALUES(record_text),
+        wins                      = VALUES(wins),
+        losses                    = VALUES(losses),
+        matches                   = VALUES(matches),
+        win_pct                   = VALUES(win_pct),
+        page_url                  = VALUES(page_url),
+        first_name                = VALUES(first_name),
+        last_name                 = VALUES(last_name)
     `;
 
     const [res] = await pool.query({ sql, values: params });
+
+    // Heuristic counts for ON DUPLICATE:
     const affected = Number(res.affectedRows || 0);
     const _updated = Math.max(0, affected - slice.length);
     const _inserted = slice.length - _updated;
+
     inserted += _inserted;
     updated += _updated;
   }

@@ -5,9 +5,11 @@ import { execute_upload_csv_to_cloud } from "./step_2_upload_csv_to_cloud.js";
 import { execute_create_bigquery_dataset } from "./step_3_create_bigquery_dataset.js";
 import { execute_load_bigquery_database } from "./step_4_load_biq_query_database.js";
 
-// // WRESTER DATA
+// // WRESTLER DATA
 import { wrestler_list_query } from "../queries/query_wrestler_list.js";
 import { wrestler_match_history_query } from "../queries/query_wrestler_match_history.js";
+import { wrestler_team_division_reference } from "../queries/query_wrestler_team_division_reference.js";
+import { wrestler_state_qualifier_and_place_reference } from "../queries/query_wrestler_state_qualifier_and_place_reference.js";
 
 const run_step_1 = true;  // execute_retrieve_data
 const run_step_2 = true;  // execute_upload_csv_to_cloud
@@ -23,16 +25,28 @@ const data_options = {
     // table_ids: ["wrestler_list", "wrestler_match_history"],
     get_data: [
       {
-          file_name: `wrestler_list`,
+          file_name: `wrestler_list_scrape_data`,
           directory_name: `${directory_prefix}_list`,
           query: wrestler_list_query,
-          table_ids: ["wrestler_list"],
+          table_ids: [`wrestler_list_scrape_data`],
       },
       {
-          file_name: `wrestler_match_history`,
+          file_name: `wrestler_match_history_metrics_data`,
           directory_name: `${directory_prefix}_match_history_data`,
           query: wrestler_match_history_query,
-          table_ids: ["wrestler_match_history"],
+          table_ids: ["wrestler_match_history_metrics_data"],
+      },
+      {
+          file_name: `wrestler_team_division_reference`,
+          directory_name: `${directory_prefix}_wrestler_team_division_reference`,
+          query:  wrestler_team_division_reference,
+          table_ids: ["wrestler_team_division_reference"],
+      },
+      {
+          file_name: `wrestler_state_qualifier_and_place_reference`,
+          directory_name: `${directory_prefix}_wrestler_state_qualifier_and_place_reference`,
+          query:  wrestler_state_qualifier_and_place_reference,
+          table_ids: ["wrestler_state_qualifier_and_place_reference"],
       },
     ],
   },
