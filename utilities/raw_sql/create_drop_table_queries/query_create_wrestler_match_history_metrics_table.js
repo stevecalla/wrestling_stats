@@ -66,6 +66,14 @@ const id_fields = `
   name_link                 TEXT,
   team_link                 TEXT,
   page_url                  TEXT,
+  
+
+  -- NEW COLUMNS you can filter on
+  max_match_order           INT,
+  is_final_match_by_order   INT,
+  is_final_match_state      INT,
+  final_match_order         INT,
+  is_final_match            INT,
 
   -- TIMESTAMPS
   created_at_mtn            DATETIME,

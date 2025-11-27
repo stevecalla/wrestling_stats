@@ -15,7 +15,7 @@ import { get_mountain_time_offset_hours } from "../utilities/date_time_tools/get
 
 // These are the wrestlers you want to manually append to the state qualifier list
 const updates = [
-  { wrestler_id: 29790065132, wrestling_season: "2024-25", track_wrestling_category: "High School Boys" },
+  // { wrestler_id: 29790065132, wrestling_season: "2024-25", track_wrestling_category: "High School Boys" },
 ];
 
 async function step_10_append_ad_hoc_wrestler_to_state_qualifier_list() {

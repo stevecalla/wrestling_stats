@@ -54,7 +54,6 @@ const step_flags = {
   // CREATE 2024-25 STATE QUALIFIER LIST
   step_9:  true, // create 2024-25 state qualifier list
   step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data) --todo:
-
   step_11: true, // append state qualifier to match history metrics
   step_12: true, // append state qualifier to wrestler list
 

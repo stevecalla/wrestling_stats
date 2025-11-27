@@ -518,97 +518,158 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
       FROM step_8_names_split s8
     )
 
+    , step_10_final_match AS (
+        WITH ranked AS (
+            SELECT
+            s9.*,
+
+            -- plain max by match_order (no special logic)
+            MAX(s9.match_order) OVER (
+                PARTITION BY s9.wrestling_season, s9.wrestler_id
+            ) AS max_match_order,
+
+            -- Priority-based final match order:
+            -- 1st Place Match → 3rd Place Match → 5th Place Match → max(match_order)
+            COALESCE(
+                MAX(CASE WHEN s9.round LIKE '%1st Place Match%' THEN s9.match_order END)
+                OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
+
+                MAX(CASE WHEN s9.round LIKE '%3rd Place Match%' THEN s9.match_order END)
+                OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
+
+                MAX(CASE WHEN s9.round LIKE '%5th Place Match%' THEN s9.match_order END)
+                OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id),
+
+                MAX(s9.match_order)
+                OVER (PARTITION BY s9.wrestling_season, s9.wrestler_id)
+            ) AS final_match_order
+            FROM step_9_winner s9
+        )
+        SELECT
+            r.*,
+
+            -- Final-by-order flag: just the raw highest match_order
+            CASE
+            WHEN r.match_order = r.max_match_order THEN 1 ELSE 0
+            END AS is_final_match_by_order,
+
+            -- "State placement" final flag (1st/3rd/5th place) based on the priority logic
+            CASE
+            WHEN r.match_order = r.final_match_order
+                AND (
+                    r.round LIKE '%1st Place Match%'
+                    OR r.round LIKE '%3rd Place Match%'
+                    OR r.round LIKE '%5th Place Match%'
+                )
+            THEN 1
+            ELSE 0
+            END AS is_final_match_state,
+
+            -- Overall final flag using the priority-based final_match_order
+            CASE
+            WHEN r.match_order = r.final_match_order THEN 1 ELSE 0
+            END AS is_final_match
+        FROM ranked r
+    )
+
     -- final select uses the CTE result
     SELECT
-      h.id,
-      s9.wrestling_season,
-      s9.track_wrestling_category,
-      l.governing_body,
+        h.id,
+        s10.wrestling_season,
+        s10.track_wrestling_category,
+        l.governing_body,
 
-      s9.wrestler_id,
-      l.name            AS wrestler_name,
-      l.first_name      AS wrestler_first_name,
-      l.last_name       AS wrestler_last_name,
+        s10.wrestler_id,
+        l.name            AS wrestler_name,
+        l.first_name      AS wrestler_first_name,
+        l.last_name       AS wrestler_last_name,
+        
+        l.gender          AS wrestler_gender,
 
-      l.gender          AS wrestler_gender,
+        l.team        AS wrestler_team,
+        l.team_id     AS wrestler_team_id,
+        l.grade       AS wrestler_grade,
+        l.level       AS wrestler_level,
 
-      l.team        AS wrestler_team,
-      l.team_id     AS wrestler_team_id,
-      l.grade       AS wrestler_grade,
-      l.level       AS wrestler_level,
+        h.event, h.start_date, h.end_date, h.weight_category,
 
-      h.event, h.start_date, h.end_date, h.weight_category,
+        s10.match_order,
+        s10.opponent_id,
 
-      s9.match_order,
-      s9.opponent_id,
+        CASE
+            WHEN o.name IS NOT NULL THEN o.name
+            WHEN s10.opponent_name IS NOT NULL AND s10.opponent_name <> '' THEN s10.opponent_name
+            ELSE NULL
+        END AS opponent_name,
 
-      CASE
-          WHEN o.name IS NOT NULL THEN o.name
-          WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN s9.opponent_name
-          ELSE NULL
-      END AS opponent_name,
+        CASE
+            WHEN o.first_name IS NOT NULL THEN o.first_name
+            WHEN s10.opponent_first_name IS NOT NULL AND s10.opponent_first_name <> '' THEN s10.opponent_first_name
+            -- Fallback: derive from opponent_name if split failed
+            WHEN s10.opponent_name IS NOT NULL AND s10.opponent_name <> '' THEN SUBSTRING_INDEX(s10.opponent_name, ' ', 1)
+            ELSE NULL
+        END AS opponent_first_name,
 
-      CASE
-          WHEN o.first_name IS NOT NULL THEN o.first_name
-          WHEN s9.opponent_first_name IS NOT NULL AND s9.opponent_first_name <> '' THEN s9.opponent_first_name
-          -- Fallback: derive from opponent_name if split failed
-          WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN SUBSTRING_INDEX(s9.opponent_name, ' ', 1)
-          ELSE NULL
-      END AS opponent_first_name,
-          
-      CASE
-          -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
-          -- WHEN (LENGTH(o.name) - LENGTH(REPLACE(o.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
-          WHEN o.last_name IS NOT NULL THEN o.last_name
-          WHEN s9.opponent_last_name IS NOT NULL AND s9.opponent_last_name <> '' THEN s9.opponent_last_name
-          -- Fallback: derive from opponent_name if split failed
-          WHEN s9.opponent_name IS NOT NULL AND s9.opponent_name <> '' THEN SUBSTRING_INDEX(s9.opponent_name, ' ', -1)
-          ELSE NULL
-      END AS opponent_last_name,
+        CASE
+            -- exactly one space → split the clean name; address issue where "Von" first name looks like a last name prefix
+            -- WHEN (LENGTH(o.name) - LENGTH(REPLACE(o.name, ' ', ''))) = 1 THEN SUBSTRING_INDEX(l.name, ' ', -1)
+            WHEN o.last_name IS NOT NULL THEN o.last_name
+            WHEN s10.opponent_last_name IS NOT NULL AND s10.opponent_last_name <> '' THEN s10.opponent_last_name
+            -- Fallback: derive from opponent_name if split failed
+            WHEN s10.opponent_name IS NOT NULL AND s10.opponent_name <> '' THEN SUBSTRING_INDEX(s10.opponent_name, ' ', -1)
+            ELSE NULL
+        END AS opponent_last_name,
 
-      o.gender AS opponent_gender, -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
- 
-      CASE
-        WHEN o.team IS NOT NULL THEN o.team
-        WHEN s9.opponent_team IS NOT NULL AND CHAR_LENGTH(s9.opponent_team) > 3 THEN s9.opponent_team
-        ELSE NULL
-      END AS opponent_team,
-      o.team_id     AS opponent_team_id,    -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
-      o.grade       AS opponent_grade,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
-      o.level       AS opponent_level,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
+        o.gender AS opponent_gender, -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
 
-      s9.winner_id,
-      s9.winner_name,
+        CASE
+            WHEN o.team IS NOT NULL THEN o.team
+            WHEN s10.opponent_team IS NOT NULL AND CHAR_LENGTH(s10.opponent_team) > 3 THEN s10.opponent_team
+            ELSE NULL
+        END AS opponent_team,
+        o.team_id     AS opponent_team_id,    -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
+        o.grade       AS opponent_grade,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
+        o.level       AS opponent_level,      -- will be blank for wrestlers outside CO; check the opponent team (missing ", CO")
 
-      s9.round, s9.is_varsity,
-      s9.result, s9.score_details, s9.outcome, s9.counts_in_record,
-      s9.wins_all_run, s9.losses_all_run, s9.ties_all_run,
-      s9.total_matches,
-      ROUND(
-        CASE WHEN s9.total_matches > 0
-            THEN s9.wins_all_run / s9.total_matches * 100
-            ELSE NULL END, 3
-      ) AS total_matches_win_pct,
+        s10.winner_id,
+        s10.winner_name,
 
-      s9.wins_var_run, s9.losses_var_run, s9.ties_var_run,
-      
-      s9.record, s9.record_varsity,
-      s9.raw_details,
-      l.name_link, l.team_link, l.page_url,
-      
-      h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
+        s10.round, s10.is_varsity,
+        s10.result, s10.score_details, s10.outcome, s10.counts_in_record,
+        s10.wins_all_run, s10.losses_all_run, s10.ties_all_run,
+        s10.total_matches,
+        ROUND(
+            CASE WHEN s10.total_matches > 0
+                THEN s10.wins_all_run / s10.total_matches * 100
+                ELSE NULL END, 3
+        ) AS total_matches_win_pct,
 
-    FROM step_9_winner s9
-        LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s9.id
-        LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s9.wrestler_id
-        LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s9.opponent_id
+        s10.wins_var_run, s10.losses_var_run, s10.ties_var_run,
+        
+        s10.record, s10.record_varsity,
+        s10.raw_details,
+        l.name_link, l.team_link, l.page_url,
+
+        -- MAX MATCH FIELDS TO FILTER TO FINAL RECORD
+        s10.max_match_order,         -- highest match_order the wrestler had (raw sequence max)
+        s10.is_final_match_by_order, -- 1 = wrestler’s last match by pure match_order, regardless of round/placement
+        s10.is_final_match_state,    -- 1 = match was a placement match (1st/3rd/5th Place), chosen by priority logic
+        s10.final_match_order,       -- prioritized final match order (1st → 3rd → 5th → fallback to max(match_order))
+        s10.is_final_match,          -- 1 = this is the final match for the wrestler/season using priority logic
+
+        h.created_at_mtn, h.created_at_utc, h.updated_at_mtn, h.updated_at_utc
+
+    FROM step_10_final_match s10
+        LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s10.id
+        LEFT JOIN wrestler_list_scrape_data l ON l.wrestler_id = s10.wrestler_id
+        LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s10.opponent_id
 
     ORDER BY
-      s9.wrestling_season,
-      s9.wrestler_id,
-      s9.match_order,     -- primary sequence
-      h.id;               -- tiebreaker
-    ;
+        s10.wrestling_season,
+        s10.wrestler_id,
+        s10.match_order,     -- primary sequence
+        h.id;               -- tiebreaker
+    ;   
   `;
 }
   
