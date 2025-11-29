@@ -37,6 +37,9 @@ desktop.ini
 .env.local
 .envrc
 .local.env
+.env.sync
+.env.sync.win
+.env.sync.mac
 
 # Node / package managers / build artifacts
 node_modules/

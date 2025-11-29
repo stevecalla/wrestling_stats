@@ -11,7 +11,7 @@ const PORT = process.env.CHROME_DEVTOOLS_PORT || "9222";
 const USER_DATA_DIR = path.join(os.homedir(), "chrome-tw-user-data");
 
 // --- main function ---
-export async function step_15_close_chrome_dev({
+export async function step_19_close_chrome_dev({
   browser,
   context,
   userDataDir = USER_DATA_DIR,
