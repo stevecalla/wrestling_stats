@@ -14,18 +14,28 @@ import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_mat
 import { step_4_create_wrestler_match_history_data } from "./src/step_4_create_wrestler_match_history_metrics.js";
 
 import { step_5_create_team_division_data } from "./src/step_5_create_team_division_data.js";
+
 import { step_6_append_team_division_updates } from "./src/step_6_append_team_division_data.js"; // ad hoc updates for missing records
+
 import { step_7_append_team_division_to_match_metrics } from "./src/step_7_append_team_division_to_match_metrics.js";
+
 import { step_8_append_team_division_to_wrestler_list } from "./src/step_8_append_team_division_to_wreslter_list.js";
 
 import { step_9_create_state_qualfier_reference } from "./src/step_9_create_state_qualfier_reference.js";
+
 import { step_10_append_ad_hoc_wrestler_to_state_qualifier_list } from "./src/step_10_append_ad_hoc_wrestler_to_state_qualifier_list.js";
+
 import { step_11_append_state_qualifier_to_match_metrics } from "./src/step_11_append_state_qualifier_to_match_metrics.js";
+
 import { step_12_append_state_qualifier_to_wrestler_list } from "./src/step_12_append_state_qualifier_to_wrestler_list.js";
+
+import { step_13_apply_2025_state_qualifier_team_division_to_2026 } from "./src/step_13_apply_2025_state_qualifier_team_division_to_2026.js";
 
 import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 14 load google cloud & bigquery
 
-import { step_15_close_chrome_dev } from "./src/step_15_close_chrome_developer.js";
+import { step_18_transfer_tables_between_windows_and_mac } from "./utilities/transfer_tables_between_windows_and_mac/sync_wrestling_tables_full_refresh.js";
+
+import { step_19_close_chrome_dev } from "./src/step_19_close_chrome_developer.js";
 
 import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
 
@@ -33,40 +43,48 @@ import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
 // 🧩 STEP TOGGLES todo:
 // ====================================================
 const step_flags = {
+
+  // LAUNCH CHROME
   step_0:  false,  // 🚀 launch chrome
 
-  // MATCH LIST
+  // GET WRESTLER LIST
   step_1:  false,  // 📄 get wrestler list
 
   // OLD url list source; now pulled from step 3
   // step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
 
-  // MATCH HISTORY
+  // GET MATCH HISTORY
   step_3:  false,  // 🏟️ get match history
-  step_4:  true, // 📄 create match history metrics
+  step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  true, // create team division
-  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  true, // append team division to match history metrics
-  step_8:  true, // append team division to wrestler list
+  step_5:  false, // create team division
+  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  false, // append team division to match history metrics
+  step_8:  false, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  true, // create 2024-25 state qualifier list
-  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data) --todo:
-  step_11: true, // append state qualifier to match history metrics
-  step_12: true, // append state qualifier to wrestler list
+  step_9:  false, // create 2024-25 state qualifier list
+  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: false, // append state qualifier to match history metrics
+  step_12: false, // append state qualifier to wrestler list
+
+  // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
+  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: true, // load data into Google cloud / bigquery
+  step_14: false, // load data into Google cloud / bigquery
 
-  step_15: false,  // 🧹 close browser
+  // TRANSFER TABLES BETWEEN WINDOWS & MAC
+  step_18: true,  // 🧹 transfer tables between windos & mac
+
+  step_19: false,  // 🧹 close browser
 };
 
 // 🧪 each step can run test or full //todo:
 const test_flags = {
   step_1_is_test: false, // run small sample for wrestler list
-  step_3_is_test: true, // run small sample for match history
+  step_3_is_test: false, // run small sample for match history
   step_4_is_test: false, // run small sample for match history metrics
 };
 
@@ -114,7 +132,7 @@ const adjusted_gender = config.track_wrestling_category
 const step_icons = {
   0:"0️⃣",1:"1️⃣",2:"2️⃣",3:"3️⃣",4:"4️⃣",
   5:"5️⃣",6:"6️⃣",7:"7️⃣",8:"8️⃣",9:"9️⃣",
-  10:"🔟",11:"1️⃣1️⃣",12:"1️⃣2️⃣",13:"1️⃣3️⃣",14:"1️⃣4️⃣",
+  10:"1️⃣0️⃣",11:"1️⃣1️⃣",12:"1️⃣2️⃣",13:"1️⃣3️⃣",14:"1️⃣4️⃣",
   15:"1️⃣5️⃣",16:"1️⃣6️⃣",17:"1️⃣7️⃣",18:"1️⃣8️⃣",19:"1️⃣9️⃣"
 };
 
@@ -333,6 +351,17 @@ async function main() {
       log_step_success(12, `Append state qualifier & place updates to wrestler list`, Date.now() - start);
     } else log_step_skip(12, "Append state qualifier & place updates to wrestler list");
 
+    // === STEP 13 APPEND 2025 STATE QUALIFIER TEAM DIVISION TO 2026 ===
+    if (step_flags.step_13) {
+      const start = Date.now();
+
+      log_step_start(13, "Start append 2025 state qualifier & place to 2026 🔗");
+
+      await step_13_apply_2025_state_qualifier_team_division_to_2026();
+
+      log_step_success(13, `Append 2025 state qualifier & place to 2026`, Date.now() - start);
+    } else log_step_skip(13, "append 2025 state qualifier & place to 2026");
+
     // === STEP 14 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
     if (step_flags.step_14) {
       const start = Date.now();
@@ -344,15 +373,26 @@ async function main() {
       log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
     } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
 
-    // === STEP 15 CLOSE BROWSER ===
-    if (step_flags.step_15) {
+    
+    // === STEP 18 CLOSE BROWSER ===
+    if (step_flags.step_18) {
       const start = Date.now();
-      log_step_start(15, "Closing Chrome DevTools 🧹");
+      log_step_start(18, "Transfer tables between windows & mac 🧹");
 
-      await step_15_close_chrome_dev(ctx.browser, ctx.context);
+      await step_18_transfer_tables_between_windows_and_mac();
 
-      log_step_success(15, "Browser closed successfully", Date.now() - start);
-    } else log_step_skip(15, "close browser");
+      log_step_success(18, "Transfer tables between windows & mac successfully", Date.now() - start);
+    } else log_step_skip(18, "Transfer tables between windows & mac");
+
+    // === STEP 19 CLOSE BROWSER ===
+    if (step_flags.step_19) {
+      const start = Date.now();
+      log_step_start(19, "Closing Chrome DevTools 🧹");
+
+      await step_19_close_chrome_dev(ctx.browser, ctx.context);
+
+      log_step_success(19, "Browser closed successfully", Date.now() - start);
+    } else log_step_skip(19, "close browser");
 
     const total_ms = Date.now() - program_start;
     console.log(color_text(`\n⏲️  Total duration: ${format_duration(total_ms)}`, "cyan"));

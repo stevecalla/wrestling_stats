@@ -7,7 +7,12 @@ USE wrestling_stats;
 -- ============================
 SELECT * FROM wrestler_list_scrape_data ORDER BY id ASC LIMIT 60;
 SELECT MAX(updated_at_mtn) FROM wrestler_list_scrape_data LIMIT 60;
-SELECT DATE_FORMAT(updated_at_mtn, '%Y-%m-%d'), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data  GROUP BY 1 WITH ROLLUP;
+SELECT DATE_FORMAT(created_at_mtn, '%Y-%m-%d'), DATE_FORMAT(updated_at_mtn, '%Y-%m-%d'), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data  GROUP BY 1, 2 WITH ROLLUP;
+SELECT wrestling_season, track_wrestling_category, FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data  GROUP BY 1, 2 WITH ROLLUP;
+
+SELECT * FROM wrestler_list_scrape_data WHERE wrestling_season LIKE '2025-26' ORDER BY id ASC LIMIT 60;
+SELECT last_name, name, team, COUNT(*) FROM wrestler_list_scrape_data WHERE wrestling_season LIKE '2025-26' GROUP BY 1, 2, 3 ORDER BY last_name ASC;
+
 SELECT * FROM wrestler_list_scrape_data  WHERE DATE_FORMAT(updated_at_mtn, '%Y-%m-%d') = '2025-11-18';
 SELECT "query count records" AS query_label, FORMAT(COUNT(DISTINCT wrestler_id), 0), FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data; -- COUNT RECORDS
 SELECT "query duplicate id check" AS query_label, wrestler_id, FORMAT(COUNT(*), 0) AS COUNT FROM wrestler_list_scrape_data GROUP BY 1, 2 HAVING COUNT > 1; -- CHECK FOR DUPLICATES
