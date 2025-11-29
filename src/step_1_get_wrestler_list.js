@@ -229,15 +229,17 @@ function extractor_source() {
 
     // --- helper: sanitize a display name before splitting ---
     // removes trailing " (…)" bits and common suffixes like Jr., III, etc.
-    function clean_display_name(raw) {
+    function clean_display_name(raw) { 
       let s = String(raw || "").trim();
 
       // 1) remove any trailing parenthetical, e.g. " (Roman)" or "(JR)"
-      //    only at the END of the string to avoid nuking legitimate middle nicknames
       s = s.replace(/\s*\([^)]+\)\s*$/u, "");
 
       // 2) collapse stray multiple spaces
       s = s.replace(/\s+/g, " ").trim();
+
+      // **NEW: 2b) remove trailing comma (e.g., "Steven Vasquez Jr. ,")**
+      s = s.replace(/,\s*$/u, "").trim();
 
       // 3) strip a trailing suffix token if present
       //    (handles comma or no-comma variants: "Jr", "Jr.", "III", "IV", "II")
@@ -252,40 +254,6 @@ function extractor_source() {
     //  - "Last, First Middle" → last = "Last", first = "First"
     //  - "First Middle Last"  → last = last token (keeps hyphens, "de la", etc. naïvely)
     //  - "Boyd Thomas (Roman)" → parenthetical removed, yields first="Boyd", last="Thomas"
-    // function parse_name(full) {
-    //   const cleaned = clean_display_name(full);
-    //   if (!cleaned) return { first_name: null, last_name: null };
-
-    //   // Case 1: "Last, First …"
-    //   if (cleaned.includes(",")) {
-    //     const [last, restRaw] = cleaned.split(",").map(s => s.trim()).filter(Boolean);
-    //     const rest = restRaw || "";
-    //     const first = rest.split(/\s+/)[0] || null;
-    //     return { first_name: first || null, last_name: last || null };
-    //   }
-
-    //   // Case 2: "First … Last"
-    //   const parts = cleaned.split(/\s+/).filter(Boolean);
-    //   if (parts.length === 1) {
-    //     // only one token left → assume it's a last name
-    //     return { first_name: null, last_name: parts[0] || null };
-    //   }
-
-    //   // Optional: light support for multi-word last-name particles (van, de, da, del, de la, di, du, von)
-    //   // If the penultimate token is a common particle, attach it to the last token.
-    //   const particles = new Set(["van", "von", "de", "da", "del", "der", "di", "du", "la", "le"]);
-    //   let first = parts[0];
-    //   let last = parts[parts.length - 1];
-    //   const penult = parts[parts.length - 2]?.toLowerCase();
-
-    //   if (particles.has(penult)) {
-    //     last = parts.slice(parts.length - 2).join(" ");
-    //     if (parts.length > 2) first = parts[0]; // keep simple "First"
-    //   }
-
-    //   return { first_name: first || null, last_name: last || null };
-    // }
-
     function parse_name(full) {
       const cleaned = clean_display_name(full);
       if (!cleaned) return { first_name: null, last_name: null };
