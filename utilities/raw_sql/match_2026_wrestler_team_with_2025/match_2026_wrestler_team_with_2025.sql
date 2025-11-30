@@ -1,6 +1,6 @@
 -- TABLE CHECKS & VALIDATION
 SELECT * FROM wrestler_list_scrape_data WHERE;
-SELECT wrestling_season, track_wrestling_category, FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data  GROUP BY 1, 2 WITH ROLLUP;
+SELECT wrestling_season, track_wrestling_category, FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data  GROUP BY 1, 2 WITH ROLLUP; 
 
 SELECT * FROM wrestler_list_scrape_data WHERE wrestling_season LIKE "2025-26";
 SELECT * FROM wrestler_list_scrape_data WHERE wrestling_season LIKE "2025-26" AND team_division IS NOT NULL;

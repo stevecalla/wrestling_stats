@@ -94,6 +94,14 @@ function get_day_of_week(date) {
 // get_current_datetime_for_file_naming();
 // convert_timestamp_to_datetime('1712179121648');
 
+function log_with_time_stamp(message, type = 'info') {
+    const timestamp = new Date().toLocaleString();
+    const prefix = `[${timestamp}]`;
+    if (type === 'error') console.error(`${prefix} ❌ ${message}`);
+    else if (type === 'success') console.log(`${prefix} ✅ ${message}`);
+    else console.log(`${prefix} ${message}`);
+}
+
 export {
     format_date,
     format_date_only,
@@ -105,4 +113,5 @@ export {
     get_formatted_date,
     get_formatted_date_ampm,
     get_day_of_week,
+    log_with_time_stamp,
 }

@@ -2,7 +2,14 @@
 import { get_pool } from "./mysql_pool.js";
 
 /** Fast COUNT(*) with a simple filter to avoid NULL/blank links */
-export async function count_rows_in_db_wrestler_links(wrestling_season, gender) {
+export async function count_rows_in_db_wrestler_links(
+    wrestling_season, 
+    track_wrestling_category,
+    gender, 
+    sql_where_filter_state_qualifier,
+    sql_team_id_list,
+    sql_wrestler_id_list,
+ ) {
   const pool = await get_pool();
   const [rows] = await pool.query(
     `SELECT 
@@ -10,8 +17,12 @@ export async function count_rows_in_db_wrestler_links(wrestling_season, gender) 
     FROM wrestler_list_scrape_data 
     WHERE 1 = 1
       AND name_link IS NOT NULL AND name_link <> ''
+      AND track_wrestling_category = "${track_wrestling_category}"
       AND wrestling_season = "${wrestling_season}"
       AND gender = "${gender}"
+      ${sql_where_filter_state_qualifier}
+      ${sql_team_id_list}
+      ${sql_wrestler_id_list}
     `
   );
   return Number(rows?.[0]?.cnt || 0);
@@ -26,7 +37,11 @@ export async function* iter_name_links_from_db({
   limit = Infinity,           // same semantic as CSV version
   batch_size = 500,           // tune as desired
   wrestling_season,
+  track_wrestling_category,
   gender,
+  sql_where_filter_state_qualifier,
+  sql_team_id_list,
+  sql_wrestler_id_list,
 } = {}) {
   const pool = await get_pool();
 
@@ -35,15 +50,24 @@ export async function* iter_name_links_from_db({
 
   const link_query = `
       SELECT 
-        id, name_link
+        id, 
+        name_link
       FROM wrestler_list_scrape_data
       WHERE 1 = 1
         AND name_link IS NOT NULL AND name_link <> ''
+        AND track_wrestling_category = "${track_wrestling_category}"
         AND wrestling_season = "${wrestling_season}"
         AND gender = "${gender}"
+        ${sql_where_filter_state_qualifier}
+        ${sql_team_id_list}
+        ${sql_wrestler_id_list}
       ORDER BY id
       LIMIT ? OFFSET ?
   `;
+
+  console.log(link_query);
+  
+  // console.log("sql where filter", sql_where_filter_state_qualifier);
 
   while (yielded < limit) {
     const to_fetch = Math.min(batch_size, limit - yielded);
