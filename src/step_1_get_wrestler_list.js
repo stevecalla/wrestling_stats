@@ -296,30 +296,6 @@ function extractor_source() {
       return { first_name: first || null, last_name: last || null };
     }
 
-    // // --- NEW helper: parse first/last name from the "name" cell text ---
-    // function parse_name(full) {
-    //   const raw = String(full || "").trim();
-    //   if (!raw) return { first_name: null, last_name: null };
-
-    //   // Case 1: "Last, First Middle"
-    //   if (raw.includes(",")) {
-    //     const [last, rest] = raw.split(",").map(s => s.trim()).filter(Boolean);
-    //     if (!last) return { first_name: null, last_name: null };
-    //     if (!rest) return { first_name: null, last_name: last };
-    //     const first = rest.split(/\s+/)[0] || null;
-    //     return { first_name: first || null, last_name: last || null };
-    //   }
-
-    //   // Case 2: "First Middle Last" → take first token and last token
-    //   const parts = raw.split(/\s+/).filter(Boolean);
-    //   if (parts.length === 1) {
-    //     return { first_name: null, last_name: parts[0] || null };
-    //   }
-    //   const first = parts[0] || null;
-    //   const last = parts[parts.length - 1] || null;
-    //   return { first_name: first || null, last_name: last || null };
-    // }
-
     // --- update: include wrestler_id & team_id (snake_case) and parsed first/last name ---
     const readTable = () => {
       const rows = document.querySelectorAll("tr.dataGridRow");

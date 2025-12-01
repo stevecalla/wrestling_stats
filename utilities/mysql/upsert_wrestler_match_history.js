@@ -28,8 +28,8 @@
 
     const sql = `
       CREATE TABLE IF NOT EXISTS wrestler_match_history_scrape_data (
-
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
         wrestling_season VARCHAR(32)  NOT NULL,
         track_wrestling_category VARCHAR(32) NOT NULL,
         page_url        VARCHAR(1024) NULL,
@@ -127,7 +127,7 @@
       "event", 
       "weight_category", 
 
-      "match_order",      // 👈 NEW
+      "match_order", 
       "opponent_id",
 
       "raw_details",
