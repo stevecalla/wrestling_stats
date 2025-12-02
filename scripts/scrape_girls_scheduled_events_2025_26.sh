@@ -26,20 +26,20 @@ echo "Current user: $current_user"
 echo "Running update forecast cron job."
 
 # PATH TO JS FILE
-# C:\Users\calla\development\projects\wrestling_stats\utilities\scheduled_jobs\girls_state_qualifiers_wrestlers_2025_26\script.js
-# src\scheduled_jobs\scrape_girls_state_qualifiers_2025_26.js
+# C:\Users\calla\development\projects\wrestling_stats\utilities\scheduled_jobs\girls_all_wrestlers_2025_26\script.js
+# src\scheduled_jobs\scrape_girls_all_2025_26.js
 
 if [ "$current_user" == "steve-calla" ]; then
     # mac
-    JS_FILE="/home/steve-calla/development/wrestling/wrestling_stats/src/scheduled_jobs/scrape_girls_state_qualifiers_2025_26.js"
+    JS_FILE="/home/steve-calla/development/wrestling/wrestling_stats/src/scheduled_jobs/scrape_girls_scheduled_events_2025_26.js"
     NODE_PATH="/home/$current_user/.nvm/versions/node/v18.20.4/bin/node"
 elif [ "$current_user" == "steve-calla" ]; then
     # linux
-    JS_FILE="/home/steve-calla/development/wrestling/wrestling_stats/src/scheduled_jobs/scrape_girls_state_qualifiers_2025_26.js"
+    JS_FILE="/home/steve-calla/development/wrestling/wrestling_stats/src/scheduled_jobs/scrape_girls_scheduled_events_2025_26.js"
     NODE_PATH="/usr/bin/node"
 elif [ "$current_user" == "calla" ]; then
     # windows
-    JS_FILE="C:/Users/calla/development/projects/wrestling_stats/src/scheduled_jobs/scrape_girls_state_qualifiers_2025_26.js"
+    JS_FILE="C:/Users/calla/development/projects/wrestling_stats/src/scheduled_jobs/scrape_girls_scheduled_events_2025_26.js"
     NODE_PATH="C:\Program Files\nodejs\node.exe"
 else
     echo "Unknown user: $current_user"

@@ -10,6 +10,7 @@ import { wrestler_list_query } from "../queries/query_wrestler_list.js";
 import { wrestler_match_history_query } from "../queries/query_wrestler_match_history.js";
 import { wrestler_team_division_reference } from "../queries/query_wrestler_team_division_reference.js";
 import { wrestler_state_qualifier_and_place_reference } from "../queries/query_wrestler_state_qualifier_and_place_reference.js";
+import { team_schedule_scrape_data } from "../queries/query_team_schedule_scrape_data.js";
 
 const run_step_1 = true;  // execute_retrieve_data
 const run_step_2 = true;  // execute_upload_csv_to_cloud
@@ -47,6 +48,12 @@ const data_options = {
           directory_name: `${directory_prefix}_wrestler_state_qualifier_and_place_reference`,
           query:  wrestler_state_qualifier_and_place_reference,
           table_ids: ["wrestler_state_qualifier_and_place_reference"],
+      },
+      {
+          file_name: `team_schedule_scrape_data`,
+          directory_name: `${directory_prefix}_team_schedule_scrape_data`,
+          query:  team_schedule_scrape_data,
+          table_ids: ["team_schedule_scrape_data"],
       },
     ],
   },

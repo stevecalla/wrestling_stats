@@ -1,6 +1,22 @@
 #!/bin/bash
 
+# ============================================
+# Setup Logging
+# ============================================
+# Directory of this script (so we can find job_logging_common.sh next to it)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the common logging helper
+# Path: C:\Users\calla\development\projects\wrestling_stats\scripts\job_logging_common.sh
+source "${SCRIPT_DIR}/job_logging_common.sh"
+
+# Initialize logging for this specific job
+# This job name will be used in folder + log filenames
+setup_logging "scrape_boys_scheduled_events_2025_26"
+
+# ============================================
 # Start timer
+# ============================================
 start_time=$(date +%s)
 start_time_readable=$(date +"%I:%M:%S %p")
 
@@ -27,6 +43,7 @@ elif [ "$current_user" == "calla" ]; then
     NODE_PATH="C:\Program Files\nodejs\node.exe"
 else
     echo "Unknown user: $current_user"
+    finish_logging
     exit 1
 fi
 
@@ -39,10 +56,12 @@ if [ -f "$JS_FILE" ]; then
         "$NODE_PATH" "$JS_FILE"
     else
         echo "Node.js not found at $NODE_PATH"
+        finish_logging
         exit 1
     fi
 else
     echo "JavaScript file not found at $JS_FILE"
+    finish_logging
     exit 1
 fi
 
@@ -60,3 +79,8 @@ seconds=$((elapsed_time % 60))
 echo "Script started at: $start_time_readable"
 echo "Script ended at: $end_time_readable"
 echo "Total execution time: $hours hours, $minutes minutes, $seconds seconds"
+
+# ============================================
+# Finish logging (prints summary + rotates logs)
+# ============================================
+finish_logging

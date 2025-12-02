@@ -335,6 +335,8 @@ async function main(
         sql_wrestler_id_list,
       });
 
+  console.log('find console.log=================');
+  
   // for (const { i, url } of test_link) {
   for await (const { i, url } of iterator) {
     if (handles_dead({ browser, context, page })) {

@@ -1,7 +1,7 @@
 import { execute_scrape_track_wrestling } from "../../main.js";
 import { log_with_time_stamp } from "../../utilities/date_time_tools/get_current_datetime.js";
 
-async function run_boys_events_2025_26() {
+async function run_boys_scheduled_events_2025_26() {
     log_with_time_stamp('Hello - RUN UPDATE LEADS JOB');
     log_with_time_stamp('Starting update process...');
 
@@ -28,4 +28,4 @@ async function run_boys_events_2025_26() {
 
 run_boys_scheduled_events_2025_26();
 
-// export { run_boys_scheduled_events_2025_26 };
+export { run_boys_scheduled_events_2025_26 };

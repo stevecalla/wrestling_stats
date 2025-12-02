@@ -65,8 +65,8 @@ export async function* iter_name_links_from_db({
       ORDER BY id
       LIMIT ? OFFSET ?
   `;
-
-  console.log(link_query);
+  
+  console.log('log inside iter_name_links_from_db', link_query);
   
   // console.log("sql where filter", sql_where_filter_state_qualifier);
 
@@ -201,7 +201,7 @@ export async function* iter_name_links_based_on_event_schedule({
       ;
   `;
 
-  console.log(link_query);
+  console.log('log inside iter_name_links_from_db', link_query);
 
   while (yielded < limit) {
     const to_fetch = Math.min(batch_size, limit - yielded);
