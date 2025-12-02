@@ -15,6 +15,7 @@ import { chromium } from "playwright";
 import { launch_chrome_win } from "../utilities/chrome_dev_tools/launch_chrome_win.js";
 import { launch_chrome_linux } from "../utilities/chrome_dev_tools/launch_chrome_linux.js";
 import { launch_chrome_mac } from "../utilities/chrome_dev_tools/launch_chrome_mac.js";
+import { step_19_close_chrome_dev } from "./step_19_close_chrome_developer.js";
 
 const PORT = String(process.env.CHROME_DEVTOOLS_PORT || 9222);
 const CONNECT_URL = `http://localhost:${PORT}`;

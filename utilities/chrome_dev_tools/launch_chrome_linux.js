@@ -59,7 +59,8 @@ export async function launch_chrome_linux(url = target_url, USER_DATA_DIR_DEFAUL
     `--user-data-dir=${user_data_dir}`,
     `--no-first-run`,
     `--no-default-browser-check`,
-    `--new-window`,
+    // `--new-window`,
+    `--headless=new`,
     // Optional Linux niceties (uncomment if needed):
     // `--password-store=basic`,
     // `--use-mock-keychain`,

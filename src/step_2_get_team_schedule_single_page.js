@@ -576,7 +576,7 @@ async function main(
     }
   }
 
-  await browser.close();
+  // await browser.close();
   console.log(
     `\n✅ done. processed ${processed} Results.jsp page(s) into CSV: ${file_path}`
   );

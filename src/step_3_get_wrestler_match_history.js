@@ -21,6 +21,7 @@ import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 
 import { color_text } from "../utilities/console_logs/console_colors.js";
+import { step_19_close_chrome_dev } from "./step_19_close_chrome_developer.js";
 
 /* ------------------------------------------
    small helpers
@@ -275,7 +276,7 @@ async function main(
     console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
   });
 
-  // initial login
+  // INIITIAL LOGIN = SAFE GOTO ENSURES ON THE CORRECT PAGE THEN AUTO LOGIN SELECTS THE SEASON
   await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
   await page.waitForTimeout(2000);
 
@@ -336,15 +337,23 @@ async function main(
       });
 
   console.log('find console.log=================');
-  
+
   // for (const { i, url } of test_link) {
   for await (const { i, url } of iterator) {
     if (handles_dead({ browser, context, page })) {
+      // CLOSE THE CURRENT BROWSER
+      step_19_close_chrome_dev(browser, context);
+
       console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
+
+      // LAUNCH BROWSER AGAIN
       ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
       browser.on?.("disconnected", () => {
         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
       });
+
+      // RELOGIN = SELECT THE WRESTLING SEASON ET AL
       await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
     }
 
@@ -401,15 +410,26 @@ async function main(
             e.code = "E_TARGET_CLOSED";
           }
           if (e?.code === "E_TARGET_CLOSED") {
+            // CLOSE THE CURRENT BROWSER
+            step_19_close_chrome_dev(browser, context);
+
             console.warn("♻️ frame died during evaluate — reconnecting and retrying once...");
+
+            // LAUNCH BROWSER AGAIN
             ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
             browser.on?.("disconnected", () =>
               console.warn("⚠️ CDP disconnected — Chrome was closed.")
             );
+
+            // RELOGIN = SELECT THE WRESTLING SEASON ET AL
             await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+
             await safe_goto(page, url, { timeout: load_timeout_ms });
+
             let tf =
               page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+
             rows = await tf.evaluate(extractor_source());
           } else {
             throw e;
@@ -441,14 +461,21 @@ async function main(
         break; // success → break retry loop
       } catch (e) {
         if (e?.code === "E_TARGET_CLOSED" || e?.code === "E_GOTO_TIMEOUT") {
-          const cause =
-            e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
-          console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
+          const cause = e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
+          
+          // CLOSE THE CURRENT BROWSER
+          step_19_close_chrome_dev(browser, context);
 
+          console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
+          
+          // LAUNCH BROWSER AGAIN
           ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
           browser.on?.("disconnected", () => {
             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
           });
+
+          // RELOGIN = SELECT THE WRESTLING SEASON ET AL
           await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
           if (attempts >= 2) throw e;
@@ -460,6 +487,7 @@ async function main(
   }
 
   await browser.close(); // closes CDP connection (not the external Chrome instance)
+
   console.log(
     `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events)`
   );
