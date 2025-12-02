@@ -11,6 +11,8 @@ async function run_girls_all_wrestlers_2025_26() {
             track_wrestling_category: "High School Girls",
             wrestling_season: "2025-26",
             gender: "F",
+            use_scheduled_events_iterator_query: false,
+            use_wrestler_list_iterator_query: true,
             // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
             // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
             // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",

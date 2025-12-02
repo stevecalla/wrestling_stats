@@ -21,46 +21,47 @@ async function ensure_table() {
     CREATE TABLE IF NOT EXISTS team_schedule_scrape_data (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-      wrestling_season        VARCHAR(32)  NOT NULL,
-      track_wrestling_category VARCHAR(32) NOT NULL,
-      gender                  VARCHAR(8)   NULL,
+      wrestling_season         VARCHAR(32)  NOT NULL,
+      track_wrestling_category VARCHAR(32)  NOT NULL,
+      gender                   VARCHAR(8)   NULL,
 
-      grid_page_index         INT UNSIGNED NULL,
+      grid_page_index          INT UNSIGNED NULL,
 
-      date_raw                VARCHAR(32)  NULL,
-      start_date              DATE         NULL,
-      end_date                DATE         NULL,
+      date_raw                 VARCHAR(32)  NULL,
+      start_date               DATE         NULL,
+      end_date                 DATE         NULL,
 
-      event_name              VARCHAR(255) NULL,
-      event_js                VARCHAR(512) NULL,
+      event_name               VARCHAR(255) NULL,
+      event_js                 VARCHAR(512) NULL,
 
-      team_name_raw           VARCHAR(255) NULL,
-      team_role               VARCHAR(32)  NULL,
-      team_index              INT UNSIGNED NULL,
-      team_id                 BIGINT UNSIGNED NULL,
+      team_name_raw            VARCHAR(255) NULL,
+      team_role                VARCHAR(32)  NULL,
+      team_index               INT UNSIGNED NULL,
+      team_id                  BIGINT UNSIGNED NULL,
 
-      row_index_in_span       INT UNSIGNED NULL,
-      search_span_label       VARCHAR(64)  NULL,
-      row_index_global        INT UNSIGNED NULL,
+      row_index_in_span        INT UNSIGNED NULL,
+      search_span_label        VARCHAR(64)  NULL,
+      row_index_global         INT UNSIGNED NULL,
 
-      created_at_mtn          DATETIME     NOT NULL,
-      created_at_utc          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at_mtn           DATETIME     NOT NULL,
+      created_at_utc           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-      updated_at_mtn          DATETIME     NOT NULL,
-      updated_at_utc          DATETIME     NOT NULL,
+      updated_at_mtn           DATETIME     NOT NULL,
+      updated_at_utc           DATETIME     NOT NULL,
 
+      -- UNIQUE signature for one row of a team in an event
       UNIQUE KEY uk_team_schedule_sig (
         wrestling_season,
         track_wrestling_category,
+        gender,
         start_date,
         event_name(150),
         team_name_raw(150),
-        team_role,
         team_index
       ),
 
-      KEY idx_team_schedule_span (wrestling_season, track_wrestling_category, start_date),
-      KEY idx_team_schedule_team (wrestling_season, team_id),
+      KEY idx_team_schedule_span  (wrestling_season, track_wrestling_category, start_date),
+      KEY idx_team_schedule_team  (wrestling_season, team_id),
       KEY idx_team_schedule_event (wrestling_season, start_date, event_name(150)),
 
       PRIMARY KEY (id)
@@ -159,7 +160,9 @@ export async function upsert_team_schedule(rows, meta) {
       team_name_raw: r.team_name_raw ?? null,
       team_role: r.team_role ?? null,
       team_index:
-        typeof r.team_index === "number" ? r.team_index : r.team_index != null
+        typeof r.team_index === "number"
+          ? r.team_index
+          : r.team_index != null
           ? Number(r.team_index)
           : null,
       team_id: r.team_id != null ? Number(r.team_id) : null,
@@ -168,15 +171,15 @@ export async function upsert_team_schedule(rows, meta) {
         typeof r.row_index_in_span === "number"
           ? r.row_index_in_span
           : r.row_index_in_span != null
-            ? Number(r.row_index_in_span)
-            : null,
+          ? Number(r.row_index_in_span)
+          : null,
       search_span_label: r.search_span_label ?? null,
       row_index_global:
         typeof r.row_index_global === "number"
           ? r.row_index_global
           : r.row_index_global != null
-            ? Number(r.row_index_global)
-            : null,
+          ? Number(r.row_index_global)
+          : null,
 
       created_at_mtn,
       created_at_utc,
@@ -205,22 +208,22 @@ export async function upsert_team_schedule(rows, meta) {
         updated_at_mtn = 
           CASE
             WHEN NOT (
-              wrestling_season        <=> VALUES(wrestling_season) AND
+              wrestling_season         <=> VALUES(wrestling_season) AND
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              gender                  <=> VALUES(gender) AND
-              grid_page_index         <=> VALUES(grid_page_index) AND
-              date_raw                <=> VALUES(date_raw) AND
-              start_date              <=> VALUES(start_date) AND
-              end_date                <=> VALUES(end_date) AND
-              event_name              <=> VALUES(event_name) AND
-              event_js                <=> VALUES(event_js) AND
-              team_name_raw           <=> VALUES(team_name_raw) AND
-              team_role               <=> VALUES(team_role) AND
-              team_index              <=> VALUES(team_index) AND
-              team_id                 <=> VALUES(team_id) AND
-              row_index_in_span       <=> VALUES(row_index_in_span) AND
-              search_span_label       <=> VALUES(search_span_label) AND
-              row_index_global        <=> VALUES(row_index_global)
+              gender                   <=> VALUES(gender) AND
+              grid_page_index          <=> VALUES(grid_page_index) AND
+              date_raw                 <=> VALUES(date_raw) AND
+              start_date               <=> VALUES(start_date) AND
+              end_date                 <=> VALUES(end_date) AND
+              event_name               <=> VALUES(event_name) AND
+              event_js                 <=> VALUES(event_js) AND
+              team_name_raw            <=> VALUES(team_name_raw) AND
+              team_role                <=> VALUES(team_role) AND
+              team_index               <=> VALUES(team_index) AND
+              team_id                  <=> VALUES(team_id) AND
+              row_index_in_span        <=> VALUES(row_index_in_span) AND
+              search_span_label        <=> VALUES(search_span_label) AND
+              row_index_global         <=> VALUES(row_index_global)
             )
             THEN VALUES(updated_at_mtn)
             ELSE updated_at_mtn
@@ -229,47 +232,47 @@ export async function upsert_team_schedule(rows, meta) {
         updated_at_utc = 
           CASE
             WHEN NOT (
-              wrestling_season        <=> VALUES(wrestling_season) AND
+              wrestling_season         <=> VALUES(wrestling_season) AND
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              gender                  <=> VALUES(gender) AND
-              grid_page_index         <=> VALUES(grid_page_index) AND
-              date_raw                <=> VALUES(date_raw) AND
-              start_date              <=> VALUES(start_date) AND
-              end_date                <=> VALUES(end_date) AND
-              event_name              <=> VALUES(event_name) AND
-              event_js                <=> VALUES(event_js) AND
-              team_name_raw           <=> VALUES(team_name_raw) AND
-              team_role               <=> VALUES(team_role) AND
-              team_index              <=> VALUES(team_index) AND
-              team_id                 <=> VALUES(team_id) AND
-              row_index_in_span       <=> VALUES(row_index_in_span) AND
-              search_span_label       <=> VALUES(search_span_label) AND
-              row_index_global        <=> VALUES(row_index_global)
+              gender                   <=> VALUES(gender) AND
+              grid_page_index          <=> VALUES(grid_page_index) AND
+              date_raw                 <=> VALUES(date_raw) AND
+              start_date               <=> VALUES(start_date) AND
+              end_date                 <=> VALUES(end_date) AND
+              event_name               <=> VALUES(event_name) AND
+              event_js                 <=> VALUES(event_js) AND
+              team_name_raw            <=> VALUES(team_name_raw) AND
+              team_role                <=> VALUES(team_role) AND
+              team_index               <=> VALUES(team_index) AND
+              team_id                  <=> VALUES(team_id) AND
+              row_index_in_span        <=> VALUES(row_index_in_span) AND
+              search_span_label        <=> VALUES(search_span_label) AND
+              row_index_global         <=> VALUES(row_index_global)
             )
             THEN CURRENT_TIMESTAMP
             ELSE updated_at_utc
           END,
 
-        wrestling_season        = VALUES(wrestling_season),
+        wrestling_season         = VALUES(wrestling_season),
         track_wrestling_category = VALUES(track_wrestling_category),
-        gender                  = VALUES(gender),
-        grid_page_index         = VALUES(grid_page_index),
+        gender                   = VALUES(gender),
+        grid_page_index          = VALUES(grid_page_index),
 
-        date_raw                = VALUES(date_raw),
-        start_date              = VALUES(start_date),
-        end_date                = VALUES(end_date),
+        date_raw                 = VALUES(date_raw),
+        start_date               = VALUES(start_date),
+        end_date                 = VALUES(end_date),
 
-        event_name              = VALUES(event_name),
-        event_js                = VALUES(event_js),
+        event_name               = VALUES(event_name),
+        event_js                 = VALUES(event_js),
 
-        team_name_raw           = VALUES(team_name_raw),
-        team_role               = VALUES(team_role),
-        team_index              = VALUES(team_index),
-        team_id                 = VALUES(team_id),
+        team_name_raw            = VALUES(team_name_raw),
+        team_role                = VALUES(team_role),
+        team_index               = VALUES(team_index),
+        team_id                  = VALUES(team_id),
 
-        row_index_in_span       = VALUES(row_index_in_span),
-        search_span_label       = VALUES(search_span_label),
-        row_index_global        = VALUES(row_index_global)
+        row_index_in_span        = VALUES(row_index_in_span),
+        search_span_label        = VALUES(search_span_label),
+        row_index_global         = VALUES(row_index_global)
     `;
 
     const [res] = await pool.query({ sql, values: params });

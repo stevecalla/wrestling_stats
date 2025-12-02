@@ -10,7 +10,12 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 // Save files to csv & msyql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
-import { count_rows_in_db_wrestler_links, iter_name_links_from_db } from "../utilities/mysql/iter_name_links_from_db.js";
+import {
+  count_rows_in_db_wrestler_links,
+  iter_name_links_from_db,
+  count_name_links_based_on_event_schedule,
+  iter_name_links_based_on_event_schedule,
+} from "../utilities/mysql/iter_name_links_from_db.js";
 
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
@@ -24,7 +29,7 @@ function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
 
-async function relogin(page, load_timeout_ms, wrestling_season, url_login_page) {
+async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
@@ -218,19 +223,50 @@ async function main(
   page,
   browser,
   context,
-  file_path
+  file_path,
+  use_scheduled_events_iterator_query = false,
+  use_wrestler_list_iterator_query = true
 ) {
   const load_timeout_ms = 30000;
 
+  // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
+  const mode = (() => {
+    if (use_scheduled_events_iterator_query && !use_wrestler_list_iterator_query) {
+      return "events";
+    }
+    if (!use_scheduled_events_iterator_query && use_wrestler_list_iterator_query) {
+      return "list";
+    }
+    // ambiguous / both true / both false → default to list + warn
+    console.warn(
+      "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
+      use_scheduled_events_iterator_query +
+      ", use_wrestler_list_iterator_query=" +
+      use_wrestler_list_iterator_query +
+      "); defaulting to list-based iterator."
+    );
+    return "list";
+  })();
+
   // DB: count + cap (memory-efficient streaming)
-  const total_rows_in_db = await count_rows_in_db_wrestler_links( 
-    wrestling_season, 
-    track_wrestling_category,
-    gender, 
-    sql_where_filter_state_qualifier, 
-    sql_team_id_list, 
-    sql_wrestler_id_list
-  );
+  let total_rows_in_db;
+
+  if (mode === "events") {
+    total_rows_in_db = await count_name_links_based_on_event_schedule(
+      wrestling_season,
+      track_wrestling_category
+    );
+  } else {
+    total_rows_in_db = await count_rows_in_db_wrestler_links(
+      wrestling_season,
+      track_wrestling_category,
+      gender,
+      sql_where_filter_state_qualifier,
+      sql_team_id_list,
+      sql_wrestler_id_list
+    );
+  }
+
   const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
 
   let headers_written = false;
@@ -247,7 +283,19 @@ async function main(
   await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
   await page.waitForTimeout(1000);
 
-  console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links`, "green"));
+  if (mode === "events") {
+    console.log(
+      color_text(
+        `📄 DB has ${total_rows_in_db} wrestler links derived from scheduled events (yesterday & today)`,
+        "green"
+      )
+    );
+  } else {
+    console.log(
+      color_text(`📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`, "green")
+    );
+  }
+
   console.log(
     color_text(
       `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size)\x1b[0m\n`,
@@ -266,25 +314,36 @@ async function main(
   //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
   // }];
 
+  const iterator =
+    mode === "events"
+      ? iter_name_links_based_on_event_schedule({
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+      })
+      : iter_name_links_from_db({
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+        gender,
+        sql_where_filter_state_qualifier,
+        sql_team_id_list,
+        sql_wrestler_id_list,
+      });
+
   // for (const { i, url } of test_link) {
-  for await (const { i, url } of iter_name_links_from_db({
-    start_at: loop_start,
-    limit: matches_page_limit,
-    batch_size: 500,
-    wrestling_season,
-    track_wrestling_category,
-    gender,
-    sql_where_filter_state_qualifier,
-    sql_team_id_list,
-    sql_wrestler_id_list,
-  })) {
+  for await (const { i, url } of iterator) {
     if (handles_dead({ browser, context, page })) {
       console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
       ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
       browser.on?.("disconnected", () => {
         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
       });
-      await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+      await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
     }
 
     let attempts = 0;
@@ -345,7 +404,7 @@ async function main(
             browser.on?.("disconnected", () =>
               console.warn("⚠️ CDP disconnected — Chrome was closed.")
             );
-            await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+            await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
             await safe_goto(page, url, { timeout: load_timeout_ms });
             let tf =
               page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
@@ -388,7 +447,7 @@ async function main(
           browser.on?.("disconnected", () => {
             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
           });
-          await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+          await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
           if (attempts >= 2) throw e;
           continue;
@@ -399,7 +458,9 @@ async function main(
   }
 
   await browser.close(); // closes CDP connection (not the external Chrome instance)
-  console.log(`\n✅ done. processed ${processed} wrestler pages from DB (wrestler_list.name_link)`);
+  console.log(
+    `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events)`
+  );
 }
 
 export { main as step_3_get_wrestler_match_history };
