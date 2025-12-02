@@ -34,15 +34,26 @@ async function step_4_create_wrestler_match_history_data(config) {
         wrestling_season,
         track_wrestling_category,
         is_create_table: true,
+        drop_if_exists: false, // 👈 DO NOT drop metrics table
+        insert_ignore: true,   // 👈 we’ll use to ignore duplicates in flush_batch function for metrics table
     };
 
+
     // Step 1: Create and populate the wrestler IDs table
+    // IDs table: drop_if_exists: true; insert_ignore: false (or omitted)
+    // Table rebuilt every run; no long-term dedupe needed.
     // NOTE: only run is_not_test === true
     if (is_not_test) {
         batch_size = 2000;
         table_name = `wrestler_match_history_wrestler_ids_data`;
         create_table_query = await query_create_wrestler_ids_table(table_name);
         get_data_query = step_1_query_wrestler_ids_data; // pass function forward
+
+        QUERY_OPTIONS = {
+            ...QUERY_OPTIONS,       // keep existing keys
+            drop_if_exists: true,   // 👈 scratch table, always rebuild
+            insert_ignore: false,   // doesn’t really matter here b/c step_1_query_wrestler_ids_data uses DISTINCT; used in step #2 below
+        };
 
         // CREATE TABLE & GET / TRANSFER DATA
         const { result, row_count } = await execute_transfer_data_between_tables(batch_size, table_name, create_table_query, get_data_query, QUERY_OPTIONS);
@@ -52,6 +63,9 @@ async function step_4_create_wrestler_match_history_data(config) {
     }
 
     // Step 2: Loop in batches and insert into the base table
+    // Metrics table: drop_if_exists: false; insert_ignore: true; PRIMARY KEY (id) ensures each match is unique.
+    // Running: girls 24–25, boys 24–25, boys 25–26, girls 25–25, adds rows for each group.
+    // If you rerun a group or reprocess overlapping Wrestlers/IDs, any existing id rows are ignored, so no duplicates.
     batch_size = 500;
     table_name = 'wrestler_match_history_metrics_data';
     create_table_query = await query_create_wrestler_match_history_metrics_table(table_name);
@@ -60,15 +74,20 @@ async function step_4_create_wrestler_match_history_data(config) {
     const LIMIT_SIZE = 1000;
     count = is_not_test ? count : 1; // NOTE: only run loop once is_not_test = false
 
-    for (let offset = 0; offset < count; offset += LIMIT_SIZE) {
+    // 🔧 RESET FLAGS FOR METRICS TABLE HERE SINCE STEP 1 MODIFIED
+    QUERY_OPTIONS = {
+        ...QUERY_OPTIONS,
+        is_create_table: true,   // OK to always true, CREATE TABLE IF NOT EXISTS is a no-op if it exists
+        drop_if_exists: false,   // ✅ NEVER drop metrics table
+        insert_ignore: true,     // ✅ skip duplicate ids in metrics
+    };
 
-        let is_create_table = offset === 0 ? true : false;
+    for (let offset = 0; offset < count; offset += LIMIT_SIZE) {
 
         QUERY_OPTIONS = {
             ...QUERY_OPTIONS,
             limit_size: LIMIT_SIZE,
             offset_size: offset,
-            is_create_table: is_create_table,
         };
 
         result = await execute_transfer_data_between_tables(batch_size, table_name, create_table_query, get_data_query, QUERY_OPTIONS);

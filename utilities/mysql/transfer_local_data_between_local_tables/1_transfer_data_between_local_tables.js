@@ -38,21 +38,31 @@ function get_created_at_utc() {
 }
 
 // schema.js
-async function create_target_table(dst, TABLE_NAME, TABLE_STRUCTURE) {
-  await dst.execute(`DROP TABLE IF EXISTS \`${TABLE_NAME}\``);
+async function create_target_table(dst, TABLE_NAME, TABLE_STRUCTURE, options = {}) {
+  const { drop_if_exists = true } = options;
+
+  if (drop_if_exists) {
+    await dst.execute(`DROP TABLE IF EXISTS \`${TABLE_NAME}\``);
+  }
+  
+  // your CREATE TABLE ... already uses IF NOT EXISTS
   await dst.execute(TABLE_STRUCTURE);
 }
 
 // Flushes one batch of rows into the target table via a single multi-row INSERT
-async function flush_batch(dst, TABLE_NAME, rows) {
-  const cols = Object.keys(rows[0]);
+async function flush_batch(dst, TABLE_NAME, rows, options = {}) {
+  if (!rows || rows.length === 0) return;
+
+  const cols    = Object.keys(rows[0]);
   const colList = cols.map(c => `\`${c}\``).join(',');
+
   // Build "(?,?,?),(?,?,?),…" with rows.length tuples
   const placeholders = rows
     .map(() => `(${cols.map(_ => '?').join(',')})`)
     .join(',');
 
-  const sql = `INSERT INTO \`${TABLE_NAME}\` (${colList}) VALUES ${placeholders}`;
+  const verb = options.insert_ignore ? 'INSERT IGNORE' : 'INSERT';
+  const sql  = `${verb} INTO \`${TABLE_NAME}\` (${colList}) VALUES ${placeholders}`;
 
   // Flatten all row values into one big array
   const values = [];
@@ -87,11 +97,14 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
   [rows] = await src.promise().query(get_created_at_utc());
   const created_at_utc = rows[0]?.created_at_utc;
 
+  const drop_if_exists = QUERY_OPTIONS?.drop_if_exists ?? true;
+  const insert_ignore = QUERY_OPTIONS?.insert_ignore ?? false;
+
   try {
     await dst.beginTransaction(); // 1) Start transaction
 
     if (QUERY_OPTIONS?.is_create_table) // Only drop / create table the first time the function runs
-      await create_target_table(dst, TABLE_NAME, CREATE_TABLE_QUERY); // 2) Create target table
+      await create_target_table(dst, TABLE_NAME, CREATE_TABLE_QUERY, { drop_if_exists }); // 2) Create target table
 
     // Build the actual SQL string from the generator function
     const sql = GET_DATA_QUERY(created_at_mtn, created_at_utc, QUERY_OPTIONS);
@@ -120,7 +133,7 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
       }
 
       if (buffer.length >= BATCH_SIZE) {
-        await flush_batch(dst, TABLE_NAME, buffer);
+        await flush_batch(dst, TABLE_NAME, buffer, { insert_ignore });
         batchCount++;
         console.log(`[INFO] Flushed batch #${batchCount} (${batchCount * BATCH_SIZE} rows)...`);
         buffer = [];
@@ -129,7 +142,7 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
 
     // 4) Flush leftover rows
     if (buffer.length) {
-      await flush_batch(dst, TABLE_NAME, buffer);
+      await flush_batch(dst, TABLE_NAME, buffer, { insert_ignore });
       batchCount++;
       console.log(`[INFO] Flushed final batch #${batchCount} (${totalRows} total rows).`);
     }

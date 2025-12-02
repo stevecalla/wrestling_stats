@@ -142,6 +142,7 @@ const tables_to_sync = [
   'wrestler_match_history_wrestler_ids_data',
   'wrestler_state_qualifier_and_place_reference',
   'wrestler_team_division_reference',
+  'team_schedule_scrape_data',
 ];
 
 const sync_batch_size = parseInt(process.env.SYNC_BATCH_SIZE || "5000", 10);

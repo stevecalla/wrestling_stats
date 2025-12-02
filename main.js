@@ -8,7 +8,10 @@ import { color_text } from "./utilities/console_logs/console_colors.js";
 
 // === imports for each step ===
 import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_developer.js";
+
 import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
+
+import { step_2_get_team_schedule } from "./src/step_2_get_team_schedule.js";
 
 import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_match_history.js";
 import { step_4_create_wrestler_match_history_data } from "./src/step_4_create_wrestler_match_history_metrics.js";
@@ -38,50 +41,52 @@ import { step_18_transfer_tables_between_windows_and_mac } from "./utilities/tra
 import { step_19_close_chrome_dev } from "./src/step_19_close_chrome_developer.js";
 
 import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
+import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_append_team_id_to_team_schedule_data.js";
 
 // ====================================================
-// 🧩 STEP TOGGLES todo:
+// 🧩 STEP TOGGLES
 // ====================================================
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  false,  // 🚀 launch chrome
+  step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  false,  // 📄 get wrestler list
+  step_1:  true,  // 📄 get wrestler list
 
-  // OLD url list source; now pulled from step 3
-  // step_2: false, // 🔗 optional URL array; normally false; step 3 uses step 1 output
+  // GET TEAM SCHEDULE
+  step_2:  true, // get team schedule
+  // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  false,  // 🏟️ get match history
-  step_4:  false, // 📄 create match history metrics
+  step_3:  true,  // 🏟️ get match history
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  false, // create team division
-  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  false, // append team division to match history metrics
-  step_8:  false, // append team division to wrestler list
+  step_5:  true, // create team division
+  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  true, // append team division to match history metrics
+  step_8:  true, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  false, // create 2024-25 state qualifier list
-  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: false, // append state qualifier to match history metrics
-  step_12: false, // append state qualifier to wrestler list
+  step_9:  true, // create 2024-25 state qualifier list
+  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: true, // append state qualifier to match history metrics
+  step_12: true, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
 
-  // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: false, // load data into Google cloud / bigquery
+  // // LOAD GOOGLE CLOUD / BIGQUERY
+  step_14: true, // load data into Google cloud / bigquery
 
-  // TRANSFER TABLES BETWEEN WINDOWS & MAC
+  // // TRANSFER TABLES BETWEEN WINDOWS & MAC
   step_18: true,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
 
-// 🧪 each step can run test or full //todo:
+// 🧪 each step can run test or full
 const test_flags = {
   step_1_is_test: false, // run small sample for wrestler list
   step_3_is_test: false, // run small sample for match history
@@ -91,51 +96,77 @@ const test_flags = {
 // ====================================================
 // ⚙️ GLOBAL CONFIG — all tunable numbers here
 // ====================================================
-const config = {
-  governing_body: "Colorado High School Activities Association",
+async function load_config(custom = {}) {
+  const defaults = {
+    governing_body: "Colorado High School Activities Association",
 
-  wrestling_season: "2024-25", // todo:
-  // wrestling_season: "2025-26",
+    // HIGH SCHOOL BOYS = set category, season & gender
+    track_wrestling_category: "High School Boys",
+    wrestling_season: "2024-25",
+    // wrestling_season: "2025-26",
+    gender: "M",
+    
+    // HIGH SCHOOL GIRLS = set category, season & gender
+    // track_wrestling_category: "High School Girls",
+    // wrestling_season: "2024-25",
+    // wrestling_season: "2025-26",
+    // gender: "F",
 
-  // HIGH SCHOOL BOYS = set category & gender
-  track_wrestling_category: "High School Boys",
-  gender: "M",
+    // SQL WHERE STATEMENT
+    sql_where_filter_state_qualifier: "",
+    sql_team_id_list: "",
+    sql_wrestler_id_list: "",
 
-  // HIGH SCHOOL GIRLS = set category & gender
-  // track_wrestling_category: "High School Girls",
-  // gender: "F",
+    // URL
+    url_home_page: "https://www.trackwrestling.com/",
+    url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
 
-  url_home_page: "https://www.trackwrestling.com/",
-  url_login_page: "https://www.trackwrestling.com/seasons/index.jsp",
+    // STEP #1 CONFIG FOR TESTING
+    alpha_list_limit_test: 1,   // only 26 letters in alpha; loops by alpha, by grade (1 = A for each grade)
+    alpha_list_limit_full: 30,  // only 26 letters in alpha; loops by alpha, by grade
 
-  // Step #1 config
-  alpha_list_limit_test: 1,
-  alpha_list_limit_full: 30,
+    // STEP #3 CONFIG FOR TESTING
+    matches_page_limit_test: 5,
+    matches_page_limit_full: 10000,
+    step_3_loop_start: 0,
+  };
 
-  // Step #3 config
-  matches_page_limit_test: 5,
-  matches_page_limit_full: 10000,
-  step_3_loop_start: 0, // 🌀 starting index for Step #3 loop
+  return { ...defaults, ...custom };
+}
+
+const hs_boys_2026 = {
+      // HIGH SCHOOL BOYS = set category, season & gender
+    track_wrestling_category: "High School Boys",
+    wrestling_season: "2025-26",
+    gender: "M",
+    use_scheduled_events_iterator_query: true,
+    use_wrestler_list_iterator_query: false,
+    // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
+    // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
+    // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
+};
+
+const hs_girls_2026 = {
+      // HIGH SCHOOL BOYS = set category, season & gender
+    track_wrestling_category: "High School Girls",
+    wrestling_season: "2025-26",
+    gender: "F",
+    use_scheduled_events_iterator_query: false,
+    use_wrestler_list_iterator_query: true,
+    // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
+    // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
+    // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
 };
 
 // ====================================================
 // 🎨 HELPERS
 // ====================================================
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const adjusted_season = config.wrestling_season.replace("-", "_");
-const adjusted_gender = config.track_wrestling_category
-  .toLowerCase()           // make lowercase
-  .replace(/\s+/g, "_")
-  ;   // replace all spaces with underscores
-
 const step_icons = {
   0:"0️⃣",1:"1️⃣",2:"2️⃣",3:"3️⃣",4:"4️⃣",
   5:"5️⃣",6:"6️⃣",7:"7️⃣",8:"8️⃣",9:"9️⃣",
   10:"1️⃣0️⃣",11:"1️⃣1️⃣",12:"1️⃣2️⃣",13:"1️⃣3️⃣",14:"1️⃣4️⃣",
   15:"1️⃣5️⃣",16:"1️⃣6️⃣",17:"1️⃣7️⃣",18:"1️⃣8️⃣",19:"1️⃣9️⃣"
 };
-
 // convert milliseconds → h:mm:ss
 function format_duration(ms) {
   const total_seconds = Math.floor(ms / 1000);
@@ -163,13 +194,45 @@ function log_error(msg) {
 // ====================================================
 // 🚀 MAIN ORCHESTRATOR
 // ====================================================
-async function main() {
+async function main(config) {
   const program_start = Date.now();
+
+  // This line creates a complete configuration using defaults, but overrides any default with a user-provided value when available.
+  config = await load_config(config);
+
   console.log(color_text(`\n🏁 ➕ Starting main program for ${config.wrestling_season}`, "red"));
+  // console.log(
+  //   color_text(
+  //     `\n🔧 Final Config Loaded for Season ${config.wrestling_season}\n` +
+  //     `----------------------------------------------\n` +
+  //     ` Governing Body       → ${config.governing_body}\n` +
+  //     ` Category             → ${config.track_wrestling_category}\n` +
+  //     ` Season               → ${config.wrestling_season}\n` +
+  //     ` Gender               → ${config.gender}\n` +
+  //     ` SQL Where Filter     → ${config.sql_where_filter_state_qualifier}\n` +
+  //     ` SQL Team Id List     → ${config.sql_team_id_list}\n` +
+  //     ` SQL Wreslter Id List → ${config.sql_wrestler_id_list}\n` +
+  //     ` Home Page            → ${config.url_home_page}\n` +
+  //     ` Login Page           → ${config.url_login_page}\n` +
+  //     ` Alpha List (test)    → ${config.alpha_list_limit_test}\n` +
+  //     ` Alpha List (full)    → ${config.alpha_list_limit_full}\n` +
+  //     ` Matches (test)       → ${config.matches_page_limit_test}\n` +
+  //     ` Matches (full)       → ${config.matches_page_limit_full}\n` +
+  //     ` Step 3 Loop Start    → ${config.step_3_loop_start}\n` +
+  //     `----------------------------------------------`,
+  //     "cyan"
+  //   )
+  // );
 
   const directory = determine_os_path();
   const input_dir = await create_directory("input", directory);
   const output_dir = await create_directory("output", directory);
+
+  const adjusted_season = config.wrestling_season.replace("-", "_");
+  const adjusted_gender = config.track_wrestling_category
+  .toLowerCase()           // make lowercase
+  .replace(/\s+/g, "_")
+  ;   // replace all spaces with underscores
 
   const ctx = {
     config,
@@ -177,6 +240,7 @@ async function main() {
       input_dir,
       output_dir,
       wrestler_list_csv: path.join(input_dir, `wrestler_list_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
+      team_schedule_csv: path.join(input_dir, `team_schedule_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
       url_array_js: path.join(input_dir, `wrestler_match_urls_${adjusted_season}_${adjusted_gender}.js`),
       match_csv: path.join(output_dir, `wrestler_match_history_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
     },
@@ -202,6 +266,7 @@ async function main() {
       const start = Date.now();
       const is_test = test_flags.step_1_is_test;
       const limit = is_test ? config.alpha_list_limit_test : config.alpha_list_limit_full;
+
       log_step_start(1, `Fetching ${limit} wrestlers (${is_test ? "🧪 TEST MODE" : "FULL"}) 📄`);
 
       await step_1_run_alpha_wrestler_list(
@@ -218,9 +283,45 @@ async function main() {
       log_step_success(1, `Wrestler list saved → ${ctx.paths.wrestler_list_csv}`, Date.now() - start);
     } else log_step_skip(1, "wrestler list generation");
 
+    // === STEP 2 SCRAPE TEAM SCHEDULE ===
+    if (step_flags.step_2) {
+      const start = Date.now();
+      const is_test = test_flags.step_1_is_test;
+      const limit = is_test ? config.matches_page_limit_test : config.matches_page_limit_full;
+      const loop_start = config.step_3_loop_start;
+
+      log_step_start(
+        2,
+        `Scraping team schedule (limit=${limit}, step_3_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
+      );
+
+      await step_2_get_team_schedule(
+        config.url_home_page,
+        config.url_login_page,
+        limit,
+        loop_start,
+        config.wrestling_season,
+        config.track_wrestling_category,
+        config.gender,
+        config.sql_team_id_list,
+        config.sql_wrestler_id_list,
+        config.sql_where_filter_state_qualifier,
+        ctx.page,
+        ctx.browser,
+        ctx.context,
+        ctx.paths.team_schedule_csv,
+        is_test
+      );
+
+      await step_2a_append_team_id_to_team_schedule_data();
+
+      log_step_success(2, `Team schedule saved → ${ctx.paths.team_schedule_csv}`, Date.now() - start);
+    } else log_step_skip(2, "Tean schedule generation");
+
     // === STEP 3 SCRAPE MATCH HISTORY METRICS ===
     if (step_flags.step_3) {
       const start = Date.now();
+
       const is_test = test_flags.step_3_is_test;
       const limit = is_test ? config.matches_page_limit_test : config.matches_page_limit_full;
       const loop_start = config.step_3_loop_start;
@@ -238,12 +339,15 @@ async function main() {
         config.wrestling_season,
         config.track_wrestling_category,
         config.gender,
+        config.sql_where_filter_state_qualifier,
+        config.sql_team_id_list,
+        config.sql_wrestler_id_list,
         ctx.page,
         ctx.browser,
         ctx.context,
         ctx.paths.match_csv,
-        ctx.paths.wrestler_list_csv,
-        is_test
+        config.use_scheduled_events_iterator_query,
+        config.use_wrestler_list_iterator_query,
       );
 
       log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
@@ -406,10 +510,10 @@ async function main() {
 
 }
 
-
-
 // ====================================================
-main().catch(e => {
-  log_error(e?.stack || e);
-  // process.exit(1);
-});
+// main(hs_girls_2026).catch(e => {
+//   log_error(e?.stack || e);
+//   // process.exit(1);
+// });
+
+export { main as execute_scrape_track_wrestling }

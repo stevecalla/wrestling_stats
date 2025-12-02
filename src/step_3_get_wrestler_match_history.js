@@ -10,7 +10,12 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 // Save files to csv & msyql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
-import { count_rows_in_db_wrestler_links, iter_name_links_from_db } from "../utilities/mysql/iter_name_links_from_db.js";
+import {
+  count_rows_in_db_wrestler_links,
+  iter_name_links_from_db,
+  count_name_links_based_on_event_schedule,
+  iter_name_links_based_on_event_schedule,
+} from "../utilities/mysql/iter_name_links_from_db.js";
 
 import { step_0_launch_chrome_developer } from "./step_0_launch_chrome_developer.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
@@ -24,7 +29,7 @@ function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
 
-async function relogin(page, load_timeout_ms, wrestling_season, url_login_page) {
+async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
@@ -69,135 +74,6 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
 /* ------------------------------------------
    extractor_source runs in the page (frame) context
 -------------------------------------------*/
-// function extractor_source() {
-//   return () => {
-//     // === basic helper ===
-//     const norm = (s) =>
-//       (s || "")
-//         .normalize("NFKD")
-//         .replace(/[\u0300-\u036f]/g, "")
-//         .replace(/\s+/g, " ")
-//         .trim();
-
-//     const to_date = (y, m, d) => {
-//       const yy = +y < 100 ? +y + 2000 : +y;
-//       const dt = new Date(yy, +m - 1, +d);
-//       return isNaN(+dt) ? null : dt;
-//     };
-
-//     const fmt_mdy = (d) => {
-//       if (!(d instanceof Date) || isNaN(+d)) return "";
-//       const mm = String(d.getMonth() + 1).padStart(2, "0");
-//       const dd = String(d.getDate()).padStart(2, "0");
-//       const yy = String(d.getFullYear());
-//       return `${mm}/${dd}/${yy}`;
-//     };
-
-//     const parse_date_range_text = (raw) => {
-//       const t = norm(raw);
-//       if (!t) return { start_date: "", end_date: "" };
-
-//       // A: MM/DD - MM/DD/YYYY
-//       let m =
-//         t.match(
-//           /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-//         );
-//       if (m) {
-//         const [, m1, d1, m2, d2, y2] = m;
-//         const start_obj = to_date(y2, m1, d1);
-//         const end_obj = to_date(y2, m2, d2);
-//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
-//       }
-
-//       // B: MM/DD/YYYY - MM/DD/YYYY
-//       m =
-//         t.match(
-//           /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-//         );
-//       if (m) {
-//         const [, m1, d1, y1, m2, d2, y2] = m;
-//         const start_obj = to_date(y1, m1, d1);
-//         const end_obj = to_date(y2, m2, d2);
-//         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
-//       }
-
-//       // C: MM/DD/YYYY
-//       m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-//       if (m) {
-//         const [, mm, dd, yy] = m;
-//         const d = to_date(yy, mm, dd);
-//         return { start_date: fmt_mdy(d), end_date: "" };
-//       }
-
-//       // fallback: first full date token
-//       m = t.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
-//       if (m) {
-//         const [token] = m;
-//         const [mm, dd, yy] = token.split(/[\/\-]/);
-//         const d = to_date(yy, mm, dd);
-//         return { start_date: fmt_mdy(d), end_date: "" };
-//       }
-
-//       return { start_date: "", end_date: "" };
-//     };
-
-//     // current wrestler context (from dropdown)
-//     const sel = document.querySelector("#wrestler");
-//     const sel_opt =
-//       sel?.selectedOptions?.[0] ||
-//       document.querySelector("#wrestler option[selected]");
-
-//     const wrestler_id = (sel_opt?.value || "").trim();
-//     const opt_text = norm(sel_opt?.textContent || "");
-//     const wrestler = opt_text.includes(" - ")
-//       ? opt_text.split(" - ").slice(1).join(" - ").trim()
-//       : opt_text;
-
-//     const rows = [];
-
-//     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
-//       const tds = tr.querySelectorAll("td");
-//       // “If this row does not have at least five cells, skip it because it’s not a data row.”
-//       if (tds.length < 5) continue;
-
-//       const date_raw = norm(tds[1]?.innerText);
-//       const { start_date, end_date } = parse_date_range_text(date_raw);
-
-//       const event_raw = norm(tds[2]?.innerText);
-//       const weight_raw = norm(tds[3]?.innerText);
-//       const details_cell = tds[4];
-//       const details_text_raw = norm(details_cell?.innerText);
-
-//       // opponent_id: first wrestlerId in the cell that is NOT the current wrestler_id
-//       let opponent_id = "";
-//       const link_nodes = Array.from(
-//         details_cell.querySelectorAll('a[href*="wrestlerId="]')
-//       );
-//       for (const a of link_nodes) {
-//         const href = a.getAttribute("href") || "";
-//         const m = href.match(/wrestlerId=(\d+)/);
-//         if (m && m[1] && m[1] !== wrestler_id) {
-//           opponent_id = m[1];
-//           break;
-//         }
-//       }
-
-//       rows.push({
-//         wrestler_id,
-//         wrestler,
-//         start_date,
-//         end_date,
-//         event: event_raw,
-//         weight_category: weight_raw,
-//         opponent_id,
-//         raw_details: details_text_raw,
-//       });
-//     }
-
-//     return rows;
-//   };
-// }
-
 function extractor_source() {
   return () => {
     // === basic helper ===
@@ -330,7 +206,6 @@ function extractor_source() {
   };
 }
 
-
 /* ------------------------------------------
    main orchestrator (DB-backed)
 -------------------------------------------*/
@@ -342,15 +217,56 @@ async function main(
   wrestling_season = "2024-25",
   track_wrestling_category = "High School Boys",
   gender,
+  sql_where_filter_state_qualifier,
+  sql_team_id_list,
+  sql_wrestler_id_list,
   page,
   browser,
   context,
-  file_path
+  file_path,
+  use_scheduled_events_iterator_query = false,
+  use_wrestler_list_iterator_query = true
 ) {
   const load_timeout_ms = 30000;
 
+  // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
+  const mode = (() => {
+    if (use_scheduled_events_iterator_query && !use_wrestler_list_iterator_query) {
+      return "events";
+    }
+    if (!use_scheduled_events_iterator_query && use_wrestler_list_iterator_query) {
+      return "list";
+    }
+    // ambiguous / both true / both false → default to list + warn
+    console.warn(
+      "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
+      use_scheduled_events_iterator_query +
+      ", use_wrestler_list_iterator_query=" +
+      use_wrestler_list_iterator_query +
+      "); defaulting to list-based iterator."
+    );
+    return "list";
+  })();
+
   // DB: count + cap (memory-efficient streaming)
-  const total_rows_in_db = await count_rows_in_db_wrestler_links( wrestling_season, gender );
+  let total_rows_in_db;
+
+  if (mode === "events") {
+    total_rows_in_db = await count_name_links_based_on_event_schedule(
+      wrestling_season,
+      track_wrestling_category
+    );
+  } else {
+    total_rows_in_db = await count_rows_in_db_wrestler_links(
+      wrestling_season,
+      track_wrestling_category,
+      gender,
+      sql_where_filter_state_qualifier,
+      sql_team_id_list,
+      sql_wrestler_id_list
+    );
+  }
+
   const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
 
   let headers_written = false;
@@ -367,7 +283,19 @@ async function main(
   await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
   await page.waitForTimeout(1000);
 
-  console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links`, "green"));
+  if (mode === "events") {
+    console.log(
+      color_text(
+        `📄 DB has ${total_rows_in_db} wrestler links derived from scheduled events (yesterday & today)`,
+        "green"
+      )
+    );
+  } else {
+    console.log(
+      color_text(`📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`, "green")
+    );
+  }
+
   console.log(
     color_text(
       `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size)\x1b[0m\n`,
@@ -386,21 +314,38 @@ async function main(
   //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
   // }];
 
+  const iterator =
+    mode === "events"
+      ? iter_name_links_based_on_event_schedule({
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+      })
+      : iter_name_links_from_db({
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+        gender,
+        sql_where_filter_state_qualifier,
+        sql_team_id_list,
+        sql_wrestler_id_list,
+      });
+
+  console.log('find console.log=================');
+  
   // for (const { i, url } of test_link) {
-  for await (const { i, url } of iter_name_links_from_db({
-    start_at: loop_start,
-    limit: matches_page_limit,
-    batch_size: 500,
-    wrestling_season,
-    gender,
-  })) {
+  for await (const { i, url } of iterator) {
     if (handles_dead({ browser, context, page })) {
       console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
       ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
       browser.on?.("disconnected", () => {
         console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
       });
-      await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+      await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
     }
 
     let attempts = 0;
@@ -461,7 +406,7 @@ async function main(
             browser.on?.("disconnected", () =>
               console.warn("⚠️ CDP disconnected — Chrome was closed.")
             );
-            await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+            await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
             await safe_goto(page, url, { timeout: load_timeout_ms });
             let tf =
               page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
@@ -504,7 +449,7 @@ async function main(
           browser.on?.("disconnected", () => {
             console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
           });
-          await relogin(page, load_timeout_ms, wrestling_season, url_login_page);
+          await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
           if (attempts >= 2) throw e;
           continue;
@@ -515,7 +460,9 @@ async function main(
   }
 
   await browser.close(); // closes CDP connection (not the external Chrome instance)
-  console.log(`\n✅ done. processed ${processed} wrestler pages from DB (wrestler_list.name_link)`);
+  console.log(
+    `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events)`
+  );
 }
 
 export { main as step_3_get_wrestler_match_history };

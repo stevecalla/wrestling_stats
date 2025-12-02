@@ -83,7 +83,7 @@ const id_fields = `
 `;
 
 const index_fields = `
-  -- PRIMARY KEY (id),
+  PRIMARY KEY (id),
 
   -- Core access pattern: season + category + wrestler + date
   KEY idx_season_category_wrestler_date (
