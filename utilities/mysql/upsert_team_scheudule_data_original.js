@@ -1,3 +1,4 @@
+// utilities/mysql/upsert_team_schedule.js
 import { get_pool } from "./mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../date_time_tools/get_mountain_time_offset_hours.js";
 
@@ -37,8 +38,6 @@ async function ensure_table() {
       team_role                VARCHAR(32)  NULL,
       team_index               INT UNSIGNED NULL,
       team_id                  BIGINT UNSIGNED NULL,
-
-      team_score               INT          NULL,
 
       row_index_in_span        INT UNSIGNED NULL,
       search_span_label        VARCHAR(64)  NULL,
@@ -125,7 +124,6 @@ export async function upsert_team_schedule(rows, meta) {
     "team_role",
     "team_index",
     "team_id",
-    "team_score",
 
     "row_index_in_span",
     "search_span_label",
@@ -168,10 +166,6 @@ export async function upsert_team_schedule(rows, meta) {
           ? Number(r.team_index)
           : null,
       team_id: r.team_id != null ? Number(r.team_id) : null,
-      team_score:
-        r.team_score != null
-          ? Number(r.team_score)
-          : null,
 
       row_index_in_span:
         typeof r.row_index_in_span === "number"
@@ -227,7 +221,6 @@ export async function upsert_team_schedule(rows, meta) {
               team_role                <=> VALUES(team_role) AND
               team_index               <=> VALUES(team_index) AND
               team_id                  <=> VALUES(team_id) AND
-              team_score               <=> VALUES(team_score) AND
               row_index_in_span        <=> VALUES(row_index_in_span) AND
               search_span_label        <=> VALUES(search_span_label) AND
               row_index_global         <=> VALUES(row_index_global)
@@ -252,7 +245,6 @@ export async function upsert_team_schedule(rows, meta) {
               team_role                <=> VALUES(team_role) AND
               team_index               <=> VALUES(team_index) AND
               team_id                  <=> VALUES(team_id) AND
-              team_score               <=> VALUES(team_score) AND
               row_index_in_span        <=> VALUES(row_index_in_span) AND
               search_span_label        <=> VALUES(search_span_label) AND
               row_index_global         <=> VALUES(row_index_global)
@@ -277,7 +269,6 @@ export async function upsert_team_schedule(rows, meta) {
         team_role                = VALUES(team_role),
         team_index               = VALUES(team_index),
         team_id                  = VALUES(team_id),
-        team_score               = VALUES(team_score),
 
         row_index_in_span        = VALUES(row_index_in_span),
         search_span_label        = VALUES(search_span_label),

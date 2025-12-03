@@ -19,6 +19,38 @@ import { color_text } from "../utilities/console_logs/console_colors.js";
 /* ------------------------------------------
    small helpers
 -------------------------------------------*/
+// Close any extra top-level pages (popups) in this context, keeping only `main_page`.
+async function close_all_popups_for_page(main_page) {
+  try {
+    const ctx = main_page.context?.();
+    if (!ctx || !ctx.pages) return;
+
+    const pages = ctx.pages();
+    for (const p of pages) {
+      if (p === main_page) continue; // keep the main page
+
+      let url = "<unknown>";
+      try {
+        url = p.url();
+      } catch {
+        // ignore url errors
+      }
+
+      console.log(
+        color_text(`🧹 closing popup window: ${url}`, "yellow")
+      );
+
+      try {
+        await p.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+  } catch {
+    // best-effort cleanup; ignore any unexpected errors
+  }
+}
+
 async function safe_goto(page, url, opts = {}) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
@@ -26,7 +58,7 @@ async function safe_goto(page, url, opts = {}) {
     const msg = String(err?.message || "");
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
       err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
@@ -80,14 +112,14 @@ async function close_event_team_modal_if_open(target_frame, page) {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
-    await page.waitForTimeout(150).catch(() => {});
+    await page.waitForTimeout(150).catch(() => { });
   } catch {
     // Last resort: ESC
     try {
       await page.keyboard.press("Escape");
-      await page.waitForTimeout(150).catch(() => {});
+      await page.waitForTimeout(150).catch(() => { });
     } catch {
       // ignore
     }
@@ -96,6 +128,121 @@ async function close_event_team_modal_if_open(target_frame, page) {
 
 // Click javascript:openEvent(...) link in the Results frame,
 // open the Event Team Select modal, and scrape each team link.
+// async function get_teams_from_multi_team_event(
+//   target_frame,
+//   page,
+//   event_name,
+//   event_js
+// ) {
+//   const modal_selector = "#eventTeamFrame";
+
+//   // Make sure no stale modal is open first
+//   await close_event_team_modal_if_open(target_frame, page);
+//   await page.waitForTimeout(200); // small buffer after closing old modal
+
+//   // Try to match by exact href first; fallback to text filter
+//   let event_link_locator = target_frame.locator(`a[href="${event_js}"]`);
+//   let link_count = await event_link_locator.count();
+
+//   if (!link_count) {
+//     event_link_locator = target_frame
+//       .locator('a[href^="javascript:openEvent"]')
+//       .filter({ hasText: event_name });
+//     link_count = await event_link_locator.count();
+//   }
+
+//   if (!link_count) {
+//     console.log(
+//       color_text(
+//         `⚠️ no clickable link found for multi-team event: "${event_name}" (${event_js})`,
+//         "yellow"
+//       )
+//     );
+//     return [];
+//   }
+
+//   try {
+//     await Promise.all([
+//       target_frame
+//         .waitForSelector(modal_selector, {
+//           state: "visible",
+//           timeout: 5000,
+//         })
+//         .catch(() => null),
+//       event_link_locator.first().click(),
+//     ]);
+
+//     const modal_locator = target_frame.locator(modal_selector);
+
+//     if (!(await modal_locator.isVisible())) {
+//       console.log(
+//         color_text(
+//           `⚠️ event team modal did not become visible for "${event_name}"`,
+//           "yellow"
+//         )
+//       );
+//       return [];
+//     }
+
+//     // give the modal a moment to fully render its contents
+//     await page.waitForTimeout(400);
+
+//     // search anywhere inside modal for team links by `teamId=`
+//     const teams_scope_locator = modal_locator;
+//     try {
+//       await teams_scope_locator.waitForSelector(
+//         'a[target="_blank"][href*="teamId="]',
+//         { timeout: 4000 }
+//       );
+//     } catch {
+//       // no links found in time — might really be a no-team / weird popup
+//     }
+
+//     const team_links_locator = teams_scope_locator.locator(
+//       'a[target="_blank"][href*="teamId="]'
+//     );
+
+//     const team_link_count = await team_links_locator.count();
+//     const teams = [];
+
+//     for (let i = 0; i < team_link_count; i++) {
+//       const link = team_links_locator.nth(i);
+
+//       const team_name_raw = (await link.innerText()).trim();
+//       const href = (await link.getAttribute("href")) || "";
+
+//       const match = href.match(/teamId=(\d+)/i);
+//       const team_id = match ? match[1] : null;
+
+//       teams.push({
+//         team_name_raw,
+//         team_id,
+//       });
+//     }
+
+//     console.log(
+//       color_text(
+//         `✅ multi-team popup: "${event_name}" → ${teams.length} team(s)`,
+//         "green"
+//       )
+//     );
+
+//     // Close modal after scraping
+//     await close_event_team_modal_if_open(target_frame, page);
+//     await page.waitForTimeout(150).catch(() => { });
+
+//     return teams;
+//   } catch (err) {
+//     console.error(
+//       `⚠️ error while loading multi-team popup for event "${event_name}" (${event_js}):`,
+//       err
+//     );
+//     await close_event_team_modal_if_open(target_frame, page);
+//     await page.waitForTimeout(150).catch(() => { });
+//     return [];
+//   }
+// }
+
 async function get_teams_from_multi_team_event(
   target_frame,
   page,
@@ -104,7 +251,8 @@ async function get_teams_from_multi_team_event(
 ) {
   const modal_selector = "#eventTeamFrame";
 
-  // Make sure no stale modal is open first
+  // Make sure no stale modal OR stray popup windows are open first
+  await close_all_popups_for_page(page);
   await close_event_team_modal_if_open(target_frame, page);
   await page.waitForTimeout(200); // small buffer after closing old modal
 
@@ -149,6 +297,9 @@ async function get_teams_from_multi_team_event(
           "yellow"
         )
       );
+
+      // If clicking produced a standalone popup instead of a modal, close it.
+      await close_all_popups_for_page(page);
       return [];
     }
 
@@ -197,7 +348,10 @@ async function get_teams_from_multi_team_event(
 
     // Close modal after scraping
     await close_event_team_modal_if_open(target_frame, page);
-    await page.waitForTimeout(150).catch(() => {});
+    await page.waitForTimeout(150).catch(() => { });
+
+    // Also close any standalone popup windows that might have opened.
+    await close_all_popups_for_page(page);
 
     return teams;
   } catch (err) {
@@ -205,8 +359,11 @@ async function get_teams_from_multi_team_event(
       `⚠️ error while loading multi-team popup for event "${event_name}" (${event_js}):`,
       err
     );
+
     await close_event_team_modal_if_open(target_frame, page);
-    await page.waitForTimeout(150).catch(() => {});
+    await page.waitForTimeout(150).catch(() => { });
+    await close_all_popups_for_page(page);
+
     return [];
   }
 }
@@ -261,6 +418,170 @@ async function expand_multi_team_rows(rows, target_frame, page) {
 
   return expanded_rows;
 }
+
+/* ------------------------------------------
+   extractor for team schedule (Results.jsp)
+   - runs IN THE BROWSER context
+-------------------------------------------*/
+// function schedule_extractor_source() {
+//   return ({
+//     wrestling_season,
+//     track_wrestling_category,
+//     page_index,
+//     base_span_row_counter,
+//   }) => {
+//     function parse_dates(date_raw) {
+//       if (!date_raw) return { start_date: null, end_date: null };
+
+//       const cleaned = date_raw.replace(/\s+/g, " ").trim();
+//       const has_range = cleaned.includes("-");
+
+//       if (!has_range) {
+//         return { start_date: cleaned, end_date: cleaned };
+//       }
+
+//       // example: "12/05 - 12/06/2025"
+//       let [left, right] = cleaned.split("-").map((s) => s.trim());
+//       const right_parts = right.split("/");
+//       const end_year = right_parts[2]; // e.g. "2025"
+
+//       if (left.split("/").length === 2) {
+//         left = `${left}/${end_year}`;
+//       }
+
+//       return { start_date: left, end_date: right };
+//     }
+
+//     const out = [];
+//     const tr_nodes = Array.from(
+//       document.querySelectorAll(
+//         "table.dataGrid tr.dataGridRow, table.dataGrid tr.dataGridAltRow"
+//       )
+//     );
+
+//     let span_counter = base_span_row_counter || 0;
+
+//     for (const tr of tr_nodes) {
+//       const cells = tr.querySelectorAll("td");
+//       if (cells.length < 3) continue;
+
+//       // increment ONCE per grid row in this span
+//       span_counter += 1;
+//       const row_index_in_span = span_counter;
+
+//       const date_raw = (cells[1].innerText || "").trim();
+//       const { start_date, end_date } = parse_dates(date_raw);
+
+//       const event_cell = cells[2];
+//       const link = event_cell.querySelector("a");
+//       const event_name =
+//         ((link && link.innerText) || event_cell.innerText || "").trim();
+
+//       const event_js = (link && link.getAttribute("href")) || "";
+
+//       if (!date_raw && !event_name) continue;
+
+//       const has_at = event_name.includes("@");
+
+//       // NEW: pattern like "Cheyenne Mountain, CO 16 Pueblo West, CO 0"
+//       // away team on the left of the first score, home team on the right
+//       const score_pattern = /^(.*?)(\d+)\s+(.+?)\s+(\d+)\s*$/;
+//       const has_scores = score_pattern.test(event_name);
+
+//       if (has_at) {
+//         // Existing '@' dual-meet logic
+//         const split = event_name.split("@");
+//         const left_raw = split[0] || "";
+//         const right_raw = split[1] || "";
+//         const team_left = left_raw.trim();
+//         const team_right = right_raw.trim();
+
+//         const teams = [
+//           { team_name_raw: team_left, team_role: "away", team_index: 1 },
+//           { team_name_raw: team_right, team_role: "home", team_index: 2 },
+//         ];
+
+//         for (const t of teams) {
+//           out.push({
+//             wrestling_season,
+//             track_wrestling_category,
+//             grid_page_index: page_index,
+
+//             date_raw,
+//             start_date,
+//             end_date,
+
+//             event_name,
+//             event_js,
+
+//             team_name_raw: t.team_name_raw,
+//             team_role: t.team_role,
+//             team_index: t.team_index,
+//             team_id: null, // filled only for multi-team
+
+//             row_index_in_span,
+//           });
+//         }
+//       } else if (has_scores) {
+//         // NEW: score-style dual-meet logic
+//         const m = event_name.match(score_pattern);
+//         const left_team_raw = (m[1] || "").trim(); // e.g. "Cheyenne Mountain, CO"
+//         const right_team_raw = (m[3] || "").trim(); // e.g. "Pueblo West, CO"
+//         // scores are m[2], m[4] if you ever want them
+
+//         const teams = [
+//           { team_name_raw: left_team_raw, team_role: "away", team_index: 1 },
+//           { team_name_raw: right_team_raw, team_role: "home", team_index: 2 },
+//         ];
+
+//         for (const t of teams) {
+//           out.push({
+//             wrestling_season,
+//             track_wrestling_category,
+//             grid_page_index: page_index,
+
+//             date_raw,
+//             start_date,
+//             end_date,
+
+//             event_name,
+//             event_js,
+
+//             team_name_raw: t.team_name_raw,
+//             team_role: t.team_role,
+//             team_index: t.team_index,
+//             team_id: null,
+
+//             row_index_in_span,
+//           });
+//         }
+//       } else {
+//         // Tournament / non-dual, or no recognizable pattern → leave team fields null
+//         out.push({
+//           wrestling_season,
+//           track_wrestling_category,
+//           grid_page_index: page_index,
+
+//           date_raw,
+//           start_date,
+//           end_date,
+
+//           event_name,
+//           event_js,
+
+//           team_name_raw: null,
+//           team_role: null,
+//           team_index: null,
+//           team_id: null,
+
+//           row_index_in_span,
+//         });
+//       }
+//     }
+
+//     return out;
+//   };
+// }
 
 /* ------------------------------------------
    extractor for team schedule (Results.jsp)
@@ -326,7 +647,13 @@ function schedule_extractor_source() {
 
       const has_at = event_name.includes("@");
 
+      // pattern like "Cheyenne Mountain, CO 16 Pueblo West, CO 0"
+      // away team on the left of the first score, home team on the right
+      const score_pattern = /^(.*?)(\d+)\s+(.+?)\s+(\d+)\s*$/;
+      const has_scores = score_pattern.test(event_name);
+
       if (has_at) {
+        // Existing '@' dual-meet logic (no scores)
         const split = event_name.split("@");
         const left_raw = split[0] || "";
         const right_raw = split[1] || "";
@@ -334,8 +661,18 @@ function schedule_extractor_source() {
         const team_right = right_raw.trim();
 
         const teams = [
-          { team_name_raw: team_left, team_role: "away", team_index: 1 },
-          { team_name_raw: team_right, team_role: "home", team_index: 2 },
+          {
+            team_name_raw: team_left,
+            team_role: "away",
+            team_index: 1,
+            team_score: null,
+          },
+          {
+            team_name_raw: team_right,
+            team_role: "home",
+            team_index: 2,
+            team_score: null,
+          },
         ];
 
         for (const t of teams) {
@@ -356,10 +693,61 @@ function schedule_extractor_source() {
             team_index: t.team_index,
             team_id: null, // filled only for multi-team
 
+            // NEW: per-team score (null for '@' pattern)
+            team_score: t.team_score,
+
+            row_index_in_span,
+          });
+        }
+      } else if (has_scores) {
+        // Score-style dual-meet logic
+        const m = event_name.match(score_pattern);
+        const left_team_raw = (m[1] || "").trim(); // e.g. "Cheyenne Mountain, CO"
+        const away_score = parseInt(m[2], 10);      // 16
+        const right_team_raw = (m[3] || "").trim(); // e.g. "Pueblo West, CO"
+        const home_score = parseInt(m[4], 10);      // 0
+
+        const teams = [
+          {
+            team_name_raw: left_team_raw,
+            team_role: "away",
+            team_index: 1,
+            team_score: Number.isFinite(away_score) ? away_score : null,
+          },
+          {
+            team_name_raw: right_team_raw,
+            team_role: "home",
+            team_index: 2,
+            team_score: Number.isFinite(home_score) ? home_score : null,
+          },
+        ];
+
+        for (const t of teams) {
+          out.push({
+            wrestling_season,
+            track_wrestling_category,
+            grid_page_index: page_index,
+
+            date_raw,
+            start_date,
+            end_date,
+
+            event_name,
+            event_js,
+
+            team_name_raw: t.team_name_raw,
+            team_role: t.team_role,
+            team_index: t.team_index,
+            team_id: null,
+
+            // NEW: per-team score from the parsed pattern
+            team_score: t.team_score,
+
             row_index_in_span,
           });
         }
       } else {
+        // Tournament / non-dual, or no recognizable pattern → leave team fields & scores null
         out.push({
           wrestling_season,
           track_wrestling_category,
@@ -376,6 +764,9 @@ function schedule_extractor_source() {
           team_role: null,
           team_index: null,
           team_id: null,
+
+          // NEW: no score for non-duals
+          team_score: null,
 
           row_index_in_span,
         });
@@ -558,7 +949,7 @@ async function main(
   function get_rolling_date_range() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const start_date = new Date(today);
     start_date.setDate(start_date.getDate() - 7); // 7 days ago
 
@@ -742,8 +1133,7 @@ async function main(
 
     while (local_page_index < matches_page_limit) {
       console.log(
-        `\n========== grid page ${
-          local_page_index + 1
+        `\n========== grid page ${local_page_index + 1
         } (${date_span_label}) ==========`
       );
 
@@ -873,7 +1263,7 @@ async function main(
         )
       );
 
-      // 🆕 DB upsert, consistent with step_3 pattern
+      // DB upsert
       console.log("step 7: save to sql db\n");
       try {
         const { inserted, updated } = await upsert_team_schedule(
@@ -892,6 +1282,9 @@ async function main(
           e?.message || e
         );
       }
+
+      // 🔥 THIS IS THE NEW LINE: clean up any DualMatches / popup windows
+      await close_all_popups_for_page(page);
 
       processed += 1;
       global_page_index += 1;
