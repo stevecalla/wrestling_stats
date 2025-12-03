@@ -554,16 +554,15 @@ async function main(
     });
   }
 
-  // Rolling date window: last 7 days and next 5 days from "today"
+  // Rolling date window: 7 days ago from today & today
   function get_rolling_date_range() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
+    
     const start_date = new Date(today);
-    start_date.setDate(start_date.getDate() - 7);
+    start_date.setDate(start_date.getDate() - 7); // 7 days ago
 
-    const end_date = new Date(today);
-    end_date.setDate(end_date.getDate() + 5);
+    const end_date = new Date(today);   // today
 
     return { start_date, end_date };
   }
