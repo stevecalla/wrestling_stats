@@ -1,6 +1,4 @@
 // src/step_3_get_wrestler_match_history.js (ESM, snake_case)
-import net from "net"; // for wait_until_port_is_open function
-
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -28,20 +26,6 @@ import { step_19_close_chrome_dev } from "./step_19_close_chrome_developer.js";
 /* ------------------------------------------
    small helpers
 -------------------------------------------*/
-async function close_extra_tabs(context, keep_page) {
-  try {
-    const pages = context?.pages?.() || [];
-    for (const p of pages) {
-      if (p !== keep_page && !p.isClosed?.()) {
-        console.log("🧹 closing extra tab:", p.url?.() || "<no url yet>");
-        await p.close();
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ close_extra_tabs error (ignored):", err?.message || err);
-  }
-}
-
 function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
@@ -72,137 +56,21 @@ async function safe_goto(page, url, opts = {}) {
   return page.url();
 }
 
-async function wait_ms(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Waits until a TCP port becomes available (Chrome's DevTools port).
- * Retries every 200ms up to max_wait_ms.
- *
- * @param {number} port
- * @param {number} max_wait_ms - default 5000ms
- * @param {string} host - default "127.0.0.1"
- */
-async function wait_until_port_is_open(port = 9222, max_wait_ms = 5000, host = "127.0.0.1") {
-  const start_time = Date.now();
-
-  while (Date.now() - start_time < max_wait_ms) {
-    const is_open = await new Promise((resolve) => {
-      const socket = new net.Socket();
-
-      socket
-        .setTimeout(500)
-        .once("connect", () => {
-          socket.destroy();
-          resolve(true);
-        })
-        .once("timeout", () => {
-          socket.destroy();
-          resolve(false);
-        })
-        .once("error", () => {
-          socket.destroy();
-          resolve(false);
-        })
-        .connect(port, host);
-    });
-
-    if (is_open) {
-      return true;
-    }
-
-    // small retry delay
-    await wait_ms(200);
-  }
-
-  console.warn(`⚠️ DevTools port ${port} did not open after ${max_wait_ms}ms`);
-  return false;
-}
-
-/**
- * Production-grade readiness check for Chrome DevTools:
- *  1) Waits for TCP port (9222) to be open.
- *  2) If global fetch is available, polls /json/version to ensure DevTools HTTP is ready.
- */
-async function wait_until_devtools_ready(port = 9222, max_wait_ms = 7000, host = "127.0.0.1") {
-  const start_time = Date.now();
-  const port_ok = await wait_until_port_is_open(port, max_wait_ms, host);
-
-  if (!port_ok) {
-    return false;
-  }
-
-  const elapsed = Date.now() - start_time;
-  const remaining_ms = Math.max(max_wait_ms - elapsed, 0);
-  const deadline = Date.now() + remaining_ms;
-
-  // If fetch is not available (older Node), just rely on port readiness
-  if (typeof fetch !== "function") {
-    return true;
-  }
-
-  const endpoint = `http://${host}:${port}/json/version`;
-
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(endpoint, { method: "GET" });
-      if (res.ok) {
-        // shape can vary; we only care that DevTools responded
-        const json = await res.json().catch(() => null);
-        if (json && json.Browser) {
-          return true;
-        }
-        return true;
-      }
-    } catch (err) {
-      // ignore and retry
-    }
-
-    await wait_ms(200);
-  }
-
-  console.warn(`⚠️ DevTools HTTP endpoint not ready on ${endpoint} after ${max_wait_ms}ms`);
-  return false;
-}
-
-// async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
-//   try {
-//     await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
-//   } catch (err) {
-//     const msg = String(err?.message || "");
-//     if (
-//       msg.includes("Target page, context or browser has been closed") ||
-//       msg.includes("Frame was detached") ||
-//       msg.includes("Execution context was destroyed")
-//     ) {
-//       err.code = "E_TARGET_CLOSED"; // sentinel
-//     }
-//     throw err;
-//   }
-// }
-
 async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
   try {
     await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
   } catch (err) {
     const msg = String(err?.message || "");
-
     if (
       msg.includes("Target page, context or browser has been closed") ||
       msg.includes("Frame was detached") ||
       msg.includes("Execution context was destroyed")
     ) {
       err.code = "E_TARGET_CLOSED"; // sentinel
-    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      // 👈 treat a pure timeout as a navigation timeout so outer code can recycle + retry
-      err.code = "E_GOTO_TIMEOUT";
     }
-
     throw err;
   }
 }
-
 
 async function helper_browser_close_restart_relogin(
   browser,
@@ -215,39 +83,10 @@ async function helper_browser_close_restart_relogin(
   url_login_page,
   cause
 ) {
-
-  // 🧹 BEST-EFFORT: close extra tabs in the existing context before recycle
-  if (context) {
-    await close_extra_tabs(context, page);
-  }
-
-  // CLOSE THE CONNECTION INITIALLY TO MAKE THE PROCESS CLEAN
-  try {
-    if (browser && browser.isConnected?.()) {
-      await browser.close(); // closes the CDP connection only
-    }
-  } catch (e) {
-    console.warn("⚠️ Error closing browser handle (ignored):", e?.message || e);
-  }
-
   // CLOSE THE CURRENT BROWSER
-  // step_19_close_chrome_dev(browser, context);
+  step_19_close_chrome_dev(browser, context);
 
-  if (cause) {
-    console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
-  } else {
-    console.warn("♻️ reconnecting and retrying this url once...");
-  }
-
-  // ✅ ADD HARD DELAY — allow Chrome to fully release DevTools connection
-  // await new Promise((r) => setTimeout(r, 5000));   // 1200ms works great on Win/mac
-
-  // 🔥 SMART DELAY — wait until DevTools is ready (port + HTTP, if available)
-  const devtools_ready = await wait_until_devtools_ready(9222, 8000).catch(() => false);
-
-  if (!devtools_ready) {
-    console.warn("⚠️ DevTools readiness could not be confirmed; proceeding with reconnect anyway...");
-  }
+  console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
 
   // LAUNCH BROWSER AGAIN
   ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
@@ -260,6 +99,7 @@ async function helper_browser_close_restart_relogin(
   await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
   return { browser, page, context };
+
 }
 
 /* ------------------------------------------
@@ -419,7 +259,6 @@ async function main(
   use_wrestler_list_iterator_query = true
 ) {
   const load_timeout_ms = 30000;
-  const MAX_ATTEMPTS_PER_WRESTLER = 2; // or 3 if you want to be more tolerant
 
   // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
   const mode = (() => {
@@ -505,23 +344,6 @@ async function main(
   //   i: 0,
   //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
   // }];
-  // const test_link = [
-  //   {
-  //     // Boyd Thomas(Roman)
-  //     i: 0,
-  //     url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30579778132"
-  //   },
-  //   { // Colt Jones
-  //     i: 0,
-  //     url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
-  //   },
-  //   { 
-  //     // 'Gio Roacho'
-  //     i: 0,
-  //     url:
-  //       'https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1764646616320&twSessionId=ytjeuykujq&wrestlerId=35272881132'
-  //   }
-  // ];
 
   const iterator =
     mode === "events"
@@ -544,22 +366,28 @@ async function main(
         sql_wrestler_id_list,
       });
 
-  console.log("find console.log=================");
+  console.log('find console.log=================');
 
   // for (const { i, url } of test_link) {
   for await (const { i, url } of iterator) {
     if (handles_dead({ browser, context, page })) {
-      ({ browser, page, context } = await helper_browser_close_restart_relogin(
-        browser,
-        page,
-        context,
-        url_home_page,
-        load_timeout_ms,
-        wrestling_season,
-        track_wrestling_category,
-        url_login_page,
-        "handles_dead detected"
-      ));
+
+      { browser, page, context } await helper_browser_close_restart_relogin(browser, page, context, url_home_page. load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+
+      // // CLOSE THE CURRENT BROWSER
+      // step_19_close_chrome_dev(browser, context);
+
+      // console.warn("♻️ handles_dead — reconnecting via step_0_launch_chrome_developer...");
+
+      // // LAUNCH BROWSER AGAIN
+      // ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
+      // browser.on?.("disconnected", () => {
+      //   console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
+      // });
+
+      // // RELOGIN = SELECT THE WRESTLING SEASON ET AL
+      // await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
     }
 
     let attempts = 0;
@@ -619,17 +447,23 @@ async function main(
             e.code = "E_TARGET_CLOSED";
           }
           if (e?.code === "E_TARGET_CLOSED") {
-            ({ browser, page, context } = await helper_browser_close_restart_relogin(
-              browser,
-              page,
-              context,
-              url_home_page,
-              load_timeout_ms,
-              wrestling_season,
-              track_wrestling_category,
-              url_login_page,
-              "frame died during evaluate"
-            ));
+
+            { browser, page, context } await helper_browser_close_restart_relogin(browser, page, context, url_home_page. load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+
+            // // CLOSE THE CURRENT BROWSER
+            // step_19_close_chrome_dev(browser, context);
+
+            // console.warn("♻️ frame died during evaluate — reconnecting and retrying once...");
+
+            // // LAUNCH BROWSER AGAIN
+            // ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
+            // browser.on?.("disconnected", () =>
+            //   console.warn("⚠️ CDP disconnected — Chrome was closed.")
+            // );
+
+            // // RELOGIN = SELECT THE WRESTLING SEASON ET AL
+            // await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
             await safe_goto(page, url, { timeout: load_timeout_ms });
 
@@ -657,68 +491,38 @@ async function main(
 
         console.log("step 7: save to sql db\n");
         try {
-          const { inserted, updated } = await upsert_wrestler_match_history(rows, {
-            wrestling_season,
-            track_wrestling_category,
-            gender,
-          });
-          console.log(
-            color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green")
-          );
+          const { inserted, updated } = await upsert_wrestler_match_history(rows, { wrestling_season, track_wrestling_category, gender });
+          console.log(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
         } catch (e) {
           console.error("❌ DB upsert failed:", e?.message || e);
         }
 
         processed += 1;
-
-        const HARD_RESET_LIMIT = 50; // or 2 or 5 or 10 for testing
-
-        // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
-        if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
-          console.log(
-            color_text(
-              `=================================
-              HARD RESTART AT ${HARD_RESET_LIMIT}
-              ♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
-              ===================================`,
-              "yellow"
-            )
-          );
-          ({ browser, page, context } = await helper_browser_close_restart_relogin(
-            browser,
-            page,
-            context,
-            url_home_page,
-            load_timeout_ms,
-            wrestling_season,
-            track_wrestling_category,
-            url_login_page,
-            "processed 50 wrestler pages"
-          ));
-        }
-
         break; // success → break retry loop
       } catch (e) {
         if (e?.code === "E_TARGET_CLOSED" || e?.code === "E_GOTO_TIMEOUT") {
-          const cause =
-            e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
+          const cause = e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "page/context/browser closed";
 
-          ({ browser, page, context } = await helper_browser_close_restart_relogin(
-            browser,
-            page,
-            context,
-            url_home_page,
-            load_timeout_ms,
-            wrestling_season,
-            track_wrestling_category,
-            url_login_page,
-            cause
-          ));
+          { browser, page, context } await helper_browser_close_restart_relogin(browser, page, context, url_home_page. load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
+          // // CLOSE THE CURRENT BROWSER
+          // step_19_close_chrome_dev(browser, context);
+
+          // console.warn(`♻️ ${cause} — reconnecting and retrying this url once...`);
+
+          // // LAUNCH BROWSER AGAIN
+          // ({ browser, page, context } = await step_0_launch_chrome_developer(url_home_page));
+
+          // browser.on?.("disconnected", () => {
+          //   console.warn("⚠️ CDP disconnected — Chrome was closed (manual, crash, or sleep).");
+          // });
+
+          // // RELOGIN = SELECT THE WRESTLING SEASON ET AL
+          // await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+          
           await safe_goto(page, url, { timeout: load_timeout_ms });
 
-          // if (attempts >= 2) throw e; // removed to continue / bypass a wrestler if an attempt to get matches errors
-
+          if (attempts >= 2) throw e;
           continue;
         }
         throw e;
@@ -734,3 +538,5 @@ async function main(
 }
 
 export { main as step_3_get_wrestler_match_history };
+
+
