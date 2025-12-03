@@ -12,15 +12,16 @@ SELECT
 	start_date,
     team_name_raw,
     team_id, 
+    
     event_name
 FROM team_schedule_scrape_data
 WHERE wrestling_season = '2025-26'
   AND track_wrestling_category = 'High School Boys'
   -- AND track_wrestling_category = 'High School Girls'
   AND start_date IN (
-        CURDATE(),               -- today
-        DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
-        , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
+        CURDATE()               -- today
+        -- DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
+        -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
       )
 ORDER BY start_date, event_name
 -- LIMIT 20
@@ -40,13 +41,14 @@ WITH recent_events AS (
       ts.wrestling_season,
       ts.track_wrestling_category
   FROM team_schedule_scrape_data ts
-  WHERE ts.wrestling_season = '2025-26'
+  WHERE 1 = 1
+	AND ts.wrestling_season = '2025-26'
     AND ts.track_wrestling_category = 'High School Boys'
     -- AND ts.track_wrestling_category = 'High School Girls'
     AND ts.start_date IN (
-          CURDATE(),               -- today
-          DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
-          -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
+          CURDATE(),						          -- today
+          DATE_SUB(CURDATE(), INTERVAL 1 DAY)  		  -- yesterday
+          -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)    -- tomorrow
         )
 )
 
@@ -78,9 +80,11 @@ LEFT JOIN wrestler_list_scrape_data w
           -- 2) fallback: match on team name when event.team_id is NULL
           OR (re.team_id IS NULL AND w.team = re.team_name_raw)
          )
-
+WHERE 1 = 1
+	AND w.name_link IS NOT NULL AND w.name_link <> ''
 ORDER BY
     re.start_date,
     re.event_name,
+    
     w.name
 ;

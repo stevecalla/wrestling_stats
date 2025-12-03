@@ -958,7 +958,7 @@ async function main(
     console.error(`❌ Error scraping rolling span ${span_label}:`, err);
   }
 
-  await browser.close();
+  // await browser.close();
   console.log(
     `\n✅ done. processed ${processed} Results.jsp page(s) into CSV: ${file_path}`
   );
