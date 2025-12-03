@@ -166,22 +166,6 @@ async function wait_until_devtools_ready(port = 9222, max_wait_ms = 7000, host =
   return false;
 }
 
-// async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
-//   try {
-//     await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
-//   } catch (err) {
-//     const msg = String(err?.message || "");
-//     if (
-//       msg.includes("Target page, context or browser has been closed") ||
-//       msg.includes("Frame was detached") ||
-//       msg.includes("Execution context was destroyed")
-//     ) {
-//       err.code = "E_TARGET_CLOSED"; // sentinel
-//     }
-//     throw err;
-//   }
-// }
-
 async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
   try {
     await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
@@ -202,7 +186,6 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
     throw err;
   }
 }
-
 
 async function helper_browser_close_restart_relogin(
   browser,
@@ -260,6 +243,36 @@ async function helper_browser_close_restart_relogin(
   await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
 
   return { browser, page, context };
+}
+
+function build_wrestler_matches_url(url_home_page, page, raw_url) {
+  try {
+    // 1) Use the *current* page URL to get fresh TIM + twSessionId
+    const current = new URL(page.url(), url_home_page);
+    const current_tim = current.searchParams.get("TIM") || String(Date.now());
+    const current_session_id = current.searchParams.get("twSessionId") || "";
+
+    // 2) Use the stored URL only to get wrestlerId
+    const stored = new URL(raw_url, url_home_page);
+    const wrestler_id = stored.searchParams.get("wrestlerId");
+
+    // 3) Build a clean WrestlerMatches URL with current TIM + session + wrestlerId
+    const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page).toString();
+    const params = new URLSearchParams();
+
+    if (current_tim) params.set("TIM", current_tim);
+    if (current_session_id) params.set("twSessionId", current_session_id);
+    if (wrestler_id) params.set("wrestlerId", wrestler_id);
+
+    const effective_url = `${base}?${params.toString()}`;
+    return effective_url;
+  } catch (err) {
+    console.warn(
+      "⚠️ build_wrestler_matches_url failed, falling back to raw url:",
+      err?.message || err
+    );
+    return raw_url;
+  }
 }
 
 /* ------------------------------------------
@@ -568,8 +581,13 @@ async function main(
       try {
         const all_rows = [];
 
-        console.log("step 2a: go to url:", url);
-        await safe_goto(page, url, { timeout: load_timeout_ms });
+        const effective_url = build_wrestler_matches_url(url_home_page, page, url);
+
+        console.log("step 2a: go to url:", effective_url);
+        await safe_goto(page, effective_url, { timeout: load_timeout_ms });
+
+        // console.log("step 2a: go to url:", url);
+        // await safe_goto(page, url, { timeout: load_timeout_ms });
 
         console.log("step 2b: find target frame");
         let target_frame =
@@ -584,20 +602,35 @@ async function main(
           await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
           await page.waitForTimeout(1000);
 
-          console.log("step 3b: re-navigating to original URL after login:", url);
+          const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
 
-          await safe_goto(page, url, { timeout: load_timeout_ms });
+          console.log("step 3b: re-navigating to original URL after login:", effective_url_after_login);
+
+          await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
           await page.waitForTimeout(1000);
+
+          // console.log("step 3b: re-navigating to original URL after login:", url);
+
+          // await safe_goto(page, url, { timeout: load_timeout_ms });
+          // await page.waitForTimeout(1000);
 
           target_frame =
             page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
 
         if (/MainFrame\.jsp/i.test(page.url())) {
-          await safe_goto(page, url, { timeout: load_timeout_ms });
+          const effective_url_mainframe = build_wrestler_matches_url(url_home_page, page, url);
+
+          await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
           target_frame =
             page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
+
+        // if (/MainFrame\.jsp/i.test(page.url())) {
+        //   await safe_goto(page, url, { timeout: load_timeout_ms });
+        //   target_frame =
+        //     page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+        // }
 
         console.log("step 4: wait for dropdown");
         await safe_wait_for_selector(target_frame, "#wrestler", { timeout: load_timeout_ms });
@@ -631,12 +664,22 @@ async function main(
               "frame died during evaluate"
             ));
 
-            await safe_goto(page, url, { timeout: load_timeout_ms });
+            const effective_url_retry = build_wrestler_matches_url(url_home_page, page, url);
+
+            await safe_goto(page, effective_url_retry, { timeout: load_timeout_ms });
 
             let tf =
               page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
             rows = await tf.evaluate(extractor_source());
+
+            // await safe_goto(page, url, { timeout: load_timeout_ms });
+
+            // let tf =
+            //   page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+
+            // rows = await tf.evaluate(extractor_source());
+
           } else {
             throw e;
           }
@@ -715,11 +758,19 @@ async function main(
             cause
           ));
 
-          await safe_goto(page, url, { timeout: load_timeout_ms });
+          const effective_url_after_reconnect = build_wrestler_matches_url(url_home_page, page, url);
+
+          await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
 
           // if (attempts >= 2) throw e; // removed to continue / bypass a wrestler if an attempt to get matches errors
 
           continue;
+
+          // await safe_goto(page, url, { timeout: load_timeout_ms });
+
+          // if (attempts >= 2) throw e; // removed to continue / bypass a wrestler if an attempt to get matches errors
+
+          // continue;
         }
         throw e;
       }

@@ -52,36 +52,36 @@ const step_flags = {
   step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  false,  // 📄 get wrestler list
+  step_1:  true,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  false, // get team schedule
+  step_2:  true, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
   step_3:  true,  // 🏟️ get match history
-  step_4:  false, // 📄 create match history metrics
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  false, // create team division
-  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  false, // append team division to match history metrics
-  step_8:  false, // append team division to wrestler list
+  step_5:  true, // create team division
+  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  true, // append team division to match history metrics
+  step_8:  true, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  false, // create 2024-25 state qualifier list
-  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: false, // append state qualifier to match history metrics
-  step_12: false, // append state qualifier to wrestler list
+  step_9:  true, // create 2024-25 state qualifier list
+  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: true, // append state qualifier to match history metrics
+  step_12: true, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: false, // load data into Google cloud / bigquery
+  step_14: true, // load data into Google cloud / bigquery
 
   // // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: false,  // 🧹 transfer tables between windos & mac
+  step_18: true,  // 🧹 transfer tables between windos & mac
 
   // step_19: false,  // 🧹 close browser
 };
