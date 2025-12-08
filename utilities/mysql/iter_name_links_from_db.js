@@ -114,14 +114,17 @@ export async function count_name_links_based_on_event_schedule(
         FROM team_schedule_scrape_data ts
         WHERE ts.wrestling_season = "${wrestling_season}"
           AND ts.track_wrestling_category = "${track_wrestling_category}"
+          AND team_name_raw LIKE "%, CO%"
           AND ts.start_date IN (
                 CURDATE(),                                -- today
                 DATE_SUB(CURDATE(), INTERVAL 1 DAY)       -- yesterday
+                -- "2025-12-02"
+                "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06"
               )
       )
       SELECT 
   
-        COUNT(*) as cnt
+        COUNT(DISTINCT w.id) as cnt
 
       FROM recent_events re
 
@@ -136,6 +139,8 @@ export async function count_name_links_based_on_event_schedule(
               )
       WHERE 1 = 1
         AND w.name_link IS NOT NULL AND w.name_link <> ''
+      -- GROUP BY 1, 2
+      -- ORDER BY 1, 2
       ;
 
     `
@@ -172,9 +177,12 @@ export async function* iter_name_links_based_on_event_schedule({
         FROM team_schedule_scrape_data ts
         WHERE ts.wrestling_season = "${wrestling_season}"
           AND ts.track_wrestling_category = "${track_wrestling_category}"
+          AND team_name_raw LIKE "%, CO%"
           AND ts.start_date IN (
                 CURDATE(),                                -- today
                 DATE_SUB(CURDATE(), INTERVAL 1 DAY)       -- yesterday
+                -- "2025-12-02"
+                -- "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06"
               )
       )
       SELECT DISTINCT
@@ -194,9 +202,8 @@ export async function* iter_name_links_based_on_event_schedule({
               )
       WHERE 1 = 1
         AND w.name_link IS NOT NULL AND w.name_link <> ''
-
-      ORDER BY
-          w.id
+      GROUP BY 1, 2
+      ORDER BY 1, 2
       LIMIT ? OFFSET ?
       ;
   `;

@@ -11,7 +11,12 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // Save files to csv & msyql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
-import { upsert_wrestler_match_history } from "../utilities/mysql/upsert_wrestler_match_history.js";
+import {
+  upsert_wrestler_match_history,
+  // >>> NEW: delete helper for per-wrestler snapshot <<< 
+  delete_wrestler_match_history_for_wrestler,
+} from "../utilities/mysql/upsert_wrestler_match_history.js";
+
 import {
   count_rows_in_db_wrestler_links,
   iter_name_links_from_db,
@@ -59,11 +64,16 @@ async function safe_goto(page, url, opts = {}) {
     await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
   } catch (err) {
     const msg = String(err?.message || "");
+
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
       await page.waitForLoadState("domcontentloaded").catch(() => {});
     } else if (msg.includes("Target page, context or browser has been closed")) {
       err.code = "E_TARGET_CLOSED"; // sentinel
+      throw err;
+    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
+      // >>> NEW: mark page.goto timeouts so the outer loop can retry
+      err.code = "E_GOTO_TIMEOUT";
       throw err;
     } else {
       throw err;
@@ -378,7 +388,7 @@ function extractor_source() {
         raw_details: details_text_raw,
 
         // >>> NEW FIELD <<<
-        bout_index
+        bout_index,
       });
 
       match_order += 1;
@@ -599,6 +609,30 @@ async function main(
         );
 
         all_rows.push(...rows);
+
+        // >>> NEW: delete existing match history for this wrestler/season/category
+        const this_wrestler_id = rows[0]?.wrestler_id;
+        if (this_wrestler_id) {
+          try {
+            console.log(
+              color_text(
+                `🧹 deleting existing match history for wrestler_id=${this_wrestler_id} (${wrestling_season}, ${track_wrestling_category})`,
+                "yellow"
+              )
+            );
+            await delete_wrestler_match_history_for_wrestler(
+              { wrestling_season, track_wrestling_category },
+              this_wrestler_id
+            );
+          } catch (e) {
+            console.error(
+              "⚠️ failed to delete existing match history for wrestler_id=" +
+                this_wrestler_id +
+                ":",
+              e?.message || e
+            );
+          }
+        }
 
         console.log("step 6: save to csv");
         const hw = await save_to_csv_file(all_rows, i, headers_written, file_path);

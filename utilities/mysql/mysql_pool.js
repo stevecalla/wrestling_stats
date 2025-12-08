@@ -1,11 +1,13 @@
 // utilities/mysql/mysql_pool.js
-import dotenv from "dotenv";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 import path from "path";
 import { fileURLToPath } from "url";
+
+import dotenv from "dotenv";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+
 
 import mysql from "mysql2";
 import mysqlPromise from "mysql2/promise";
@@ -91,6 +93,8 @@ async function close_pools() {
     _pool_stream = undefined;
   }
 }
+
+// get_pool();
 
 export { get_pool, get_pool_stream, close_pools };
 

@@ -57,7 +57,7 @@ async function ensure_table() {
       ),
 
       KEY idx_wrestler_id_start (wrestler_id, start_date),
-      KEY idx_wmh_wrestler_season (wrestler_id, wrestling_season),
+      KEY idx_wmh_wrestling_season (wrestler_id, wrestling_season),
       KEY idx_wmh_season_cat (wrestling_season, track_wrestling_category, wrestler_id),
       KEY idx_wmh_date (start_date),
       KEY idx_wmh_season_wrestler_id (wrestling_season, wrestler_id, id),
@@ -68,6 +68,26 @@ async function ensure_table() {
   `;
   await pool.query(sql);
   _ensured = true;
+}
+
+// >>> NEW: delete existing rows for one wrestler in a given season/category <<<
+export async function delete_wrestler_match_history_for_wrestler(meta, wrestler_id) {
+  if (!wrestler_id) return;
+
+  await ensure_table();
+  const pool = await get_pool();
+
+  const wrestling_season = meta?.wrestling_season || "unknown";
+  const track_wrestling_category = meta?.track_wrestling_category || "unknown";
+
+  const sql = `
+    DELETE FROM wrestler_match_history_scrape_data
+    WHERE wrestling_season = ?
+      AND track_wrestling_category = ?
+      AND wrestler_id = ?
+  `;
+
+  await pool.query(sql, [wrestling_season, track_wrestling_category, Number(wrestler_id)]);
 }
 
 export async function upsert_wrestler_match_history(rows, meta) {
@@ -158,7 +178,7 @@ export async function upsert_wrestler_match_history(rows, meta) {
 
         updated_at_mtn = 
           CASE WHEN NOT (
-            wrestler_season        <=> VALUES(wrestler_season) AND
+            wrestling_season        <=> VALUES(wrestling_season) AND
             track_wrestling_category <=> VALUES(track_wrestling_category) AND
             wrestler              <=> VALUES(wrestler) AND
             start_date            <=> VALUES(start_date) AND
@@ -174,7 +194,7 @@ export async function upsert_wrestler_match_history(rows, meta) {
 
         updated_at_utc = 
           CASE WHEN NOT (
-            wrestler_season        <=> VALUES(wrestler_season) AND
+            wrestling_season        <=> VALUES(wrestling_season) AND
             track_wrestling_category <=> VALUES(track_wrestling_category) AND
             wrestler              <=> VALUES(wrestler) AND
             start_date            <=> VALUES(start_date) AND

@@ -55,11 +55,11 @@ const step_flags = {
   step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  true, // get team schedule
+  step_2:  false, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  false,  // 🏟️ get match history
+  step_3:  true,  // 🏟️ get match history
   step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
@@ -128,7 +128,7 @@ async function load_config(custom = {}) {
     // STEP #3 CONFIG FOR TESTING
     matches_page_limit_test: 5,
     matches_page_limit_full: 10000,
-    step_3_loop_start: 0,
+    step_3_loop_start: 1600,
   };
 
   return { ...defaults, ...custom };
