@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
+import { get_pool } from "../utilities/mysql/mysql_pool.js";
+
 // QUERIES
 import { query_create_wrestler_ids_table } from "../utilities/raw_sql/create_drop_table_queries/query_create_wrestler_ids_table.js";
 import { step_1_query_wrestler_ids_data } from "../utilities/raw_sql/wrestler_match_history/step_1_get_wrestler_ids_data.js";
@@ -38,7 +40,6 @@ async function step_4_create_wrestler_match_history_data(config) {
         insert_ignore: true,   // 👈 we’ll use to ignore duplicates in flush_batch function for metrics table
     };
 
-
     // Step 1: Create and populate the wrestler IDs table
     // IDs table: drop_if_exists: true; insert_ignore: false (or omitted)
     // Table rebuilt every run; no long-term dedupe needed.
@@ -65,6 +66,30 @@ async function step_4_create_wrestler_match_history_data(config) {
     // Step 2: Loop in batches and insert into the base table
     // Metrics table: drop_if_exists: false; insert_ignore: true; PRIMARY KEY (id) ensures each match is unique.
     // Running: girls 24–25, boys 24–25, boys 25–26, girls 25–25, adds rows for each group.
+    if (is_not_test) {
+        const pool = await get_pool();
+        const conn = await pool.getConnection();
+        try {
+            console.log(
+                `[METRICS] Deleting existing rows for ${wrestling_season} / ${track_wrestling_category} / ${governing_body}`
+            );
+            await conn.execute(
+                `
+        DELETE FROM wrestler_match_history_metrics_data
+        WHERE wrestling_season = ?
+            AND track_wrestling_category = ?
+            AND governing_body = ?
+        `,
+                [wrestling_season, track_wrestling_category, governing_body]
+            );
+        } finally {
+            conn.release();
+        }
+    }
+
+    // Step 3: Loop in batches and insert into the base table
+    // Metrics table: drop_if_exists: false; insert_ignore: true; PRIMARY KEY (id) ensures each match is unique.
+    // Running: girls 24–25, boys 24–25, boys 25–26, girls 25–25, adds rows for each group.
     // If you rerun a group or reprocess overlapping Wrestlers/IDs, any existing id rows are ignored, so no duplicates.
     batch_size = 500;
     table_name = 'wrestler_match_history_metrics_data';
@@ -82,18 +107,35 @@ async function step_4_create_wrestler_match_history_data(config) {
         insert_ignore: true,     // ✅ skip duplicate ids in metrics
     };
 
-    for (let offset = 0; offset < count; offset += LIMIT_SIZE) {
+    let total_inserted = 0;
 
+    for (let offset = 0; offset < count; offset += LIMIT_SIZE) {
         QUERY_OPTIONS = {
             ...QUERY_OPTIONS,
             limit_size: LIMIT_SIZE,
             offset_size: offset,
         };
 
-        result = await execute_transfer_data_between_tables(batch_size, table_name, create_table_query, get_data_query, QUERY_OPTIONS);
+        const { result: batch_result, row_count: batch_count } =
+            await execute_transfer_data_between_tables(
+                batch_size,
+                table_name,
+                create_table_query,
+                get_data_query,
+                QUERY_OPTIONS
+            );
+
+        console.log(
+            `[METRICS] offset=${offset} limit=${LIMIT_SIZE} -> inserted ${batch_count} rows`
+        );
+        total_inserted += batch_count;
     }
 
-    return result;
+    console.log(
+        `[METRICS] total inserted into ${table_name} for ${wrestling_season} / ${track_wrestling_category}: ${total_inserted}`
+    );
+
+    return { result: 'ok', row_count: total_inserted };
 }
 
 // execute_create_recognition_base_data().catch(err => {

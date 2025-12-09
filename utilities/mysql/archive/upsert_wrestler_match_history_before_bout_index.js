@@ -1,4 +1,4 @@
-  // src/db/upsert_wrestler_match_history.js
+  // src/db/upsert_wrestler_match_history_before_bout_index.js
   import { get_pool } from "./mysql_pool.js";
   import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 

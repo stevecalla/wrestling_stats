@@ -20,9 +20,9 @@ SELECT "4_cross_season_summary" AS query_label, r.* FROM reference_wrestler_cros
 SELECT "5_list_scape" AS query_label, r.* FROM wrestler_list_scrape_data AS r LIMIT 10;
 SELECT "6_2025_list_backup" AS query_label, r.* FROM wrestler_list_scrape_data_2024_2025_boys_backup AS r LIMIT 10;
 SELECT "7_2025_boys_match_history_backup" AS query_label, r.* FROM wrestler_match_history_2024_2025_boys_all AS r LIMIT 10;
-SELECT "8_match_metrics" AS query_label, r.* FROM wrestler_match_history_metrics_data AS r LIMIT 10;
+SELECT "8_match_metrics" AS query_label, r.* FROM wrestler_match_history_metrics_data AS r WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 10;
 SELECT "9_match_scrape" AS query_label, r.* FROM wrestler_match_history_scrape_data AS r WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 150;
-SELECT "10_wrestler_ids" AS query_label, r.* FROM wrestler_match_history_wrestler_ids_data AS r LIMIT 10;
+SELECT "10_wrestler_ids" AS query_label, r.* FROM wrestler_match_history_wrestler_ids_data AS r  WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 10000;
 SELECT "11_state_qualifier_reference" AS query_label, r.* FROM wrestler_state_qualifier_and_place_reference AS r LIMIT 10;
 SELECT "12_team_reference" AS query_label, r.* FROM wrestler_team_division_reference AS r LIMIT 10;
 SELECT "13_team_schedule_scrape" AS query_label, r.* FROM team_schedule_scrape_data AS r LIMIT 10;

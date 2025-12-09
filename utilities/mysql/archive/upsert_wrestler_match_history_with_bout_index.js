@@ -4,13 +4,13 @@ import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/
 
 let _ensured = false;
 
-// Minimal MM/DD/YYYY → YYYY-MM-DD (or return null if malformed)
+// Minimal MM/DD/YYYY → YYYY-MM-DD
 function to_mysql_date(mdy) {
   if (!mdy) return null;
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(mdy);
   if (!m) return null;
   const [, mm, dd, yyyy] = m;
-  return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
 }
 
 async function ensure_table() {
@@ -21,46 +21,45 @@ async function ensure_table() {
     CREATE TABLE IF NOT EXISTS wrestler_match_history_scrape_data (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-      wrestling_season VARCHAR(32)  NOT NULL,
+      wrestling_season VARCHAR(32) NOT NULL,
       track_wrestling_category VARCHAR(32) NOT NULL,
-      page_url        VARCHAR(1024) NULL,
+      page_url VARCHAR(1024) NULL,
 
-      wrestler_id     BIGINT UNSIGNED NOT NULL,
-      wrestler        VARCHAR(255)   NOT NULL,
+      wrestler_id BIGINT UNSIGNED NOT NULL,
+      wrestler VARCHAR(255) NOT NULL,
 
-      start_date      DATE          NULL,
-      end_date        DATE          NULL,
+      start_date DATE NULL,
+      end_date DATE NULL,
 
-      event           VARCHAR(255)  NULL,
-      weight_category VARCHAR(64)   NULL,
+      event VARCHAR(255) NULL,
+      weight_category VARCHAR(64) NULL,
 
-      match_order     INT UNSIGNED NULL,
-      opponent_id     BIGINT UNSIGNED NULL,
+      match_order INT UNSIGNED NULL,
+      opponent_id BIGINT UNSIGNED NULL,
 
-      raw_details     TEXT          NOT NULL,
+      -- >>> NEW <<<
+      bout_index VARCHAR(32) NOT NULL,
 
-      -- Timestamps:
-      -- created_* are immutable (insert only).
-      -- updated_* change on any update.
-      created_at_mtn  DATETIME      NOT NULL,
-      created_at_utc  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      raw_details TEXT NOT NULL,
 
-      updated_at_mtn  DATETIME      NOT NULL,
-      updated_at_utc  DATETIME      NOT NULL,
+      created_at_mtn DATETIME NOT NULL,
+      created_at_utc DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+      updated_at_mtn DATETIME NOT NULL,
+      updated_at_utc DATETIME NOT NULL,
 
       UNIQUE KEY uk_match_sig (
         wrestler_id,
         start_date,
         event(120),
         weight_category,
-        raw_details(255)
+        bout_index           -- >>> NEW UNIQUE KEY COMPONENT <<<
       ),
+
       KEY idx_wrestler_id_start (wrestler_id, start_date),
-      KEY idx_wmh_wrestler_season (wrestler_id, wrestling_season),
+      KEY idx_wmh_wrestling_season (wrestler_id, wrestling_season),
       KEY idx_wmh_season_cat (wrestling_season, track_wrestling_category, wrestler_id),
       KEY idx_wmh_date (start_date),
-
-      /* INDEXES for running totals and season-based queries */
       KEY idx_wmh_season_wrestler_id (wrestling_season, wrestler_id, id),
       KEY idx_wmh_season_wrestler_start (wrestling_season, wrestler_id, start_date),
 
@@ -71,7 +70,7 @@ async function ensure_table() {
   _ensured = true;
 }
 
-// Delete existing rows for one wrestler in a given season/category
+// >>> NEW: delete existing rows for one wrestler in a given season/category <<<
 export async function delete_wrestler_match_history_for_wrestler(meta, wrestler_id) {
   if (!wrestler_id) return;
 
@@ -88,65 +87,43 @@ export async function delete_wrestler_match_history_for_wrestler(meta, wrestler_
       AND wrestler_id = ?
   `;
 
-  await pool.query(sql, [
-    wrestling_season,
-    track_wrestling_category,
-    Number(wrestler_id),
-  ]);
+  await pool.query(sql, [wrestling_season, track_wrestling_category, Number(wrestler_id)]);
 }
 
-/**
- * Upsert an array of match rows from step 3 (one wrestler page).
- * - created_at_* set only on insert (immutable)
- * - updated_at_* only refreshed when the existing row’s data differs from the incoming row
- * - uses Mountain Time offset function for *_mtn columns
- * @param {Array<object>} rows rows returned by extractor_source()
- */
 export async function upsert_wrestler_match_history(rows, meta) {
   if (!rows?.length) return { inserted: 0, updated: 0 };
 
   await ensure_table();
   const pool = await get_pool();
 
-  // Batch timestamps (UTC → MTN via your offset fn)
   const now_utc = new Date();
-  const mtn_offset_hours = get_mountain_time_offset_hours(now_utc);
-  const now_mtn = new Date(now_utc.getTime() + mtn_offset_hours * 60 * 60 * 1000);
+  const offset = get_mountain_time_offset_hours(now_utc);
+  const now_mtn = new Date(now_utc.getTime() + offset * 3600 * 1000);
 
-  // For inserts:
   const created_at_utc = now_utc;
   const created_at_mtn = now_mtn;
-
-  // For updates (and also initial insert's updated_*):
   const updated_at_utc = now_utc;
   const updated_at_mtn = now_mtn;
 
-  // shape inbound → DB columns
   const wrestling_season = meta?.wrestling_season || "unknown";
   const track_wrestling_category = meta?.track_wrestling_category || "unknown";
   const gender = meta?.gender || "unknown";
 
-  // Insert columns (include both created_* and updated_*; the ON DUPLICATE block
-  // will avoid touching created_* but will refresh updated_*).
+  // >>> minimal change: added bout_index <<<
   const cols = [
     "wrestling_season",
     "track_wrestling_category",
     "page_url",
-
     "wrestler_id",
     "wrestler",
-
     "start_date",
     "end_date",
-
     "event",
     "weight_category",
-
     "match_order",
     "opponent_id",
-
+    "bout_index",     // >>> NEW <<<
     "raw_details",
-
     "created_at_mtn",
     "created_at_utc",
     "updated_at_mtn",
@@ -166,19 +143,17 @@ export async function upsert_wrestler_match_history(rows, meta) {
       page_url: r.page_url ?? null,
       wrestler_id: Number(r.wrestler_id) || 0,
       wrestler: r.wrestler ?? "",
-
       start_date: to_mysql_date(r.start_date),
       end_date: to_mysql_date(r.end_date),
-
       event: r.event ?? null,
       weight_category: r.weight_category ?? null,
-
       match_order: typeof r.match_order === "number" ? r.match_order : null,
       opponent_id: r.opponent_id ? Number(r.opponent_id) : null,
 
-      raw_details: r.raw_details,
+      // >>> NEW <<<
+      bout_index: r.bout_index ?? null,
 
-      // timestamps for the INSERT attempt
+      raw_details: r.raw_details,
       created_at_mtn,
       created_at_utc,
       updated_at_mtn,
@@ -186,12 +161,14 @@ export async function upsert_wrestler_match_history(rows, meta) {
     }));
 
     const placeholders = shaped
-      .map((_, idx) => `(${cols.map(c => `:v${idx}_${c}`).join(",")})`)
+      .map((_, idx) => `(${cols.map((c) => `:v${idx}_${c}`).join(",")})`)
       .join(",");
 
     const params = {};
     shaped.forEach((v, idx) => {
-      for (const c of cols) params[`v${idx}_${c}`] = v[c];
+      for (const c of cols) {
+        params[`v${idx}_${c}`] = v[c];
+      }
     });
 
     const sql = `
@@ -199,58 +176,49 @@ export async function upsert_wrestler_match_history(rows, meta) {
       VALUES ${placeholders}
       ON DUPLICATE KEY UPDATE
 
-        -- Only bump updated_* if any tracked column actually changed (NULL-safe)
         updated_at_mtn = 
-          CASE
-            WHEN NOT (
-              wrestling_season         <=> VALUES(wrestling_season) AND
-              track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              wrestler                 <=> VALUES(wrestler) AND
-              start_date               <=> VALUES(start_date) AND
-              end_date                 <=> VALUES(end_date) AND
-              event                    <=> VALUES(event) AND
-              weight_category          <=> VALUES(weight_category) AND
-              match_order              <=> VALUES(match_order) AND
-              opponent_id              <=> VALUES(opponent_id) AND
-              raw_details              <=> VALUES(raw_details)
-            )
-            THEN VALUES(updated_at_mtn)
-            ELSE updated_at_mtn
-          END,
+          CASE WHEN NOT (
+            wrestling_season        <=> VALUES(wrestling_season) AND
+            track_wrestling_category <=> VALUES(track_wrestling_category) AND
+            wrestler              <=> VALUES(wrestler) AND
+            start_date            <=> VALUES(start_date) AND
+            end_date              <=> VALUES(end_date) AND
+            event                 <=> VALUES(event) AND
+            weight_category       <=> VALUES(weight_category) AND
+            match_order           <=> VALUES(match_order) AND
+            opponent_id           <=> VALUES(opponent_id) AND
+            raw_details           <=> VALUES(raw_details)
+          )
+          THEN VALUES(updated_at_mtn)
+          ELSE updated_at_mtn END,
 
         updated_at_utc = 
-          CASE
-            WHEN NOT (
-              wrestling_season         <=> VALUES(wrestling_season) AND
-              track_wrestling_category <=> VALUES(track_wrestling_category) AND
-              wrestler                 <=> VALUES(wrestler) AND
-              start_date               <=> VALUES(start_date) AND
-              end_date                 <=> VALUES(end_date) AND
-              event                    <=> VALUES(event) AND
-              weight_category          <=> VALUES(weight_category) AND
-              match_order              <=> VALUES(match_order) AND
-              opponent_id              <=> VALUES(opponent_id) AND
-              raw_details              <=> VALUES(raw_details)
-            )
-            THEN CURRENT_TIMESTAMP
-            ELSE updated_at_utc
-          END,
+          CASE WHEN NOT (
+            wrestling_season        <=> VALUES(wrestling_season) AND
+            track_wrestling_category <=> VALUES(track_wrestling_category) AND
+            wrestler              <=> VALUES(wrestler) AND
+            start_date            <=> VALUES(start_date) AND
+            end_date              <=> VALUES(end_date) AND
+            event                 <=> VALUES(event) AND
+            weight_category       <=> VALUES(weight_category) AND
+            match_order           <=> VALUES(match_order) AND
+            opponent_id           <=> VALUES(opponent_id) AND
+            raw_details           <=> VALUES(raw_details)
+          )
+          THEN CURRENT_TIMESTAMP
+          ELSE updated_at_utc END,
 
         wrestling_season         = VALUES(wrestling_season),
         track_wrestling_category = VALUES(track_wrestling_category),
         page_url                 = VALUES(page_url),
-
         wrestler                 = VALUES(wrestler),
-
         start_date               = VALUES(start_date),
         end_date                 = VALUES(end_date),
-
         event                    = VALUES(event),
         weight_category          = VALUES(weight_category),
-
         match_order              = VALUES(match_order),
         opponent_id              = VALUES(opponent_id),
-
+        bout_index               = VALUES(bout_index),   -- >>> NEW <<<
         raw_details              = VALUES(raw_details)
     `;
 

@@ -119,7 +119,7 @@ export async function count_name_links_based_on_event_schedule(
                 CURDATE(),                                -- today
                 DATE_SUB(CURDATE(), INTERVAL 1 DAY)       -- yesterday
                 -- "2025-12-02"
-                "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06"
+                -- "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06"
               )
       )
       SELECT 

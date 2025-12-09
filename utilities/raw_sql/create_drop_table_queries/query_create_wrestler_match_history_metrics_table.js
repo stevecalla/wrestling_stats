@@ -1,5 +1,6 @@
 const id_fields = `
-  id BIGINT UNSIGNED,
+  -- id BIGINT UNSIGNED,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,   -- now auto-increment PK
   
   wrestling_season          VARCHAR(32)  NOT NULL,
   track_wrestling_category  VARCHAR(32) NOT NULL,

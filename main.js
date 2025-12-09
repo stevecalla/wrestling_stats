@@ -59,8 +59,8 @@ const step_flags = {
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  true,  // 🏟️ get match history
-  step_4:  false, // 📄 create match history metrics
+  step_3:  false,  // 🏟️ get match history
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
   step_5:  false, // create team division
@@ -83,13 +83,13 @@ const step_flags = {
   // // TRANSFER TABLES BETWEEN WINDOWS & MAC
   step_18: false,  // 🧹 transfer tables between windos & mac
 
-  // step_19: false,  // 🧹 close browser
+  step_19: false,  // 🧹 close browser
 };
 
 // 🧪 each step can run test or full
 const test_flags = {
   step_1_is_test: false, // run small sample for wrestler list
-  step_3_is_test: false, // run small sample for match history
+  step_3_is_test: true, // run small sample for match history
   step_4_is_test: false, // run small sample for match history metrics
 };
 
@@ -126,9 +126,9 @@ async function load_config(custom = {}) {
     alpha_list_limit_full: 30,  // only 26 letters in alpha; loops by alpha, by grade
 
     // STEP #3 CONFIG FOR TESTING
-    matches_page_limit_test: 5,
+    matches_page_limit_test: 2,
     matches_page_limit_full: 10000,
-    step_3_loop_start: 1600,
+    step_3_loop_start: 0,
   };
 
   return { ...defaults, ...custom };
@@ -365,7 +365,7 @@ async function main(config) {
 
       log_step_start(4, `Create match history metrics (limit=${limit}, step_3_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`);
 
-      await step_4_create_wrestler_match_history_data(config);
+      await step_4_create_wrestler_match_history_data(config);  
 
       log_step_success(4, `Match history metrics created → ${ctx.paths.match_csv}`, Date.now() - start);
     } else log_step_skip(4, "create match history metrics");
@@ -479,7 +479,6 @@ async function main(config) {
 
       log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
     } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
-
     
     // === STEP 18 CLOSE BROWSER ===
     if (step_flags.step_18) {

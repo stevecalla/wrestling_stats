@@ -109,21 +109,31 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
     // Build the actual SQL string from the generator function
     const sql = GET_DATA_QUERY(created_at_mtn, created_at_utc, QUERY_OPTIONS);
 
-    // console.log("\n===== ACTUAL SQL SENT TO MYSQL =====\n");
-    // console.log(sql);
-    // console.log("\n====================================\n");
-
     const stream = src
       .query(sql)
       .stream(); // 3) Stream from source
 
+    let source_samples = [];
     let buffer = [];
-    let totalRows = 0;
-    let batchCount = 0;
+    let total_rows = 0;
+    let batch_count = 0;
 
     for await (const row of stream) {
+      if (source_samples.length < 5) {
+        const sample_index = source_samples.length + 1;
+
+        source_samples.push({
+          index:               sample_index,
+          id:                  row.id,
+          wrestling_season:    row.wrestling_season,
+          track_wrestling_category: row.track_wrestling_category,
+          wrestler_id:         row.wrestler_id,
+          wrestler_name:       row.wrestler ?? row.wrestler_name ?? null
+        });
+      }
+
       buffer.push(row);
-      totalRows++;
+      total_rows++;
 
       // Check for undefined values
       for (const [key, value] of Object.entries(row)) {
@@ -134,8 +144,8 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
 
       if (buffer.length >= BATCH_SIZE) {
         await flush_batch(dst, TABLE_NAME, buffer, { insert_ignore });
-        batchCount++;
-        console.log(`[INFO] Flushed batch #${batchCount} (${batchCount * BATCH_SIZE} rows)...`);
+        batch_count++;
+        console.log(`[INFO] Flushed batch #${batch_count} (${batch_count * BATCH_SIZE} rows)...`);
         buffer = [];
       }
     }
@@ -143,44 +153,29 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
     // 4) Flush leftover rows
     if (buffer.length) {
       await flush_batch(dst, TABLE_NAME, buffer, { insert_ignore });
-      batchCount++;
-      console.log(`[INFO] Flushed final batch #${batchCount} (${totalRows} total rows).`);
+      batch_count++;
+      console.log(`[INFO] Flushed final batch #${batch_count} (${total_rows} total rows).`);
     }
 
-    if (QUERY_OPTIONS?.is_create_table) {
-      // Log a small sample from the temp table (e.g., first 5 rows)
-      const [sampleRows] = await src.promise().query(`
-        SELECT 
-          * 
-        FROM ${TABLE_NAME}
-        ORDER BY 1
-        LIMIT 5
-      `);
+    console.log('SAMPLE OF FIRST FIVE ROWS & FIRST FIVE COLUMNS ONLY')
+    console.log("=== SAMPLE SOURCE STREAM ROWS ===");
+    console.table(source_samples);
 
-      const sampleRowsLimited = sampleRows.map(row => {
-        const limited = {};
-        const keys = Object.keys(row).slice(0, 5); // get first 5 column names
-        keys.forEach(key => limited[key] = row[key]);
-        return limited;
-      });
-
-      console.log('SAMPLE OF FIRST FIVE ROWS & FIRST FIVE COLUMNS ONLY')
-      console.table(sampleRowsLimited);
-
-    }
+    // ✅ For generic use, just return how many rows we streamed
+    row_count = total_rows;
 
     // Step 2: Count number of rows in rev_recognition_base_profile_ids_data
     // const src_v2 = await get_pool_stream();
-    TABLE_NAME = `wrestler_match_history_wrestler_ids_data`;
-    let [[{ count }]] = await src.promise().query(`SELECT COUNT(*) AS count FROM ${TABLE_NAME}`);
-    row_count = count;
+    // TABLE_NAME = `wrestler_match_history_wrestler_ids_data`;
+    // let [[{ count }]] = await src.promise().query(`SELECT COUNT(*) AS count FROM ${TABLE_NAME}`);
+    // row_count = count;
 
     console.log('*********************************');
     console.log('wrestler id table length = ', row_count);
 
     await dst.commit(); // 5) Commit transaction
     result = 'Transfer Successful';
-    // console.log(`[SUCCESS] Transfer complete: ${totalRows} total rows in ${batchCount} batches.`);
+    // console.log(`[SUCCESS] Transfer complete: ${total_rows} total rows in ${batch_count} batches.`);
 
   } catch (err) {
     await dst.rollback(); // Roll back if failure
@@ -190,10 +185,10 @@ async function execute_transfer_data_between_tables(BATCH_SIZE, TABLE_NAME, CREA
   } finally {
 
     // await src.promise().query(`DROP TABLE IF EXISTS rev_recognition_base_profile_ids_data`);
-
     // src.end();
 
     dst.release();      // release connection back to pool
+
     // await promisePool.end();   // close pool
 
     stop_timer('timer');
