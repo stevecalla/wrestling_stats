@@ -13,7 +13,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import {
   upsert_wrestler_match_history,
-  // delete helper for per-wrestler snapshot
+  // >>> NEW: delete helper for per-wrestler snapshot <<< 
   delete_wrestler_match_history_for_wrestler,
 } from "../utilities/mysql/upsert_wrestler_match_history.js";
 
@@ -72,7 +72,7 @@ async function safe_goto(page, url, opts = {}) {
       err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
     } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      // mark page.goto timeouts so the outer loop can retry
+      // >>> NEW: mark page.goto timeouts so the outer loop can retry
       err.code = "E_GOTO_TIMEOUT";
       throw err;
     } else {
@@ -237,7 +237,7 @@ function build_wrestler_matches_url(url_home_page, page, raw_url) {
 }
 
 /* ------------------------------------------
-   extractor_source  (reverted to pre-bout_index rows)
+   extractor_source 
 -------------------------------------------*/
 function extractor_source() {
   return () => {
@@ -249,6 +249,31 @@ function extractor_source() {
         .replace(/\s+/g, " ")
         .trim();
 
+    // >>> NEW: stable base normalizer for bout_index <<<
+    const base_norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .replace(/\(fall.*?\)/gi, "")
+        .replace(/\(dec.*?\)/gi, "")
+        .replace(/\(maj.*?\)/gi, "")
+        .replace(/\(sv.*?\)/gi, "")
+        .replace(/\(tb.*?\)/gi, "")
+        .replace(/\(pin.*?\)/gi, "")
+        .replace(/\(tech.*?\)/gi, "")
+        .replace(/\d+-\d+/g, "")
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    // >>> NEW: hash function for bout_index <<<
+    const make_hash = (str) => {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) {
+        h = (h * 31 + str.charCodeAt(i)) >>> 0;
+      }
+      return String(h);
+    };
+
     const to_date = (y, m, d) => {
       const yy = +y < 100 ? +y + 2000 : +y;
       const dt = new Date(yy, +m - 1, +d);
@@ -257,6 +282,7 @@ function extractor_source() {
 
     const fmt_mdy = (d) => {
       if (!(d instanceof Date) || isNaN(+d)) return "";
+
       const mm = String(d.getMonth() + 1).padStart(2, "0");
       const dd = String(d.getDate()).padStart(2, "0");
       const yy = String(d.getFullYear());
@@ -267,7 +293,6 @@ function extractor_source() {
       const t = norm(raw);
       if (!t) return { start_date: "", end_date: "" };
 
-      // A: MM/DD - MM/DD/YYYY
       let m =
         t.match(
           /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
@@ -279,7 +304,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
-      // B: MM/DD/YYYY - MM/DD/YYYY
       m =
         t.match(
           /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
@@ -291,7 +315,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
-      // C: MM/DD/YYYY
       m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
       if (m) {
         const [, mm, dd, yy] = m;
@@ -299,7 +322,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(d), end_date: "" };
       }
 
-      // fallback: first full date token
       m = t.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
       if (m) {
         const [token] = m;
@@ -324,7 +346,7 @@ function extractor_source() {
       : opt_text;
 
     const rows = [];
-    let match_order = 1; // per wrestler-page order
+    let match_order = 1;
 
     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
       const tds = tr.querySelectorAll("td");
@@ -339,10 +361,8 @@ function extractor_source() {
       const details_text_raw = norm(details_cell?.innerText);
 
       let opponent_id = "";
-      const link_nodes = Array.from(
-        details_cell.querySelectorAll('a[href*="wrestlerId="]')
-      );
-      for (const a of link_nodes) {
+      const links = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
+      for (const a of links) {
         const href = a.getAttribute("href") || "";
         const m = href.match(/wrestlerId=(\d+)/);
         if (m && m[1] && m[1] !== wrestler_id) {
@@ -350,6 +370,10 @@ function extractor_source() {
           break;
         }
       }
+
+      // >>> NEW: compute bout_index <<<
+      const normalized_base = base_norm(details_text_raw);
+      const bout_index = make_hash(normalized_base);
 
       rows.push({
         page_url: location.href,
@@ -359,9 +383,12 @@ function extractor_source() {
         end_date,
         event: event_raw,
         weight_category: weight_raw,
-        match_order,         // 👈 store the order
+        match_order,
         opponent_id,
         raw_details: details_text_raw,
+
+        // >>> NEW FIELD <<<
+        bout_index,
       });
 
       match_order += 1;
@@ -395,26 +422,13 @@ async function main(
   const load_timeout_ms = 30000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
-  // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
   const mode = (() => {
-    if (use_scheduled_events_iterator_query && !use_wrestler_list_iterator_query) {
-      return "events";
-    }
-    if (!use_scheduled_events_iterator_query && use_wrestler_list_iterator_query) {
-      return "list";
-    }
-    // ambiguous / both true / both false → default to list + warn
-    console.warn(
-      "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
-      use_scheduled_events_iterator_query +
-      ", use_wrestler_list_iterator_query=" +
-      use_wrestler_list_iterator_query +
-      "); defaulting to list-based iterator."
-    );
+    if (use_scheduled_events_iterator_query && !use_wrestler_list_iterator_query) return "events";
+    if (!use_scheduled_events_iterator_query && use_wrestler_list_iterator_query) return "list";
+    console.warn("⚠️ iterator flags ambiguous; defaulting to list");
     return "list";
   })();
 
-  // DB: count + cap (memory-efficient streaming)
   let total_rows_in_db;
 
   if (mode === "events") {
@@ -440,7 +454,6 @@ async function main(
     console.warn("⚠️ CDP disconnected — Chrome closed")
   );
 
-  // INIITIAL LOGIN = SAFE GOTO ENSURES ON THE CORRECT PAGE THEN AUTO LOGIN SELECTS THE SEASON
   await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
   await page.waitForTimeout(2000);
 
@@ -449,52 +462,14 @@ async function main(
   await page.waitForTimeout(1000);
 
   if (mode === "events") {
-    console.log(
-      color_text(
-        `📄 DB has ${total_rows_in_db} wrestler links derived from scheduled events (yesterday & today)`,
-        "green"
-      )
-    );
+    console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links from scheduled events`, "green"));
   } else {
-    console.log(
-      color_text(`📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`, "green")
-    );
+    console.log(color_text(`📄 DB has ${total_rows_in_db} wrestler links`, "green"));
   }
 
-  console.log(
-    color_text(
-      `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size)\x1b[0m\n`,
-      "green"
-    )
-  );
+  console.log(color_text(`⚙️ Processing up to ${no_of_urls}`, "green"));
 
   let processed = 0;
-
-  // const test_link = [{ // Boyd Thomas (Roman)
-  //   i: 0,
-  //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30579778132"
-  // }];
-  // const test_link = [{ // Colt Jones
-  //   i: 0,
-  //   url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
-  // }];
-  // const test_link = [
-  //   {
-  //     // Boyd Thomas(Roman)
-  //     i: 0,
-  //     url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30579778132"
-  //   },
-  //   { // Colt Jones
-  //     i: 0,
-  //     url: "https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1762492149718&twSessionId=fmuycnbgon&wrestlerId=30253039132"
-  //   },
-  //   { 
-  //     // 'Gio Roacho'
-  //     i: 0,
-  //     url:
-  //       'https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1764646616320&twSessionId=ytjeuykujq&wrestlerId=35272881132'
-  //   }
-  // ];
 
   const iterator =
     mode === "events"
@@ -541,39 +516,44 @@ async function main(
         const all_rows = [];
 
         const effective_url = build_wrestler_matches_url(url_home_page, page, url);
-
         console.log("step 2a: go to url:", effective_url);
         await safe_goto(page, effective_url, { timeout: load_timeout_ms });
 
         console.log("step 2b: find target frame");
         let target_frame =
-          page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+          page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+          page.mainFrame();
 
         console.log("step 3: wait for redirect");
         await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
-          console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
-          
-          await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
+          console.log("step 3a: auto login again for:", wrestling_season);
+
+          await page.evaluate(auto_login_select_season, {
+            wrestling_season,
+            track_wrestling_category,
+          });
           await page.waitForTimeout(1000);
 
-          const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
-          console.log("step 3b: re-navigating to original URL after login:", effective_url_after_login);
-          
-          await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
+          const url2 = build_wrestler_matches_url(url_home_page, page, url);
+          console.log("step 3b: re-navigate:", url2);
+
+          await safe_goto(page, url2, { timeout: load_timeout_ms });
           await page.waitForTimeout(1000);
 
           target_frame =
-            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+            page.mainFrame();
         }
 
         if (/MainFrame\.jsp/i.test(page.url())) {
-          const effective_url_mainframe = build_wrestler_matches_url(url_home_page, page, url);
+          const url2 = build_wrestler_matches_url(url_home_page, page, url);
 
-          await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
+          await safe_goto(page, url2, { timeout: load_timeout_ms });
           target_frame =
-            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+            page.mainFrame();
         }
 
         console.log("step 4: wait for dropdown");
@@ -605,14 +585,15 @@ async function main(
               wrestling_season,
               track_wrestling_category,
               url_login_page,
-              "frame died during evaluate"
+              "frame died"
             ));
 
-            const effective_url_retry = build_wrestler_matches_url(url_home_page, page, url);
-            await safe_goto(page, effective_url_retry, { timeout: load_timeout_ms });
+            const url2 = build_wrestler_matches_url(url_home_page, page, url);
+            await safe_goto(page, url2, { timeout: load_timeout_ms });
 
             let tf =
-              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+              page.mainFrame();
 
             rows = await tf.evaluate(extractor_source());
           } else {
@@ -629,7 +610,7 @@ async function main(
 
         all_rows.push(...rows);
 
-        // delete existing match history for this wrestler/season/category
+        // >>> NEW: delete existing match history for this wrestler/season/category
         const this_wrestler_id = rows[0]?.wrestler_id;
         if (this_wrestler_id) {
           try {
@@ -639,7 +620,8 @@ async function main(
                 "yellow"
               )
             );
-            await delete_wrestler_match_history_for_wrestler({ wrestling_season, track_wrestling_category },
+            await delete_wrestler_match_history_for_wrestler(
+              { wrestling_season, track_wrestling_category },
               this_wrestler_id
             );
           } catch (e) {
@@ -651,12 +633,11 @@ async function main(
             );
           }
         }
-        
+
         console.log("step 6: save to csv");
-        const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
-        headers_written = headers_written_now;
-        console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
-        
+        const hw = await save_to_csv_file(all_rows, i, headers_written, file_path);
+        headers_written = hw;
+
         console.log("step 7: save to sql db\n");
         try {
           const { inserted, updated } = await upsert_wrestler_match_history(rows, {
@@ -665,23 +646,24 @@ async function main(
             gender,
           });
           console.log(
-            color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green")
+            color_text(
+              `🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`,
+              "green"
+            )
           );
         } catch (e) {
           console.error("❌ DB upsert failed:", e?.message || e);
         }
-        
+
         processed += 1;
 
         const HARD_RESET_LIMIT = 50;
-
-        // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
         if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
           console.log(
             color_text(
               `=================================
               HARD RESTART AT ${HARD_RESET_LIMIT}
-              ♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
+              ♻️ Processed ${processed} pages — recycling browser session
               ===================================`,
               "yellow"
             )
@@ -716,9 +698,9 @@ async function main(
             cause
           ));
 
-          const effective_url_after_reconnect = build_wrestler_matches_url(url_home_page, page, url);
+          const url2 = build_wrestler_matches_url(url_home_page, page, url);
 
-          await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
+          await safe_goto(page, url2, { timeout: load_timeout_ms });
 
           continue;
         }
@@ -728,10 +710,10 @@ async function main(
     }
   }
 
-  await browser.close(); // closes CDP connection (not the external Chrome instance)
+  await browser.close();
 
   console.log(
-    `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events)`
+    `\n✅ done. processed ${processed} wrestler pages via ${mode} iterator`
   );
 }
 

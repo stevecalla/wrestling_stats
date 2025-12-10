@@ -1,4 +1,4 @@
-// utilities/mysql/upsert_team_scheudule_data.js
+// utilities/mysql/upsert_team_schedule.js
 import { get_pool } from "./mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../date_time_tools/get_mountain_time_offset_hours.js";
 
@@ -33,14 +33,11 @@ async function ensure_table() {
 
       event_name               VARCHAR(255) NULL,
       event_js                 VARCHAR(512) NULL,
-      event_key                VARCHAR(255) NULL,
 
       team_name_raw            VARCHAR(255) NULL,
       team_role                VARCHAR(32)  NULL,
       team_index               INT UNSIGNED NULL,
       team_id                  BIGINT UNSIGNED NULL,
-
-      team_score               INT          NULL,
 
       row_index_in_span        INT UNSIGNED NULL,
       search_span_label        VARCHAR(64)  NULL,
@@ -52,20 +49,20 @@ async function ensure_table() {
       updated_at_mtn           DATETIME     NOT NULL,
       updated_at_utc           DATETIME     NOT NULL,
 
-      -- UNIQUE signature for one row of a team in an event, using event_key
+      -- UNIQUE signature for one row of a team in an event
       UNIQUE KEY uk_team_schedule_sig (
         wrestling_season,
         track_wrestling_category,
         gender,
         start_date,
-        event_key(150),
+        event_name(150),
         team_name_raw(150),
         team_index
       ),
 
       KEY idx_team_schedule_span  (wrestling_season, track_wrestling_category, start_date),
       KEY idx_team_schedule_team  (wrestling_season, team_id),
-      KEY idx_team_schedule_event (wrestling_season, start_date, event_key(150)),
+      KEY idx_team_schedule_event (wrestling_season, start_date, event_name(150)),
 
       PRIMARY KEY (id)
     ) ENGINE=InnoDB
@@ -73,40 +70,7 @@ async function ensure_table() {
       COLLATE=utf8mb4_0900_ai_ci;
   `;
   await pool.query(sql);
-
   _ensured = true;
-}
-
-/**
- * Delete all rows for a given (season, category, gender, start_date).
- * Used by step 2 so each date is a fresh snapshot.
- * @param {object} meta { wrestling_season, track_wrestling_category, gender }
- * @param {string} start_date_str YYYY-MM-DD
- */
-export async function delete_team_schedule_for_date(meta, start_date_str) {
-  if (!start_date_str) return;
-
-  await ensure_table();
-  const pool = await get_pool();
-
-  const wrestling_season = meta?.wrestling_season || "unknown";
-  const track_wrestling_category = meta?.track_wrestling_category || "unknown";
-  const gender = meta?.gender ?? null;
-
-  const sql = `
-    DELETE FROM team_schedule_scrape_data
-    WHERE wrestling_season = ?
-      AND track_wrestling_category = ?
-      AND gender <=> ?
-      AND start_date = ?
-  `;
-
-  await pool.query(sql, [
-    wrestling_season,
-    track_wrestling_category,
-    gender,
-    start_date_str,
-  ]);
 }
 
 /**
@@ -155,13 +119,11 @@ export async function upsert_team_schedule(rows, meta) {
 
     "event_name",
     "event_js",
-    "event_key",
 
     "team_name_raw",
     "team_role",
     "team_index",
     "team_id",
-    "team_score",
 
     "row_index_in_span",
     "search_span_label",
@@ -194,7 +156,6 @@ export async function upsert_team_schedule(rows, meta) {
 
       event_name: r.event_name ?? null,
       event_js: r.event_js ?? null,
-      event_key: r.event_key ?? null,
 
       team_name_raw: r.team_name_raw ?? null,
       team_role: r.team_role ?? null,
@@ -205,10 +166,6 @@ export async function upsert_team_schedule(rows, meta) {
           ? Number(r.team_index)
           : null,
       team_id: r.team_id != null ? Number(r.team_id) : null,
-      team_score:
-        r.team_score != null
-          ? Number(r.team_score)
-          : null,
 
       row_index_in_span:
         typeof r.row_index_in_span === "number"
@@ -260,12 +217,10 @@ export async function upsert_team_schedule(rows, meta) {
               end_date                 <=> VALUES(end_date) AND
               event_name               <=> VALUES(event_name) AND
               event_js                 <=> VALUES(event_js) AND
-              event_key                <=> VALUES(event_key) AND
               team_name_raw            <=> VALUES(team_name_raw) AND
               team_role                <=> VALUES(team_role) AND
               team_index               <=> VALUES(team_index) AND
               team_id                  <=> VALUES(team_id) AND
-              team_score               <=> VALUES(team_score) AND
               row_index_in_span        <=> VALUES(row_index_in_span) AND
               search_span_label        <=> VALUES(search_span_label) AND
               row_index_global         <=> VALUES(row_index_global)
@@ -286,12 +241,10 @@ export async function upsert_team_schedule(rows, meta) {
               end_date                 <=> VALUES(end_date) AND
               event_name               <=> VALUES(event_name) AND
               event_js                 <=> VALUES(event_js) AND
-              event_key                <=> VALUES(event_key) AND
               team_name_raw            <=> VALUES(team_name_raw) AND
               team_role                <=> VALUES(team_role) AND
               team_index               <=> VALUES(team_index) AND
               team_id                  <=> VALUES(team_id) AND
-              team_score               <=> VALUES(team_score) AND
               row_index_in_span        <=> VALUES(row_index_in_span) AND
               search_span_label        <=> VALUES(search_span_label) AND
               row_index_global         <=> VALUES(row_index_global)
@@ -311,13 +264,11 @@ export async function upsert_team_schedule(rows, meta) {
 
         event_name               = VALUES(event_name),
         event_js                 = VALUES(event_js),
-        event_key                = VALUES(event_key),
 
         team_name_raw            = VALUES(team_name_raw),
         team_role                = VALUES(team_role),
         team_index               = VALUES(team_index),
         team_id                  = VALUES(team_id),
-        team_score               = VALUES(team_score),
 
         row_index_in_span        = VALUES(row_index_in_span),
         search_span_label        = VALUES(search_span_label),

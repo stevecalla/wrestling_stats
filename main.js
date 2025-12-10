@@ -60,30 +60,30 @@ const step_flags = {
 
   // GET MATCH HISTORY
   step_3:  true,  // 🏟️ get match history
-  step_4:  true, // 📄 create match history metrics
+  step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  true, // create team division
-  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  true, // append team division to match history metrics
-  step_8:  true, // append team division to wrestler list
+  step_5:  false, // create team division
+  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  false, // append team division to match history metrics
+  step_8:  false, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  true, // create 2024-25 state qualifier list
-  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: true, // append state qualifier to match history metrics
-  step_12: true, // append state qualifier to wrestler list
+  step_9:  false, // create 2024-25 state qualifier list
+  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: false, // append state qualifier to match history metrics
+  step_12: false, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: true, // load data into Google cloud / bigquery
+  step_14: false, // load data into Google cloud / bigquery
 
   // // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: true,  // 🧹 transfer tables between windos & mac
+  step_18: false,  // 🧹 transfer tables between windos & mac
 
-  // step_19: false,  // 🧹 close browser
+  step_19: false,  // 🧹 close browser
 };
 
 // 🧪 each step can run test or full
@@ -126,7 +126,7 @@ async function load_config(custom = {}) {
     alpha_list_limit_full: 30,  // only 26 letters in alpha; loops by alpha, by grade
 
     // STEP #3 CONFIG FOR TESTING
-    matches_page_limit_test: 5,
+    matches_page_limit_test: 2,
     matches_page_limit_full: 10000,
     step_3_loop_start: 0,
   };
@@ -365,7 +365,7 @@ async function main(config) {
 
       log_step_start(4, `Create match history metrics (limit=${limit}, step_3_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`);
 
-      await step_4_create_wrestler_match_history_data(config);
+      await step_4_create_wrestler_match_history_data(config);  
 
       log_step_success(4, `Match history metrics created → ${ctx.paths.match_csv}`, Date.now() - start);
     } else log_step_skip(4, "create match history metrics");
@@ -479,7 +479,6 @@ async function main(config) {
 
       log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
     } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
-
     
     // === STEP 18 CLOSE BROWSER ===
     if (step_flags.step_18) {

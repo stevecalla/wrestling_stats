@@ -10,7 +10,10 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // Save files to csv & mysql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
-import { upsert_team_schedule } from "../utilities/mysql/upsert_team_scheudule_data.js";
+import {
+  upsert_team_schedule,
+  delete_team_schedule_for_date,
+} from "../utilities/mysql/upsert_team_scheudule_data.js";
 
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 
@@ -19,6 +22,36 @@ import { color_text } from "../utilities/console_logs/console_colors.js";
 /* ------------------------------------------
    small helpers
 -------------------------------------------*/
+// Close any extra top-level pages (popups) in this context, keeping only `main_page`.
+async function close_all_popups_for_page(main_page) {
+  try {
+    const ctx = main_page.context?.();
+    if (!ctx || !ctx.pages) return;
+
+    const pages = ctx.pages();
+    for (const p of pages) {
+      if (p === main_page) continue; // keep the main page
+
+      let url = "<unknown>";
+      try {
+        url = p.url();
+      } catch {
+        // ignore url errors
+      }
+
+      console.log(color_text(`🧹 closing popup window: ${url}`, "yellow"));
+
+      try {
+        await p.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+  } catch {
+    // best-effort cleanup; ignore any unexpected errors
+  }
+}
+
 async function safe_goto(page, url, opts = {}) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
@@ -94,8 +127,6 @@ async function close_event_team_modal_if_open(target_frame, page) {
   }
 }
 
-// Click javascript:openEvent(...) link in the Results frame,
-// open the Event Team Select modal, and scrape each team link.
 async function get_teams_from_multi_team_event(
   target_frame,
   page,
@@ -104,7 +135,8 @@ async function get_teams_from_multi_team_event(
 ) {
   const modal_selector = "#eventTeamFrame";
 
-  // Make sure no stale modal is open first
+  // Make sure no stale modal OR stray popup windows are open first
+  await close_all_popups_for_page(page);
   await close_event_team_modal_if_open(target_frame, page);
   await page.waitForTimeout(200); // small buffer after closing old modal
 
@@ -149,6 +181,9 @@ async function get_teams_from_multi_team_event(
           "yellow"
         )
       );
+
+      // If clicking produced a standalone popup instead of a modal, close it.
+      await close_all_popups_for_page(page);
       return [];
     }
 
@@ -199,14 +234,20 @@ async function get_teams_from_multi_team_event(
     await close_event_team_modal_if_open(target_frame, page);
     await page.waitForTimeout(150).catch(() => {});
 
+    // Also close any standalone popup windows that might have opened.
+    await close_all_popups_for_page(page);
+
     return teams;
   } catch (err) {
     console.error(
       `⚠️ error while loading multi-team popup for event "${event_name}" (${event_js}):`,
       err
     );
+
     await close_event_team_modal_if_open(target_frame, page);
     await page.waitForTimeout(150).catch(() => {});
+    await close_all_popups_for_page(page);
+
     return [];
   }
 }
@@ -326,16 +367,35 @@ function schedule_extractor_source() {
 
       const has_at = event_name.includes("@");
 
+      // pattern like "Cheyenne Mountain, CO 16 Pueblo West, CO 0"
+      // away team on the left of the first score, home team on the right
+      const score_pattern = /^(.*?)(\d+)\s+(.+?)\s+(\d+)\s*$/;
+      const has_scores = score_pattern.test(event_name);
+
       if (has_at) {
+        // Existing '@' dual-meet logic (no scores)
         const split = event_name.split("@");
         const left_raw = split[0] || "";
         const right_raw = split[1] || "";
         const team_left = left_raw.trim();
         const team_right = right_raw.trim();
 
+        // event_key prefers event_js, falls back to "Team A @ Team B"
+        const event_key = event_js || `${team_left} @ ${team_right}`;
+
         const teams = [
-          { team_name_raw: team_left, team_role: "away", team_index: 1 },
-          { team_name_raw: team_right, team_role: "home", team_index: 2 },
+          {
+            team_name_raw: team_left,
+            team_role: "away",
+            team_index: 1,
+            team_score: null,
+          },
+          {
+            team_name_raw: team_right,
+            team_role: "home",
+            team_index: 2,
+            team_score: null,
+          },
         ];
 
         for (const t of teams) {
@@ -350,16 +410,75 @@ function schedule_extractor_source() {
 
             event_name,
             event_js,
+            event_key,
 
             team_name_raw: t.team_name_raw,
             team_role: t.team_role,
             team_index: t.team_index,
             team_id: null, // filled only for multi-team
 
+            // per-team score (null for '@' pattern)
+            team_score: t.team_score,
+
+            row_index_in_span,
+          });
+        }
+      } else if (has_scores) {
+        // Score-style dual-meet logic
+        const m = event_name.match(score_pattern);
+        const left_team_raw = (m[1] || "").trim(); // e.g. "Cheyenne Mountain, CO"
+        const away_score = parseInt(m[2], 10); // 16
+        const right_team_raw = (m[3] || "").trim(); // e.g. "Pueblo West, CO"
+        const home_score = parseInt(m[4], 10); // 0
+
+        // event_key prefers event_js, falls back to "Team A @ Team B"
+        const event_key = event_js || `${left_team_raw} @ ${right_team_raw}`;
+
+        const teams = [
+          {
+            team_name_raw: left_team_raw,
+            team_role: "away",
+            team_index: 1,
+            team_score: Number.isFinite(away_score) ? away_score : null,
+          },
+          {
+            team_name_raw: right_team_raw,
+            team_role: "home",
+            team_index: 2,
+            team_score: Number.isFinite(home_score) ? home_score : null,
+          },
+        ];
+
+        for (const t of teams) {
+          out.push({
+            wrestling_season,
+            track_wrestling_category,
+            grid_page_index: page_index,
+
+            date_raw,
+            start_date,
+            end_date,
+
+            event_name,
+            event_js,
+            event_key,
+
+            team_name_raw: t.team_name_raw,
+            team_role: t.team_role,
+            team_index: t.team_index,
+            team_id: null,
+
+            // per-team score from the parsed pattern
+            team_score: t.team_score,
+
             row_index_in_span,
           });
         }
       } else {
+        // Tournament / non-dual, or no recognizable pattern
+        // event_key just mirrors the event_name here
+        const event_key = event_name || null;
+
         out.push({
           wrestling_season,
           track_wrestling_category,
@@ -371,11 +490,15 @@ function schedule_extractor_source() {
 
           event_name,
           event_js,
+          event_key,
 
           team_name_raw: null,
           team_role: null,
           team_index: null,
           team_id: null,
+
+          // no score for non-duals
+          team_score: null,
 
           row_index_in_span,
         });
@@ -419,9 +542,7 @@ async function main(
         )
       );
     } else {
-      console.log(
-        color_text(`📄 creating new CSV at ${file_path}`, "yellow")
-      );
+      console.log(color_text(`📄 creating new CSV at ${file_path}`, "yellow"));
     }
   } catch (e) {
     console.log(
@@ -498,7 +619,7 @@ async function main(
             return f;
           }
         } catch {
-          // ignore
+          // ignore and keep looking
         }
       }
 
@@ -530,6 +651,13 @@ async function main(
     return `${fmt(start_date)} → ${fmt(end_date)}`;
   }
 
+  function format_mysql_date(d) {
+    const pad2 = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(
+      d.getDate()
+    )}`;
+  }
+
   // Read "1 - 50 of 109" from the pager and parse totals
   async function get_pager_info(target_frame) {
     return await target_frame.evaluate(() => {
@@ -556,13 +684,34 @@ async function main(
 
   // Rolling date window: 7 days ago from today & today
   function get_rolling_date_range() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const start_date = new Date(today);
-    start_date.setDate(start_date.getDate() - 7); // 7 days ago
 
-    const end_date = new Date(today);   // today
+    // NOTE: SET START & END DATE FOR TEAM EVENTS TO EXTRACT
+    const TEST_MODE = false;
+
+    // Use local date components in test mode to avoid UTC shift
+    const start = TEST_MODE ? new Date(2025, 12 - 1, 2) : new Date();
+    start.setHours(0, 0, 0, 0);
+
+    // START & END
+    const start_date = new Date(start);
+    if (!TEST_MODE) {
+      start_date.setDate(start_date.getDate() - 7); // last 7 days
+    }
+
+    const end = TEST_MODE ? new Date(2025, 12 - 1, 6) : new Date();
+    end.setHours(0, 0, 0, 0);
+
+    const end_date = new Date(end);
+
+    console.log(
+      color_text(
+        `
+    🧪 TEST date objects → start: ${start_date}, end: ${end_date}
+    🧪 TEST date objects → start: ${start_date.toISOString()}, end: ${end_date.toISOString()}
+    `,
+        "cyan"
+      )
+    );
 
     return { start_date, end_date };
   }
@@ -606,9 +755,7 @@ async function main(
 
   async function submit_search(results_frame) {
     console.log("🔎 submitting search...");
-    await results_frame.click(
-      '#searchFrame .inputButton input[value="Search"]'
-    );
+    await results_frame.click('#searchFrame .inputButton input[value="Search"]');
     await page.waitForTimeout(1000);
   }
 
@@ -727,7 +874,7 @@ async function main(
     });
   }
 
-  // ---------- pagination for the rolling date-span search ----------
+  // ---------- pagination for the CURRENT (single-day) search ----------
   async function scrape_all_pages_for_current_search(
     date_span_label,
     target_frame
@@ -742,9 +889,7 @@ async function main(
 
     while (local_page_index < matches_page_limit) {
       console.log(
-        `\n========== grid page ${
-          local_page_index + 1
-        } (${date_span_label}) ==========`
+        `\n========== grid page ${local_page_index + 1} (${date_span_label}) ==========` 
       );
 
       await wait_for_rows_in_frame(target_frame);
@@ -826,11 +971,7 @@ async function main(
       }
 
       // Expand multi-team events (no '@' + javascript:openEvent)
-      const rows = await expand_multi_team_rows(
-        raw_rows,
-        target_frame,
-        page
-      );
+      const rows = await expand_multi_team_rows(raw_rows, target_frame, page);
 
       if (rows.length !== raw_rows.length) {
         console.log(
@@ -863,9 +1004,7 @@ async function main(
         file_path
       );
       headers_written = headers_written_now;
-      console.log(
-        `\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m`
-      );
+      console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m`);
       console.log(
         color_text(
           `📊 written rows so far this span (expanded): ${written_rows_seen_in_span}`,
@@ -873,13 +1012,14 @@ async function main(
         )
       );
 
-      // 🆕 DB upsert, consistent with step_3 pattern
+      // DB upsert
       console.log("step 7: save to sql db\n");
       try {
-        const { inserted, updated } = await upsert_team_schedule(
-          enriched_rows,
-          { wrestling_season, track_wrestling_category, gender }
-        );
+        const { inserted, updated } = await upsert_team_schedule(enriched_rows, {
+          wrestling_season,
+          track_wrestling_category,
+          gender,
+        });
         console.log(
           color_text(
             `🛠️ DB upsert (team schedule) — inserted: ${inserted}, updated: ${updated}`,
@@ -887,11 +1027,11 @@ async function main(
           )
         );
       } catch (e) {
-        console.error(
-          "❌ DB upsert (team schedule) failed:",
-          e?.message || e
-        );
+        console.error("❌ DB upsert (team schedule) failed:", e?.message || e);
       }
+
+      // 🔥 clean up any DualMatches / popup windows
+      await close_all_popups_for_page(page);
 
       processed += 1;
       global_page_index += 1;
@@ -931,12 +1071,12 @@ async function main(
     );
   }
 
-  // ---------- SINGLE ROLLING DATE-SPAN EXECUTION ----------
+  // ---------- PER-DAY EXECUTION ACROSS ROLLING RANGE ----------
   const { start_date, end_date } = get_rolling_date_range();
-  const span_label = format_span_label(start_date, end_date);
+  const full_span_label = format_span_label(start_date, end_date);
 
   console.log(
-    `\n📆 Running rolling window for last 7 and next 5 days: ${span_label}`
+    `\n📆 Running per-day window from: ${full_span_label} (iterating one date at a time)`
   );
 
   const results_frame_for_search = await find_results_frame(
@@ -944,17 +1084,56 @@ async function main(
     load_timeout_ms
   );
 
-  try {
-    await open_search_modal(results_frame_for_search, page);
-    await set_date_inputs(results_frame_for_search, start_date, end_date);
-    await submit_search(results_frame_for_search);
+  // iterate from start_date → end_date inclusive, one calendar day at a time
+  for (
+    let d = new Date(start_date.getTime());
+    d.getTime() <= end_date.getTime();
+    d.setDate(d.getDate() + 1)
+  ) {
+    const day_start = new Date(d.getTime());
+    const day_end = new Date(d.getTime());
 
-    await scrape_all_pages_for_current_search(
-      span_label,
-      results_frame_for_search
+    const span_label = format_span_label(day_start, day_end);
+    const mysql_date = format_mysql_date(day_start);
+
+    console.log(
+      color_text(
+        `\n📆 Scraping single-day span: ${span_label} (start_date = ${mysql_date})`,
+        "cyan"
+      )
     );
-  } catch (err) {
-    console.error(`❌ Error scraping rolling span ${span_label}:`, err);
+
+    // Delete all existing rows for this date (season/category/gender) — keep snapshot current
+    try {
+      console.log(
+        color_text(
+          `🧹 deleting existing team_schedule rows for ${mysql_date} (before re-scrape)`,
+          "yellow"
+        )
+      );
+      await delete_team_schedule_for_date(
+        { wrestling_season, track_wrestling_category, gender },
+        mysql_date
+      );
+    } catch (e) {
+      console.error(
+        `⚠️ Failed to delete existing rows for ${mysql_date}:`,
+        e?.message || e
+      );
+    }
+
+    try {
+      await open_search_modal(results_frame_for_search, page);
+      await set_date_inputs(results_frame_for_search, day_start, day_end);
+      await submit_search(results_frame_for_search);
+
+      await scrape_all_pages_for_current_search(
+        span_label,
+        results_frame_for_search
+      );
+    } catch (err) {
+      console.error(`❌ Error scraping span ${span_label}:`, err);
+    }
   }
 
   // await browser.close();

@@ -3,7 +3,9 @@
 
 function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, created_at_utc, QUERY_OPTIONS) {
 
-  const { limit_size, offset_size } = QUERY_OPTIONS;
+//   const { limit_size, offset_size } = QUERY_OPTIONS;
+  const { limit_size, offset_size, wrestling_season, track_wrestling_category, governing_body } = QUERY_OPTIONS;
+
   console.log('limit = ', limit_size, 'offset =', offset_size);
 
   return `
@@ -17,46 +19,59 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
 
       -- You can change this ORDER BY if you want a different order of IDs
 
-      ORDER BY wids.wrestler_id
+      -- ORDER BY wids.wrestler_id
+
+      WHERE 1 = 1
+        AND wrestling_season = '${wrestling_season}'
+        AND track_wrestling_category = '${track_wrestling_category}'
+        -- if governing_body is on the list table:
+        AND governing_body = '${governing_body}'
+
+      ORDER BY wrestling_season, wrestler_id
 
       LIMIT ${limit_size} OFFSET ${offset_size}
-    ) 
-    , base AS (
-        SELECT
-            h.id,
-            h.wrestling_season,
-            h.track_wrestling_category,
+        ) 
+        , base AS (
+            SELECT
+                h.id,
+                h.wrestling_season,
+                h.track_wrestling_category,
 
-            h.wrestler_id,
-            h.wrestler                                  AS wrestler_name,
-            SUBSTRING_INDEX(l.team, ',', 1)             AS wrestler_team, -- removed the ", CO" from team name for comparsion in step 2
-            l.team_id                                   AS wrestler_team_id,
+                h.wrestler_id,
+                h.wrestler                                  AS wrestler_name,
+                SUBSTRING_INDEX(l.team, ',', 1)             AS wrestler_team, -- removed the ", CO" from team name for comparsion in step 2
+                l.team_id                                   AS wrestler_team_id,
 
-            h.match_order,
-            h.opponent_id,
+                h.match_order,
+                h.opponent_id,
 
-            h.event,
-            h.start_date,
-            h.end_date,
+                h.event,
+                h.start_date,
+                h.end_date,
 
-            h.weight_category,
+                h.weight_category,
 
-            -- normalize
-            TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' '))             AS raw_details,
-            LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
+                -- normalize
+                TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' '))             AS raw_details,
+                LOWER(TRIM(REPLACE(REPLACE(h.raw_details, '\r', ' '), '\n', ' ')))      AS lower_raw
+                
+            FROM wrestler_match_history_scrape_data h
+
+            JOIN ids i ON i.wrestler_id = h.wrestler_id
+                LEFT JOIN wrestler_list_scrape_data AS l ON h.wrestler_id = l.wrestler_id
+
+            WHERE 1 = 1
             
-        FROM wrestler_match_history_scrape_data h
-          JOIN ids i ON i.wrestler_id = h.wrestler_id
-          LEFT JOIN wrestler_list_scrape_data AS l ON h.wrestler_id = l.wrestler_id
+  AND h.wrestling_season = '${wrestling_season}'
+  AND h.track_wrestling_category = '${track_wrestling_category}'
 
-        WHERE 1 = 1
-            -- AND h.wrestler_id IN (29790065132, 30579778132)
-            -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
-            -- AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
-            -- AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
+                -- AND h.wrestler_id IN (29790065132, 30579778132)
+                -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
+                -- AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
+                -- AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
 
-        ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
-    )
+            ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
+        )
 
     /* -------------------------
         Step 2: cheap parse + flags
@@ -435,8 +450,8 @@ function step_2_create_wrestler_history_match_metrics_data(created_at_mtn, creat
           END
         ) AS opponent_team
     FROM step_6_opponent_name s6
-    LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s6.id
-    LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s6.opponent_id
+        LEFT JOIN wrestler_match_history_scrape_data h ON h.id = s6.id
+        LEFT JOIN wrestler_list_scrape_data o ON o.wrestler_id = s6.opponent_id
 )
 
 
