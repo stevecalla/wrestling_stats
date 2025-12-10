@@ -686,7 +686,7 @@ async function main(
   function get_rolling_date_range() {
 
     // NOTE: SET START & END DATE FOR TEAM EVENTS TO EXTRACT
-    const TEST_MODE = true;
+    const TEST_MODE = false;
 
     // Use local date components in test mode to avoid UTC shift
     const start = TEST_MODE ? new Date(2025, 12 - 1, 2) : new Date();

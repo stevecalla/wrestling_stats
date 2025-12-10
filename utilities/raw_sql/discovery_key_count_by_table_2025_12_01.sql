@@ -22,7 +22,7 @@ SELECT "6_2025_list_backup" AS query_label, r.* FROM wrestler_list_scrape_data_2
 SELECT "7_2025_boys_match_history_backup" AS query_label, r.* FROM wrestler_match_history_2024_2025_boys_all AS r LIMIT 10;
 SELECT "8_match_metrics" AS query_label, r.* FROM wrestler_match_history_metrics_data AS r WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 10;
 SELECT "9_match_scrape" AS query_label, r.* FROM wrestler_match_history_scrape_data AS r WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 150;
-SELECT "10_wrestler_ids" AS query_label, r.* FROM wrestler_match_history_wrestler_ids_data AS r  WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 10000;
+SELECT "10_wrestler_ids" AS query_label, r.*, COUNT(*) FROM wrestler_match_history_wrestler_ids_data AS r  WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" GROUP BY 1, 2, 3, 4, 5 LIMIT 10000;
 SELECT "11_state_qualifier_reference" AS query_label, r.* FROM wrestler_state_qualifier_and_place_reference AS r LIMIT 10;
 SELECT "12_team_reference" AS query_label, r.* FROM wrestler_team_division_reference AS r LIMIT 10;
 SELECT "13_team_schedule_scrape" AS query_label, r.* FROM team_schedule_scrape_data AS r LIMIT 10;
@@ -121,8 +121,19 @@ SELECT '7_2025_boys_match_history_backup' AS table_name,
   utc_timestamp() AS created_at_utc
 FROM wrestler_match_history_2024_2025_boys_all
 UNION ALL
+SELECT '7a_2026_boys_scrape_data_1202_120625' AS table_name,
+  FORMAT(SUM(CASE WHEN wrestling_season='2024-25' AND track_wrestling_category='High School Boys'  THEN 1 ELSE 0 END),0) AS hs_boys_2024_25,
+  FORMAT(SUM(CASE WHEN wrestling_season='2025-26' AND track_wrestling_category='High School Boys'  THEN 1 ELSE 0 END),0) AS hs_boys_2025_26,
+  FORMAT(SUM(CASE WHEN wrestling_season='2024-25' AND track_wrestling_category='High School Girls' THEN 1 ELSE 0 END),0) AS hs_girls_2024_25,
+  FORMAT(SUM(CASE WHEN wrestling_season='2025-26' AND track_wrestling_category='High School Girls' THEN 1 ELSE 0 END),0) AS hs_girls_2025_26,
+  FORMAT(COUNT(*), 0) AS count_total,
+  "" AS note,
+  now() AS created_at_mtn,
+  utc_timestamp() AS created_at_utc
+FROM wrestler_match_history_scrape_data_2025_2026_120225_120625
+UNION ALL
 SELECT '8_match_metrics',
-  FORMAT(SUM(CASE WHEN wrestling_season='2024-25' AND track_wrestling_category='High School Boys'  THEN 1 ELSE 0 END),0),
+  FORMAT(SUM(CASE WHEN wrestling_season LIKE "%2024-25%" AND track_wrestling_category='High School Boys'  THEN 1 ELSE 0 END),0),
   FORMAT(SUM(CASE WHEN wrestling_season='2025-26' AND track_wrestling_category='High School Boys'  THEN 1 ELSE 0 END),0),
   FORMAT(SUM(CASE WHEN wrestling_season='2024-25' AND track_wrestling_category='High School Girls' THEN 1 ELSE 0 END),0),
   FORMAT(SUM(CASE WHEN wrestling_season='2025-26' AND track_wrestling_category='High School Girls' THEN 1 ELSE 0 END),0),
