@@ -52,14 +52,14 @@ const step_flags = {
   step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  true,  // 📄 get wrestler list
+  step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  true, // get team schedule
+  step_2:  false, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  true,  // 🏟️ get match history
+  step_3:  false,  // 🏟️ get match history
   step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
@@ -81,7 +81,7 @@ const step_flags = {
   step_14: false, // load data into Google cloud / bigquery
 
   // // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: false,  // 🧹 transfer tables between windos & mac
+  step_18: true,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
