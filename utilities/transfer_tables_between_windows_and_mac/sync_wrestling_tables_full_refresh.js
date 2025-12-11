@@ -134,15 +134,17 @@ const tables_to_sync = [
   'reference_wrestler_2026_state_qualifier_flags',
   'reference_wrestler_2026_team_division_flags',
   'reference_wrestler_cross_season_summary',
+  'reference_wrestler_rankings_list',
+  'team_schedule_scrape_data',
   'wrestler_list_scrape_data',
   'wrestler_list_scrape_data_2024_2025_boys_backup',
   'wrestler_match_history_2024_2025_boys_all',
   'wrestler_match_history_metrics_data',
   'wrestler_match_history_scrape_data',
+  'wrestler_match_history_scrape_data_2025_2026_120225_120625',
   'wrestler_match_history_wrestler_ids_data',
   'wrestler_state_qualifier_and_place_reference',
   'wrestler_team_division_reference',
-  'team_schedule_scrape_data',
 ];
 
 const sync_batch_size = parseInt(process.env.SYNC_BATCH_SIZE || "5000", 10);
