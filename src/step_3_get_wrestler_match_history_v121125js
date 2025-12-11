@@ -51,20 +51,6 @@ function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
 
-// 🔧 NEW: central helper to recognize CDP/target closed style errors
-function is_cdp_disconnect_error(err) {
-  const msg = String(err?.message || "");
-  return (
-    err?.code === "E_TARGET_CLOSED" ||
-    msg.includes("Target page, context or browser has been closed") ||
-    msg.includes("Target closed") ||
-    msg.includes("Session closed") ||
-    msg.includes("has been closed") ||
-    msg.includes("CDP connection closed") ||
-    msg.includes("WebSocket is not open")
-  );
-}
-
 async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
@@ -450,16 +436,6 @@ async function main(
   const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
   let headers_written = false;
 
-  // 🔢 global counters for clearer logging
-  let processed = 0;                     // total successful wrestler pages processed
-  let csv_write_iterations = 0;          // how many times we call save_to_csv_file (including 0-row writes)
-  let total_rows_written_csv = 0;        // cumulative rows written to CSV
-  let total_rows_inserted_db = 0;        // cumulative inserted rows
-  let total_rows_updated_db = 0;        // cumulative updated rows
-  let auto_recover_cdp_count = 0;       // number of CDP-style auto-recoveries
-  let auto_recover_timeout_count = 0;   // number of navigation timeout auto-recoveries
-  let hard_reset_count = 0;             // number of hard resets (every HARD_RESET_LIMIT pages)
-
   browser.on?.("disconnected", () =>
     console.warn("⚠️ CDP disconnected — Chrome closed")
   );
@@ -487,10 +463,12 @@ async function main(
 
   console.log(
     color_text(
-      `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size) starting at index ${loop_start}\x1b[0m\n`,
+      `\x1b[33m⚙️ Processing up to ${no_of_urls} (min of page limit vs DB size)\x1b[0m\n`,
       "green"
     )
   );
+
+  let processed = 0;
 
   // const test_link = [{ // Boyd Thomas (Roman)
   //   i: 0,
@@ -542,15 +520,6 @@ async function main(
   console.log("find console.log=================");
 
   for await (const { i, url } of iterator) {
-    // 🔧 this `i` is the DB index (from start_at), not "count processed so far"
-    const loop_number = processed + 1;
-    console.log(
-      color_text(
-        `\n🔁 Starting loop #${loop_number} for DB index=${i}, loop_start=${loop_start}, planned_total=${no_of_urls}`,
-        "cyan"
-      )
-    );
-
     if (handles_dead({ browser, context, page })) {
       ({ browser, page, context } = await helper_browser_close_restart_relogin(
         browser,
@@ -566,7 +535,7 @@ async function main(
     }
 
     let attempts = 0;
-    while (attempts < MAX_ATTEMPTS_PER_WRESTLER) {
+    while (attempts < 2) {
       attempts += 1;
       try {
         const all_rows = [];
@@ -651,13 +620,9 @@ async function main(
           }
         }
 
-        // 🔧 progress number is based on loop_start + how many we've *completed* so far
-        const progress_index = loop_start + processed + 1;
-        const total_planned = Math.min(loop_start + no_of_urls, total_rows_in_db);
-
         console.log(
           color_text(
-            `✔ ${progress_index} of ${total_planned}. rows returned: ${rows.length} from ${url}`,
+            `✔ ${i} of ${no_of_urls}. rows returned: ${rows.length} from ${url}`,
             "red"
           )
         );
@@ -674,8 +639,7 @@ async function main(
                 "yellow"
               )
             );
-            await delete_wrestler_match_history_for_wrestler(
-              { wrestling_season, track_wrestling_category },
+            await delete_wrestler_match_history_for_wrestler({ wrestling_season, track_wrestling_category },
               this_wrestler_id
             );
           } catch (e) {
@@ -689,10 +653,8 @@ async function main(
         }
         
         console.log("step 6: save to csv");
-        csv_write_iterations += 1; // 🔢 track total CSV writes (including 0-row writes)
         const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
         headers_written = headers_written_now;
-        total_rows_written_csv += all_rows.length; // 🔢 cumulative rows written to CSV
         console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
         
         console.log("step 7: save to sql db\n");
@@ -702,8 +664,6 @@ async function main(
             track_wrestling_category,
             gender,
           });
-          total_rows_inserted_db += inserted;
-          total_rows_updated_db += updated;
           console.log(
             color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green")
           );
@@ -717,7 +677,6 @@ async function main(
 
         // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
         if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
-          hard_reset_count += 1;
           console.log(
             color_text(
               `=================================
@@ -740,41 +699,10 @@ async function main(
           ));
         }
 
-        // 🔍 per-loop summary: loops, writes, autorecover, resume hint
-        const resume_from_index = i + 1;
-        console.log(
-          color_text(
-            `📊 Loop summary #${loop_number} — processed_loops=${processed}, csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}, last_db_index=${i}, resume_from_index=${resume_from_index}`,
-            "cyan"
-          )
-        );
-
         break;
       } catch (e) {
-        const msg = String(e?.message || "");
-
-        // 🔧 broaden auto-recovery to generic CDP/target closed + goto timeouts
-        if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
-          const is_timeout = e?.code === "E_GOTO_TIMEOUT";
-          const cause =
-            is_timeout
-              ? "navigation timeout"
-              : "CDP/target closed";
-
-          if (is_timeout) {
-            auto_recover_timeout_count += 1;
-          } else {
-            auto_recover_cdp_count += 1;
-          }
-
-          const recover_attempt_no = auto_recover_cdp_count + auto_recover_timeout_count;
-
-          console.warn(
-            color_text(
-              `♻️ Auto-recover #${recover_attempt_no} triggered due to ${cause} (attempt ${attempts}/${MAX_ATTEMPTS_PER_WRESTLER})`,
-              "yellow"
-            )
-          );
+        if (e?.code === "E_TARGET_CLOSED" || e?.code === "E_GOTO_TIMEOUT") {
+          const cause = e?.code === "E_GOTO_TIMEOUT" ? "navigation timeout" : "target closed";
 
           ({ browser, page, context } = await helper_browser_close_restart_relogin(
             browser,
@@ -788,22 +716,13 @@ async function main(
             cause
           ));
 
-          const effective_url_after_reconnect = build_wrestler_matches_url(
-            url_home_page,
-            page,
-            url
-          );
+          const effective_url_after_reconnect = build_wrestler_matches_url(url_home_page, page, url);
 
           await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
 
-          // retry this wrestler (if attempts < MAX_ATTEMPTS_PER_WRESTLER)
           continue;
         }
 
-        console.error(
-          "❌ Fatal error while processing wrestler link",
-          { index: i, url, attempts, msg }
-        );
         throw e;
       }
     }
@@ -812,10 +731,7 @@ async function main(
   await browser.close(); // closes CDP connection (not the external Chrome instance)
 
   console.log(
-    color_text(
-      `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events). csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}`,
-      "green"
-    )
+    `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events)`
   );
 }
 
