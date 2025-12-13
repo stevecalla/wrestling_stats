@@ -56,6 +56,7 @@ function is_cdp_disconnect_error(err) {
   const msg = String(err?.message || "");
   return (
     err?.code === "E_TARGET_CLOSED" ||
+    msg.includes("Execution context was destroyed") || // 👈 broadened to treat this as recoverable
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("Target closed") ||
     msg.includes("Session closed") ||
@@ -65,11 +66,35 @@ function is_cdp_disconnect_error(err) {
   );
 }
 
+// 🔧 NEW: safe wrapper around auto_login_select_season
+async function safe_auto_login(page, wrestling_season, track_wrestling_category) {
+  try {
+    await page.evaluate(auto_login_select_season, {
+      wrestling_season,
+      track_wrestling_category,
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (
+      msg.includes("Execution context was destroyed") ||
+      msg.includes("Frame was detached") ||
+      msg.includes("Target page, context or browser has been closed")
+    ) {
+      console.warn(
+        "⚠️ auto_login_select_season evaluate interrupted by navigation/context close; continuing..."
+      );
+      // Navigation likely succeeded or will be handled by later safe_goto / selectors.
+      return;
+    }
+    throw e;
+  }
+}
+
 async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
-  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
+  await safe_auto_login(page, wrestling_season, track_wrestling_category);
   await page.waitForTimeout(800);
 }
 
@@ -469,7 +494,7 @@ async function main(
   await page.waitForTimeout(2000);
 
   console.log("step 1: on index.jsp, auto login for:", wrestling_season);
-  await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
+  await safe_auto_login(page, wrestling_season, track_wrestling_category);
   await page.waitForTimeout(1000);
 
   if (mode === "events") {
@@ -586,7 +611,7 @@ async function main(
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
           
-          await page.evaluate(auto_login_select_season, { wrestling_season, track_wrestling_category });
+          await safe_auto_login(page, wrestling_season, track_wrestling_category);
           await page.waitForTimeout(1000);
 
           const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
