@@ -185,16 +185,16 @@ async function ensure_onthemat_columns(pool) {
 async function step_14_append_onthemat_rankings_to_wrestler_list() {
   const pool = await get_pool();
 
-  const [[whoami]] = await pool.query(`
-    SELECT 
-        DATABASE() AS db,
-        @@hostname AS mysql_hostname,
-        @@port AS mysql_port,
-        USER() AS mysql_user,
-        CURRENT_USER() AS mysql_current_user
-    `
-  );
-  console.log("DB identity:", whoami);
+  // const [[whoami]] = await pool.query(`e
+  //   SELECT 
+  //       DATABASE() AS db,
+  //       @@hostname AS mysql_hostname,
+  //       @@port AS mysql_port,
+  //       USER() AS mysql_user,
+  //       CURRENT_USER() AS mysql_current_user
+  //   `
+  // );
+  // console.log("DB identity:", whoami);
 
   // 1) Ensure columns exist
   await ensure_onthemat_columns(pool);
