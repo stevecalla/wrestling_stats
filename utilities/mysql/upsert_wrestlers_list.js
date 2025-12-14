@@ -53,7 +53,7 @@ async function ensure_table() {
 
       -- UNIQUE KEY uk_alpha    (wrestling_season, last_name_prefix, grade, level, name, team),
       KEY idx_alpha (wrestling_season, last_name_prefix, grade, level, name, team),
-      
+
       INDEX ix_wrestler_id (wrestler_id),
       INDEX ix_team_id     (team_id),
       PRIMARY KEY (id)
@@ -84,7 +84,7 @@ export async function upsert_wrestlers_list(rows, meta) {
   // Insert-side (immutable created_*), and update-side (updated_*)
   const created_at_utc = now_utc;
   const created_at_mtn = now_mtn;
-  
+
   // For updates (and also initial insert's updated_*):
   const updated_at_utc = now_utc;
   const updated_at_mtn = now_mtn;
@@ -104,7 +104,7 @@ export async function upsert_wrestlers_list(rows, meta) {
   for (let i = 0; i < rows.length; i += chunk_size) {
     const slice = rows.slice(i, i + chunk_size);
 
-    const values = slice.map(r => ({
+    const values = slice.map((r) => ({
       wrestling_season,
       track_wrestling_category,
       last_name_prefix,
@@ -114,13 +114,13 @@ export async function upsert_wrestlers_list(rows, meta) {
 
       name: r.name ?? "",
       first_name: r.first_name ?? null,
-      last_name:  r.last_name ?? null,
+      last_name: r.last_name ?? null,
       name_link: r.name_link ?? null,
       team: r.team ?? null,
       team_link: r.team_link ?? null,
 
       wrestler_id: Number.isFinite(+r.wrestler_id) ? +r.wrestler_id : null,
-      team_id:     Number.isFinite(+r.team_id)     ? +r.team_id     : null,
+      team_id: Number.isFinite(+r.team_id) ? +r.team_id : null,
 
       weight_class: r.weight_class ?? null,
       gender: r.gender ?? null,
@@ -131,11 +131,11 @@ export async function upsert_wrestlers_list(rows, meta) {
       matches: Number.isFinite(+r.matches)
         ? +r.matches
         : (Number.isFinite(+r.wins) && Number.isFinite(+r.losses)
-            ? (+r.wins + +r.losses)
+            ? +r.wins + +r.losses
             : null),
       win_pct: Number.isFinite(+r.win_pct)
         ? +r.win_pct
-        : ((Number.isFinite(+r.wins) && Number.isFinite(+r.losses) && (+r.wins + +r.losses) > 0)
+        : (Number.isFinite(+r.wins) && Number.isFinite(+r.losses) && +r.wins + +r.losses > 0
             ? Number((+r.wins / (+r.wins + +r.losses)).toFixed(3))
             : null),
 
@@ -149,20 +149,36 @@ export async function upsert_wrestlers_list(rows, meta) {
     }));
 
     const cols = [
-      "wrestling_season", "track_wrestling_category", "last_name_prefix", "grade", "level", "governing_body",
+      "wrestling_season",
+      "track_wrestling_category",
+      "last_name_prefix",
+      "grade",
+      "level",
+      "governing_body",
       "wrestler_id",
-      "name", "first_name", "last_name",
+      "name",
+      "first_name",
+      "last_name",
       "name_link",
-      "team", "team_link", "team_id",
-      "weight_class", "gender",
-      "record_text", "wins", "losses", "matches", "win_pct",
-      "created_at_mtn", "created_at_utc",
-      "updated_at_mtn", "updated_at_utc",
-      "page_url"
+      "team",
+      "team_link",
+      "team_id",
+      "weight_class",
+      "gender",
+      "record_text",
+      "wins",
+      "losses",
+      "matches",
+      "win_pct",
+      "created_at_mtn",
+      "created_at_utc",
+      "updated_at_mtn",
+      "updated_at_utc",
+      "page_url",
     ];
 
     const placeholders = values
-      .map((_, idx) => `(${cols.map(c => `:v${idx}_${c}`).join(",")})`)
+      .map((_, idx) => `(${cols.map((c) => `:v${idx}_${c}`).join(",")})`)
       .join(",");
 
     const params = {};
@@ -185,6 +201,8 @@ export async function upsert_wrestlers_list(rows, meta) {
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
               wrestler_id              <=> VALUES(wrestler_id) AND
               team_id                  <=> VALUES(team_id) AND
+              name                     <=> VALUES(name) AND       -- ✅ NEW (required)
+              team                     <=> VALUES(team) AND       -- ✅ NEW (required)
               weight_class             <=> VALUES(weight_class) AND
               gender                   <=> VALUES(gender) AND
               level                    <=> VALUES(level) AND
@@ -208,6 +226,8 @@ export async function upsert_wrestlers_list(rows, meta) {
               track_wrestling_category <=> VALUES(track_wrestling_category) AND
               wrestler_id              <=> VALUES(wrestler_id) AND
               team_id                  <=> VALUES(team_id) AND
+              name                     <=> VALUES(name) AND       -- ✅ NEW (required)
+              team                     <=> VALUES(team) AND       -- ✅ NEW (required)
               weight_class             <=> VALUES(weight_class) AND
               gender                   <=> VALUES(gender) AND
               level                    <=> VALUES(level) AND
@@ -227,6 +247,17 @@ export async function upsert_wrestlers_list(rows, meta) {
         -- If either unique key hits (by wrestler_id or composite), update these fields:
         wrestling_season          = VALUES(wrestling_season),
         track_wrestling_category  = VALUES(track_wrestling_category),
+
+        -- ✅ NEW (required): update name/team, but don't overwrite good values with blank/null
+        name = CASE
+          WHEN VALUES(name) IS NOT NULL AND VALUES(name) <> '' THEN VALUES(name)
+          ELSE name
+        END,
+        team = CASE
+          WHEN VALUES(team) IS NOT NULL AND VALUES(team) <> '' THEN VALUES(team)
+          ELSE team
+        END,
+
         name_link                 = VALUES(name_link),
         team_link                 = VALUES(team_link),
         wrestler_id               = VALUES(wrestler_id),

@@ -34,7 +34,11 @@ import { step_12_append_state_qualifier_to_wrestler_list } from "./src/step_12_a
 
 import { step_13_apply_2025_state_qualifier_team_division_to_2026 } from "./src/step_13_apply_2025_state_qualifier_team_division_to_2026.js";
 
-import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 14 load google cloud & bigquery
+import { step_14_append_onthemat_rankings_to_wrestler_list } from "./src/step_14_append_onthemat_rankings_to_wrestler_list.js";
+
+import { step_15_append_onthemat_rankings_to_match_history } from "./src/step_15_append_onthemat_rankings_to_match_history.js";
+
+import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step_17 load google cloud & bigquery
 
 import { step_18_transfer_tables_between_windows_and_mac } from "./utilities/transfer_tables_between_windows_and_mac/sync_wrestling_tables_full_refresh.js";
 
@@ -77,10 +81,14 @@ const step_flags = {
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
   step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
 
-  // // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: true, // load data into Google cloud / bigquery
+  // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
+  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: true, // append ONTHEMAT rankings to to match history metrics
 
-  // // TRANSFER TABLES BETWEEN WINDOWS & MAC
+  // LOAD GOOGLE CLOUD / BIGQUERY
+  step_17: true, // load data into Google cloud / bigquery
+
+  // TRANSFER TABLES BETWEEN WINDOWS & MAC
   step_18: true,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
@@ -114,6 +122,7 @@ async function load_config(custom = {}) {
 
     // SQL WHERE STATEMENT
     sql_where_filter_state_qualifier: "",
+    sql_where_filter_onthemat_ranking_list: "",
     sql_team_id_list: "",
     sql_wrestler_id_list: "",
 
@@ -205,20 +214,21 @@ async function main(config) {
     color_text(
       `\n🔧 Final Config Loaded for Season ${config.wrestling_season}\n` +
       `----------------------------------------------\n` +
-      ` Governing Body       → ${config.governing_body}\n` +
-      ` Category             → ${config.track_wrestling_category}\n` +
-      ` Season               → ${config.wrestling_season}\n` +
-      ` Gender               → ${config.gender}\n` +
-      ` SQL Where Filter     → ${config.sql_where_filter_state_qualifier}\n` +
-      ` SQL Team Id List     → ${config.sql_team_id_list}\n` +
-      ` SQL Wreslter Id List → ${config.sql_wrestler_id_list}\n` +
-      ` Home Page            → ${config.url_home_page}\n` +
-      ` Login Page           → ${config.url_login_page}\n` +
-      ` Alpha List (test)    → ${config.alpha_list_limit_test}\n` +
-      ` Alpha List (full)    → ${config.alpha_list_limit_full}\n` +
-      ` Matches (test)       → ${config.matches_page_limit_test}\n` +
-      ` Matches (full)       → ${config.matches_page_limit_full}\n` +
-      ` Step 3 Loop Start    → ${config.step_3_loop_start}\n` +
+      ` Governing Body         → ${config.governing_body}\n` +
+      ` Category               → ${config.track_wrestling_category}\n` +
+      ` Season                 → ${config.wrestling_season}\n` +
+      ` Gender                 → ${config.gender}\n` +
+      ` SQL State Qual Filter  → ${config.sql_where_filter_state_qualifier}\n` +
+      ` SQL OnTheMat Filter    → ${config.sql_where_filter_onthemat_ranking_list}\n` +
+      ` SQL Team Id List       → ${config.sql_team_id_list}\n` +
+      ` SQL Wrestler Id List   → ${config.sql_wrestler_id_list}\n` +
+      ` Home Page              → ${config.url_home_page}\n` +
+      ` Login Page             → ${config.url_login_page}\n` +
+      ` Alpha List (test)      → ${config.alpha_list_limit_test}\n` +
+      ` Alpha List (full)      → ${config.alpha_list_limit_full}\n` +
+      ` Matches (test)         → ${config.matches_page_limit_test}\n` +
+      ` Matches (full)         → ${config.matches_page_limit_full}\n` +
+      ` Step 3 Loop Start      → ${config.step_3_loop_start}\n` +
       `----------------------------------------------`,
       "cyan"
     )
@@ -262,7 +272,7 @@ async function main(config) {
       ctx.context = context;
 
       log_step_success(0, "Chrome launched successfully", Date.now() - start);
-    } else log_step_skip(0, "chrome launch");
+    } else log_step_skip(0, "Chrome launch");
 
     // === STEP 1 SCRAPE WRESTLER LIST ===
     if (step_flags.step_1) {
@@ -284,7 +294,7 @@ async function main(config) {
       );
 
       log_step_success(1, `Wrestler list saved → ${ctx.paths.wrestler_list_csv}`, Date.now() - start);
-    } else log_step_skip(1, "wrestler list generation");
+    } else log_step_skip(1, "Wrestler list generation");
 
     // === STEP 2 SCRAPE TEAM SCHEDULE ===
     if (step_flags.step_2) {
@@ -319,7 +329,7 @@ async function main(config) {
       await step_2a_append_team_id_to_team_schedule_data();
 
       log_step_success(2, `Team schedule saved → ${ctx.paths.team_schedule_csv}`, Date.now() - start);
-    } else log_step_skip(2, "Tean schedule generation");
+    } else log_step_skip(2, "Team schedule generation");
 
     // === STEP 3 SCRAPE MATCH HISTORY METRICS ===
     if (step_flags.step_3) {
@@ -343,6 +353,7 @@ async function main(config) {
         config.track_wrestling_category,
         config.gender,
         config.sql_where_filter_state_qualifier,
+        config.sql_where_filter_onthemat_ranking_list,
         config.sql_team_id_list,
         config.sql_wrestler_id_list,
         ctx.page,
@@ -354,7 +365,7 @@ async function main(config) {
       );
 
       log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
-    } else log_step_skip(3, "match history");
+    } else log_step_skip(3, "Match history");
 
     // === STEP 4  CREATE MATCH HISTORY METRICS ===
     if (step_flags.step_4) {
@@ -368,7 +379,7 @@ async function main(config) {
       await step_4_create_wrestler_match_history_data(config);  
 
       log_step_success(4, `Match history metrics created → ${ctx.paths.match_csv}`, Date.now() - start);
-    } else log_step_skip(4, "create match history metrics");
+    } else log_step_skip(4, "Create match history metrics");
 
     // === STEP 5 CREATE TEAM DIVISION ===
     if (step_flags.step_5) {
@@ -467,18 +478,40 @@ async function main(config) {
       await step_13_apply_2025_state_qualifier_team_division_to_2026();
 
       log_step_success(13, `Append 2025 state qualifier & place to 2026`, Date.now() - start);
-    } else log_step_skip(13, "append 2025 state qualifier & place to 2026");
+    } else log_step_skip(13, "Append 2025 state qualifier & place to 2026");
 
-    // === STEP 14 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    // === STEP 14 APPEND ONTHEMAT RANKINGS TO 2026 ===
     if (step_flags.step_14) {
       const start = Date.now();
 
-      log_step_start(14, "Start Loading Data to Google Cloud & Bigquery 🔗");
+      log_step_start(14, "Start append ONTHEMAT rankings to 2026 wrestler list 🔗");
+
+      await step_14_append_onthemat_rankings_to_wrestler_list();
+
+      log_step_success(14, `Append append ONTHEMAT rankings to 2026 wrestler list`, Date.now() - start);
+    } else log_step_skip(14, "Append append ONTHEMAT rankings to 2026 wrestler list");
+
+    // === STEP 15 APPEND ONTHEMAT RANKINGS TO 2026 ===
+    if (step_flags.step_15) {
+      const start = Date.now();
+
+      log_step_start(15, "Start append ONTHEMAT rankings to 2026 match history metrics🔗");
+
+      await step_15_append_onthemat_rankings_to_match_history();
+
+      log_step_success(15, `Append append ONTHEMAT rankings to 2026 match history metrics`, Date.now() - start);
+    } else log_step_skip(15, "Append append ONTHEMAT rankings to 2026 match history metrics");
+
+    // === step_17 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    if (step_flags.step_17) {
+      const start = Date.now();
+
+      log_step_start(17, "Start Loading Data to Google Cloud & Bigquery 🔗");
 
       await execute_load_data_to_bigquery("wrestler");
 
-      log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
-    } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
+      log_step_success(17, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
+    } else log_step_skip(17, "Load Data to Google Cloud & Bigquery 🔗");
     
     // === STEP 18 CLOSE BROWSER ===
     if (step_flags.step_18) {
@@ -498,7 +531,7 @@ async function main(config) {
       await step_19_close_chrome_dev(ctx.browser, ctx.context);
 
       log_step_success(19, "Browser closed successfully", Date.now() - start);
-    } else log_step_skip(19, "close browser");
+    } else log_step_skip(19, "Close browser");
 
     const total_ms = Date.now() - program_start;
     console.log(color_text(`\n⏲️  Total duration: ${format_duration(total_ms)}`, "cyan"));

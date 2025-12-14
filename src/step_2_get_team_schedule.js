@@ -698,7 +698,7 @@ async function main(
       start_date.setDate(start_date.getDate() - 7); // last 7 days
     }
 
-    const end = TEST_MODE ? new Date(2025, 12 - 1, 6) : new Date();
+    const end = TEST_MODE ? new Date(2025, 12 - 1, 14) : new Date();
     end.setHours(0, 0, 0, 0);
 
     const end_date = new Date(end);
@@ -1141,5 +1141,7 @@ async function main(
     `\n✅ done. processed ${processed} Results.jsp page(s) into CSV: ${file_path}`
   );
 }
+
+// main();
 
 export { main as step_2_get_team_schedule };

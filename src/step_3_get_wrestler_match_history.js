@@ -422,6 +422,7 @@ async function main(
   track_wrestling_category = "High School Boys",
   gender,
   sql_where_filter_state_qualifier,
+  sql_where_filter_onthemat_ranking_list,
   sql_team_id_list,
   sql_wrestler_id_list,
   page,
@@ -467,6 +468,7 @@ async function main(
       track_wrestling_category,
       gender,
       sql_where_filter_state_qualifier,
+      sql_where_filter_onthemat_ranking_list,
       sql_team_id_list,
       sql_wrestler_id_list
     );
@@ -541,6 +543,12 @@ async function main(
   //     url:
   //       'https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1764646616320&twSessionId=ytjeuykujq&wrestlerId=35272881132'
   //   }
+  //   { 
+  //     // 'Baden Laiminger'
+  //     i: 0,
+  //     url:
+  //       'https://www.trackwrestling.com/seasons/WrestlerMatches.jsp?TIM=1764646616320&twSessionId=ytjeuykujq&wrestlerId=35526627132'
+  //   }
   // ];
 
   const iterator =
@@ -560,6 +568,7 @@ async function main(
           track_wrestling_category,
           gender,
           sql_where_filter_state_qualifier,
+          sql_where_filter_onthemat_ranking_list,
           sql_team_id_list,
           sql_wrestler_id_list,
         });

@@ -60,7 +60,8 @@ async function ensure_table() {
         start_date,
         event_key(150),
         team_name_raw(150),
-        team_index
+        team_index,
+        search_span_label(64) -- ensure the same event listed on multiple dates shows for each date
       ),
 
       KEY idx_team_schedule_span  (wrestling_season, track_wrestling_category, start_date),

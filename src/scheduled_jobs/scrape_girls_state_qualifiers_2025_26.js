@@ -14,6 +14,7 @@ async function run_girls_all_wrestlers_2025_26() {
             use_scheduled_events_iterator_query: false,
             use_wrestler_list_iterator_query: true,
             sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
+            // sql_where_filter_onthemat_ranking_list: "AND onthemat_is_name_match = 1",
             // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
             // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
         };
