@@ -24,7 +24,7 @@ const division_regex_week1 = /^(?:Class[\s_-]*)?(2A|3A|4A|5A)\b/i;
 
 // Week 1+ weights appear like "106lbs" (often no space), sometimes just "106"
 const weight_regex_week1_lbs = /^(\d{2,3})\s*lb[s]?\b/i; // requires lbs
-const weight_regex_week1_bare = /^(\d{2,3})$/i;          // bare number line only
+const weight_regex_week1_bare = /^(\d{2,3})$/i; // bare number line only
 
 // guard: CO HS weights are never 15, 20, etc.
 // set a conservative lower bound to ignore list numbering like "15-Crowley-County"
@@ -52,10 +52,7 @@ function infer_ranking_week_number_from_source_file(source_file) {
   return n ?? null;
 }
 
-function find_all_week_docx_in_dir(
-  input_dir,
-  { prefer_contains = "high_school_boys" } = {}
-) {
+function find_all_week_docx_in_dir(input_dir, { prefer_contains = "high_school_boys" } = {}) {
   if (!fs.existsSync(input_dir)) return [];
 
   const files = fs
@@ -103,8 +100,7 @@ export async function parse_wrestler_list_from_docx(docx_path) {
   const source_file = path.basename(docx_path);
   const week_number = infer_ranking_week_number_from_source_file(source_file) ?? 0;
 
-  const division_regex =
-    week_number === 0 ? division_regex_week0 : division_regex_week1;
+  const division_regex = week_number === 0 ? division_regex_week0 : division_regex_week1;
 
   const { value: raw_text } = await mammoth.extractRawText({ path: docx_path });
 
@@ -238,6 +234,7 @@ export function write_wrestler_list_to_excel(rows, excel_path) {
   const header = [
     "ranking_week",
     "ranking_week_number",
+    "is_most_recent_ranked_week",
     "division",
     "weight_lbs",
     "rank",
@@ -258,6 +255,7 @@ export function write_wrestler_list_to_excel(rows, excel_path) {
     ...rows.map((r) => [
       r.ranking_week ?? "",
       r.ranking_week_number ?? "",
+      r.is_most_recent_ranked_week ?? 0,
       r.division,
       r.weight_lbs,
       r.rank,
@@ -307,6 +305,9 @@ async function ensure_table() {
       ranking_week VARCHAR(32) NOT NULL,     -- e.g. "week_0", "week_1", ...
       ranking_week_number INT NOT NULL,      -- e.g. 0, 1, 2, ...
 
+      -- derived convenience flag
+      is_most_recent_ranked_week TINYINT NOT NULL DEFAULT 0,
+
       division VARCHAR(8) NOT NULL,
       weight_lbs INT NOT NULL,
       \`rank\` INT NOT NULL,
@@ -323,6 +324,7 @@ async function ensure_table() {
 
       UNIQUE KEY uk_week_division_weight_rank (ranking_week, division, weight_lbs, \`rank\`),
       KEY ix_ranking_week_number (ranking_week_number),
+      KEY ix_is_most_recent_ranked_week (is_most_recent_ranked_week),
       PRIMARY KEY (id)
     ) ENGINE=InnoDB
       DEFAULT CHARSET=utf8mb4
@@ -349,7 +351,21 @@ async function ensure_table() {
   try {
     await pool.query(`
       ALTER TABLE reference_wrestler_rankings_list
+        ADD COLUMN IF NOT EXISTS is_most_recent_ranked_week TINYINT NOT NULL DEFAULT 0 AFTER ranking_week_number;
+    `);
+  } catch (e) {}
+
+  try {
+    await pool.query(`
+      ALTER TABLE reference_wrestler_rankings_list
         ADD INDEX ix_ranking_week_number (ranking_week_number);
+    `);
+  } catch (e) {}
+
+  try {
+    await pool.query(`
+      ALTER TABLE reference_wrestler_rankings_list
+        ADD INDEX ix_is_most_recent_ranked_week (is_most_recent_ranked_week);
     `);
   } catch (e) {}
 
@@ -368,6 +384,40 @@ async function ensure_table() {
   } catch (e) {}
 
   _ensured = true;
+}
+
+// -----------------------------------------------------------------------------
+// Update "most recent week" flag (authoritative: based on MAX(ranking_week_number))
+// Scoped by wrestling_season + track_wrestling_category
+// -----------------------------------------------------------------------------
+async function update_is_most_recent_ranked_week_flag(pool, { wrestling_season, track_wrestling_category } = {}) {
+  const season = wrestling_season || "2025-26";
+  const category = track_wrestling_category || "High School Boys";
+
+  const [[max_row]] = await pool.query(
+    `
+      SELECT MAX(ranking_week_number) AS max_week_number
+      FROM reference_wrestler_rankings_list
+      WHERE wrestling_season = ?
+        AND track_wrestling_category = ?;
+    `,
+    [season, category]
+  );
+
+  const max_week_number = max_row?.max_week_number;
+
+  if (max_week_number == null) return;
+
+  // Set 1 for max week, 0 for all other weeks, within season/category
+  await pool.query(
+    `
+      UPDATE reference_wrestler_rankings_list
+      SET is_most_recent_ranked_week = IF(ranking_week_number = ?, 1, 0)
+      WHERE wrestling_season = ?
+        AND track_wrestling_category = ?;
+    `,
+    [max_week_number, season, category]
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -411,6 +461,7 @@ export async function upload_wrestler_list_to_mysql(
       \`track_wrestling_category\`,
       \`ranking_week\`,
       \`ranking_week_number\`,
+      \`is_most_recent_ranked_week\`,
       \`created_at_mtn\`,
       \`created_at_utc\`,
       \`updated_at_mtn\`,
@@ -426,6 +477,7 @@ export async function upload_wrestler_list_to_mysql(
       \`track_wrestling_category\` = VALUES(\`track_wrestling_category\`),
       \`ranking_week\` = VALUES(\`ranking_week\`),
       \`ranking_week_number\` = VALUES(\`ranking_week_number\`),
+      \`is_most_recent_ranked_week\` = VALUES(\`is_most_recent_ranked_week\`),
 
       \`updated_at_mtn\` = IF(
         NOT (
@@ -436,7 +488,8 @@ export async function upload_wrestler_list_to_mysql(
           \`wrestling_season\` <=> VALUES(\`wrestling_season\`) AND
           \`track_wrestling_category\` <=> VALUES(\`track_wrestling_category\`) AND
           \`ranking_week\` <=> VALUES(\`ranking_week\`) AND
-          \`ranking_week_number\` <=> VALUES(\`ranking_week_number\`)
+          \`ranking_week_number\` <=> VALUES(\`ranking_week_number\`) AND
+          \`is_most_recent_ranked_week\` <=> VALUES(\`is_most_recent_ranked_week\`)
         ),
         VALUES(\`updated_at_mtn\`),
         \`updated_at_mtn\`
@@ -450,13 +503,15 @@ export async function upload_wrestler_list_to_mysql(
           \`wrestling_season\` <=> VALUES(\`wrestling_season\`) AND
           \`track_wrestling_category\` <=> VALUES(\`track_wrestling_category\`) AND
           \`ranking_week\` <=> VALUES(\`ranking_week\`) AND
-          \`ranking_week_number\` <=> VALUES(\`ranking_week_number\`)
+          \`ranking_week_number\` <=> VALUES(\`ranking_week_number\`) AND
+          \`is_most_recent_ranked_week\` <=> VALUES(\`is_most_recent_ranked_week\`)
         ),
         VALUES(\`updated_at_utc\`),
         \`updated_at_utc\`
       );
   `;
 
+  // insert with a default 0; we’ll set the authoritative flag after upload
   const values = rows.map((row) => [
     row.division,
     Number(row.weight_lbs),
@@ -469,6 +524,7 @@ export async function upload_wrestler_list_to_mysql(
     row.track_wrestling_category,
     effective_ranking_week,
     effective_ranking_week_number,
+    0, // is_most_recent_ranked_week (set after insert based on MAX week number)
     now_mtn,
     now_utc,
     now_mtn,
@@ -479,6 +535,13 @@ export async function upload_wrestler_list_to_mysql(
     `[parse_wrestler_list] uploading ${rows.length} rows to mysql... (ranking_week=${effective_ranking_week}, ranking_week_number=${effective_ranking_week_number}, source_file=${source_file || "NULL"})`
   );
   await pool.query(sql, [values]);
+
+  // authoritative recalculation based on MAX(ranking_week_number)
+  await update_is_most_recent_ranked_week_flag(pool, {
+    wrestling_season: rows?.[0]?.wrestling_season,
+    track_wrestling_category: rows?.[0]?.track_wrestling_category,
+  });
+
   console.log("[parse_wrestler_list] mysql upload complete ✅");
 }
 
@@ -508,17 +571,20 @@ export async function run_parse_wrestler_docx({
     docx_paths.push(path.join(input_dir, `${fallback_file_name}.docx`));
   }
 
+  // for file exports: mark "most recent" within THIS run
+  const run_week_numbers = docx_paths
+    .map((p) => infer_ranking_week_number_from_source_file(path.basename(p)))
+    .filter((n) => n != null && !Number.isNaN(n));
+  const max_week_number_in_run = run_week_numbers.length ? Math.max(...run_week_numbers) : 0;
+
   const all_rows_with_meta = [];
 
   for (const effective_docx_path of docx_paths) {
     const source_file = path.basename(effective_docx_path);
     const base_no_ext = source_file.replace(/\.docx$/i, "");
 
-    const effective_excel_path =
-      excel_path || path.join(output_dir, `${base_no_ext}.xlsx`);
-
-    const effective_json_path =
-      json_path || path.join(output_dir, `${base_no_ext}.json`);
+    const effective_excel_path = excel_path || path.join(output_dir, `${base_no_ext}.xlsx`);
+    const effective_json_path = json_path || path.join(output_dir, `${base_no_ext}.json`);
 
     console.log(`[parse_wrestler_list] reading docx: ${effective_docx_path}`);
     const rows = await parse_wrestler_list_from_docx(effective_docx_path);
@@ -529,13 +595,13 @@ export async function run_parse_wrestler_docx({
     const inferred_week_number =
       infer_ranking_week_number_from_ranking_week(effective_ranking_week);
 
-    const effective_ranking_week_number =
-      ranking_week_number ?? inferred_week_number ?? 0;
+    const effective_ranking_week_number = ranking_week_number ?? inferred_week_number ?? 0;
 
     const rows_with_meta = rows.map((r) => ({
       ...r,
       ranking_week: effective_ranking_week,
       ranking_week_number: effective_ranking_week_number,
+      is_most_recent_ranked_week: effective_ranking_week_number === max_week_number_in_run ? 1 : 0, // run-local
       source_file,
     }));
 

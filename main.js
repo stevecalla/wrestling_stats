@@ -82,11 +82,11 @@ const step_flags = {
   step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
-  step_15: true, // append ONTHEMAT rankings to to match history metrics
+  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: false, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_17: false, // load data into Google cloud / bigquery
+  step_17: true, // load data into Google cloud / bigquery
 
   // TRANSFER TABLES BETWEEN WINDOWS & MAC
   step_18: false,  // 🧹 transfer tables between windos & mac
