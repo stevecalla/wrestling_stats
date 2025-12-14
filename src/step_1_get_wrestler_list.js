@@ -229,7 +229,7 @@ function extractor_source() {
 
     // --- helper: sanitize a display name before splitting ---
     // removes trailing " (…)" bits and common suffixes like Jr., III, etc.
-    function clean_display_name(raw) { 
+    function clean_display_name(raw) {
       let s = String(raw || "").trim();
 
       // 1) remove any trailing parenthetical, e.g. " (Roman)" or "(JR)"
@@ -316,7 +316,16 @@ function extractor_source() {
           "teamId", "teamID", "teamid", "clubId", "clubID", "organizationId", "orgId"
         ]);
 
-        const name_text = txt(2);
+        // const name_text = txt(2);
+        // const { first_name, last_name } = parse_name(name_text);
+
+        const name_text_raw = txt(2);
+
+        // collapse multiple spaces + non-breaking spaces coming from the grid
+        const name_text = String(name_text_raw || "")
+          .replace(/[\s\u00A0]+/g, " ")
+          .trim();
+
         const { first_name, last_name } = parse_name(name_text);
 
         return {

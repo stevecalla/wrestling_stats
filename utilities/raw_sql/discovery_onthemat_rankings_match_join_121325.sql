@@ -29,25 +29,24 @@ USE wrestling_stats;
       - Spot-check rows
       - Confirm row count
 ---------------------------------------------------------------------------- */
-SELECT *
-FROM reference_wrestler_rankings_list
-LIMIT 10;
+SELECT * FROM reference_wrestler_rankings_list LIMIT 10;
 
 SELECT FORMAT(COUNT(*), 0) AS reference_wrestler_rankings_list_row_count
 FROM reference_wrestler_rankings_list;
+
+SELECT id, wrestler_name, updated_at_mtn
+FROM reference_wrestler_rankings_list
+WHERE 1 = 1 AND (wrestler_name LIKE "%Baden Laiminger%" OR wrestler_name LIKE "%Braden Laiminger%")
+; -- example LIKE match check
 
 /* ----------------------------------------------------------------------------
    2) Quick sanity checks: wrestler list scrape table
       - Spot-check rows
       - Confirm row count
 ---------------------------------------------------------------------------- */
-SELECT *
-FROM wrestler_list_scrape_data
-LIMIT 10;
+SELECT * FROM wrestler_list_scrape_data LIMIT 10;
 
-SELECT FORMAT(COUNT(*), 0) AS wrestler_list_scrape_data_row_count
-FROM wrestler_list_scrape_data;
-
+SELECT FORMAT(COUNT(*), 0) AS wrestler_list_scrape_data_row_count FROM wrestler_list_scrape_data;
 /* ----------------------------------------------------------------------------
    3) Spot-check known name/team issues (examples)
       - Useful when troubleshooting mismatches in joins
@@ -63,6 +62,11 @@ WHERE name = "Cade Hirstine"; -- example exact match check
 SELECT name, team, wrestling_season, track_wrestling_category, grade
 FROM wrestler_list_scrape_data
 WHERE name LIKE "%Aaron Garcia%"; -- example LIKE match check
+
+SELECT name, team, wrestling_season, track_wrestling_category, grade
+FROM wrestler_list_scrape_data
+WHERE name LIKE "%Braden Laiminger%"; -- example LIKE match check
+-- WHERE name LIKE "%Baden Laiminger%"; -- example LIKE match check
 
 /* ----------------------------------------------------------------------------
    4) Diagnostic: union-style join (week 0 + week 1) aggregated by wrestler_name
@@ -107,14 +111,16 @@ SELECT
     SUM(CASE WHEN MIN(l.name) IS NULL THEN 1 ELSE 0 END) OVER () AS unmatched_groups,
     COUNT(*) OVER () AS total_groups
 FROM reference_wrestler_rankings_list AS r
-LEFT JOIN wrestler_list_scrape_data AS l
-  ON r.wrestler_name = l.name
- AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- team prefix only (removes ", CO")
- AND l.wrestling_season = '2025-26'
- AND l.track_wrestling_category = 'High School Boys'
-WHERE r.ranking_week_number IN (0, 1)
+LEFT JOIN wrestler_list_scrape_data AS l ON r.wrestler_name = l.name
+    -- AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- team prefix only (removes ", CO")
+	-- AND l.wrestling_season = '2025-26'
+	-- AND l.track_wrestling_category = 'High School Boys'
+WHERE 1 = 1
+	-- AND r.ranking_week_number IN (0)
+    -- AND r.wrestler_name = "Konner Horton"
+    AND r.wrestler_name = "Baden Laiminger" -- should be spelled Braden not Baden
 GROUP BY r.wrestler_name
-HAVING is_name_match = 1
+HAVING is_name_match = 0
 ORDER BY r.wrestler_name;
 
 /* ----------------------------------------------------------------------------

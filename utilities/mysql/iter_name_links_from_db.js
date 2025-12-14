@@ -8,22 +8,25 @@ export async function count_rows_in_db_wrestler_links(
     track_wrestling_category,
     gender, 
     sql_where_filter_state_qualifier,
+    sql_where_filter_onthemat_ranking_list,
     sql_team_id_list,
     sql_wrestler_id_list,
  ) {
   const pool = await get_pool();
   const [rows] = await pool.query(
-    `SELECT 
-      COUNT(*) AS cnt 
-    FROM wrestler_list_scrape_data 
-    WHERE 1 = 1
-      AND name_link IS NOT NULL AND name_link <> ''
-      AND track_wrestling_category = "${track_wrestling_category}"
-      AND wrestling_season = "${wrestling_season}"
-      AND gender = "${gender}"
-      ${sql_where_filter_state_qualifier}
-      ${sql_team_id_list}
-      ${sql_wrestler_id_list}
+    `
+      SELECT 
+        COUNT(*) AS cnt 
+      FROM wrestler_list_scrape_data 
+      WHERE 1 = 1
+        AND name_link IS NOT NULL AND name_link <> ''
+        AND track_wrestling_category = "${track_wrestling_category}"
+        AND wrestling_season = "${wrestling_season}"
+        AND gender = "${gender}"
+        ${sql_where_filter_state_qualifier}
+        ${sql_where_filter_onthemat_ranking_list}
+        ${sql_team_id_list}
+        ${sql_wrestler_id_list}
     `
   );
   return Number(rows?.[0]?.cnt || 0);
@@ -41,6 +44,7 @@ export async function* iter_name_links_from_db({
   track_wrestling_category,
   gender,
   sql_where_filter_state_qualifier,
+  sql_where_filter_onthemat_ranking_list,
   sql_team_id_list,
   sql_wrestler_id_list,
 } = {}) {
@@ -59,7 +63,9 @@ export async function* iter_name_links_from_db({
         AND track_wrestling_category = "${track_wrestling_category}"
         AND wrestling_season = "${wrestling_season}"
         AND gender = "${gender}"
+        AND onthemat_is_name_match = 1
         ${sql_where_filter_state_qualifier}
+        ${sql_where_filter_onthemat_ranking_list}
         ${sql_team_id_list}
         ${sql_wrestler_id_list}
       ORDER BY id

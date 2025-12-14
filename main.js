@@ -53,43 +53,43 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  false,  // 🚀 launch chrome
+  step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  false,  // 📄 get wrestler list
+  step_1:  true,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  false, // get team schedule
+  step_2:  true, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  false,  // 🏟️ get match history
-  step_4:  false, // 📄 create match history metrics
+  step_3:  true,  // 🏟️ get match history
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  false, // create team division
-  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  false, // append team division to match history metrics
-  step_8:  false, // append team division to wrestler list
+  step_5:  true, // create team division
+  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  true, // append team division to match history metrics
+  step_8:  true, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  false, // create 2024-25 state qualifier list
-  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: false, // append state qualifier to match history metrics
-  step_12: false, // append state qualifier to wrestler list
+  step_9:  true, // create 2024-25 state qualifier list
+  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: true, // append state qualifier to match history metrics
+  step_12: true, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
-  step_15: false, // append ONTHEMAT rankings to to match history metrics
+  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: true, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
   step_17: true, // load data into Google cloud / bigquery
 
   // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: false,  // 🧹 transfer tables between windos & mac
+  step_18: true,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
@@ -122,6 +122,7 @@ async function load_config(custom = {}) {
 
     // SQL WHERE STATEMENT
     sql_where_filter_state_qualifier: "",
+    sql_where_filter_onthemat_ranking_list: "",
     sql_team_id_list: "",
     sql_wrestler_id_list: "",
 
@@ -213,20 +214,21 @@ async function main(config) {
     color_text(
       `\n🔧 Final Config Loaded for Season ${config.wrestling_season}\n` +
       `----------------------------------------------\n` +
-      ` Governing Body       → ${config.governing_body}\n` +
-      ` Category             → ${config.track_wrestling_category}\n` +
-      ` Season               → ${config.wrestling_season}\n` +
-      ` Gender               → ${config.gender}\n` +
-      ` SQL Where Filter     → ${config.sql_where_filter_state_qualifier}\n` +
-      ` SQL Team Id List     → ${config.sql_team_id_list}\n` +
-      ` SQL Wreslter Id List → ${config.sql_wrestler_id_list}\n` +
-      ` Home Page            → ${config.url_home_page}\n` +
-      ` Login Page           → ${config.url_login_page}\n` +
-      ` Alpha List (test)    → ${config.alpha_list_limit_test}\n` +
-      ` Alpha List (full)    → ${config.alpha_list_limit_full}\n` +
-      ` Matches (test)       → ${config.matches_page_limit_test}\n` +
-      ` Matches (full)       → ${config.matches_page_limit_full}\n` +
-      ` Step 3 Loop Start    → ${config.step_3_loop_start}\n` +
+      ` Governing Body         → ${config.governing_body}\n` +
+      ` Category               → ${config.track_wrestling_category}\n` +
+      ` Season                 → ${config.wrestling_season}\n` +
+      ` Gender                 → ${config.gender}\n` +
+      ` SQL State Qual Filter  → ${config.sql_where_filter_state_qualifier}\n` +
+      ` SQL OnTheMat Filter    → ${config.sql_where_filter_onthemat_ranking_list}\n` +
+      ` SQL Team Id List       → ${config.sql_team_id_list}\n` +
+      ` SQL Wrestler Id List   → ${config.sql_wrestler_id_list}\n` +
+      ` Home Page              → ${config.url_home_page}\n` +
+      ` Login Page             → ${config.url_login_page}\n` +
+      ` Alpha List (test)      → ${config.alpha_list_limit_test}\n` +
+      ` Alpha List (full)      → ${config.alpha_list_limit_full}\n` +
+      ` Matches (test)         → ${config.matches_page_limit_test}\n` +
+      ` Matches (full)         → ${config.matches_page_limit_full}\n` +
+      ` Step 3 Loop Start      → ${config.step_3_loop_start}\n` +
       `----------------------------------------------`,
       "cyan"
     )
@@ -351,6 +353,7 @@ async function main(config) {
         config.track_wrestling_category,
         config.gender,
         config.sql_where_filter_state_qualifier,
+        config.sql_where_filter_onthemat_ranking_list,
         config.sql_team_id_list,
         config.sql_wrestler_id_list,
         ctx.page,
