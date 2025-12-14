@@ -9,6 +9,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
+// 🔧 global handler to suppress the noisy dialog error
+process.on("unhandledRejection", (err) => {
+  const msg = String(err?.message || "");
+  if (
+    msg.includes("Page.handleJavaScriptDialog") &&
+    msg.includes("No dialog is showing")
+  ) {
+    console.warn(
+      "⚠️ Suppressed Playwright dialog error: Page.handleJavaScriptDialog → No dialog is showing"
+    );
+    return; // swallow this specific harmless error
+  }
+  throw err; // rethrow everything else
+});
+
 // Save files to csv & msyql
 import { save_to_csv_file } from "../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import {
@@ -410,6 +425,9 @@ function extractor_source() {
   };
 }
 
+// 🔧 track whether we've already attached the dialog handler
+let dialog_handler_attached = false;
+
 /* ------------------------------------------
    main orchestrator
 -------------------------------------------*/
@@ -434,6 +452,23 @@ async function main(
 ) {
   const load_timeout_ms = 30000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
+
+  // 🔧 handle JS dialogs safely by doing NOTHING (do not dismiss/accept)
+  if (page && !dialog_handler_attached) {
+    dialog_handler_attached = true;
+    page.on("dialog", async (dialog) => {
+      console.log(
+        color_text(
+          `📣 JS dialog detected (IGNORED completely): "${dialog.message()}"`,
+          "yellow"
+        )
+      );
+      // IMPORTANT: do not call dialog.dismiss() or dialog.accept()
+      // Returning immediately prevents Page.handleJavaScriptDialog from being sent,
+      // which avoids the "No dialog is showing" ProtocolError.
+      return;
+    });
+  }
 
   // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
   const mode = (() => {
