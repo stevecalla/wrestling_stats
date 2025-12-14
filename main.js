@@ -34,7 +34,11 @@ import { step_12_append_state_qualifier_to_wrestler_list } from "./src/step_12_a
 
 import { step_13_apply_2025_state_qualifier_team_division_to_2026 } from "./src/step_13_apply_2025_state_qualifier_team_division_to_2026.js";
 
-import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step 14 load google cloud & bigquery
+import { step_14_append_onthemat_rankings_to_wrestler_list } from "./src/step_14_append_onthemat_rankings_to_wrestler_list.js";
+
+import { step_15_append_onthemat_rankings_to_match_history } from "./src/step_15_append_onthemat_rankings_to_match_history.js";
+
+import { execute_load_data_to_bigquery } from "./utilities/google_cloud/load_process/step_0_load_main_job.js"; // step_17 load google cloud & bigquery
 
 import { step_18_transfer_tables_between_windows_and_mac } from "./utilities/transfer_tables_between_windows_and_mac/sync_wrestling_tables_full_refresh.js";
 
@@ -49,39 +53,47 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  true,  // 🚀 launch chrome
+  step_0:  false,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  true,  // 📄 get wrestler list
+  step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  true, // get team schedule
+  step_2:  false, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  true,  // 🏟️ get match history
-  step_4:  true, // 📄 create match history metrics
+  step_3:  false,  // 🏟️ get match history
+  step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  true, // create team division
-  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  true, // append team division to match history metrics
-  step_8:  true, // append team division to wrestler list
+  step_5:  false, // create team division
+  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  false, // append team division to match history metrics
+  step_8:  false, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  true, // create 2024-25 state qualifier list
-  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: true, // append state qualifier to match history metrics
-  step_12: true, // append state qualifier to wrestler list
+  step_9:  false, // create 2024-25 state qualifier list
+  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: false, // append state qualifier to match history metrics
+  step_12: false, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
-  // // LOAD GOOGLE CLOUD / BIGQUERY
-  step_14: true, // load data into Google cloud / bigquery
+  // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
+  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: true, // append ONTHEMAT rankings to to match history metrics
 
-  // // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: true,  // 🧹 transfer tables between windos & mac
+  // todo::
+  // add script to use the onthemat rankings to pull wrestler info
+  // convert tim's latest rankings format to the db
+
+  // LOAD GOOGLE CLOUD / BIGQUERY
+  step_17: false, // load data into Google cloud / bigquery
+
+  // TRANSFER TABLES BETWEEN WINDOWS & MAC
+  step_18: false,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
@@ -262,7 +274,7 @@ async function main(config) {
       ctx.context = context;
 
       log_step_success(0, "Chrome launched successfully", Date.now() - start);
-    } else log_step_skip(0, "chrome launch");
+    } else log_step_skip(0, "Chrome launch");
 
     // === STEP 1 SCRAPE WRESTLER LIST ===
     if (step_flags.step_1) {
@@ -284,7 +296,7 @@ async function main(config) {
       );
 
       log_step_success(1, `Wrestler list saved → ${ctx.paths.wrestler_list_csv}`, Date.now() - start);
-    } else log_step_skip(1, "wrestler list generation");
+    } else log_step_skip(1, "Wrestler list generation");
 
     // === STEP 2 SCRAPE TEAM SCHEDULE ===
     if (step_flags.step_2) {
@@ -319,7 +331,7 @@ async function main(config) {
       await step_2a_append_team_id_to_team_schedule_data();
 
       log_step_success(2, `Team schedule saved → ${ctx.paths.team_schedule_csv}`, Date.now() - start);
-    } else log_step_skip(2, "Tean schedule generation");
+    } else log_step_skip(2, "Team schedule generation");
 
     // === STEP 3 SCRAPE MATCH HISTORY METRICS ===
     if (step_flags.step_3) {
@@ -354,7 +366,7 @@ async function main(config) {
       );
 
       log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
-    } else log_step_skip(3, "match history");
+    } else log_step_skip(3, "Match history");
 
     // === STEP 4  CREATE MATCH HISTORY METRICS ===
     if (step_flags.step_4) {
@@ -368,7 +380,7 @@ async function main(config) {
       await step_4_create_wrestler_match_history_data(config);  
 
       log_step_success(4, `Match history metrics created → ${ctx.paths.match_csv}`, Date.now() - start);
-    } else log_step_skip(4, "create match history metrics");
+    } else log_step_skip(4, "Create match history metrics");
 
     // === STEP 5 CREATE TEAM DIVISION ===
     if (step_flags.step_5) {
@@ -467,18 +479,40 @@ async function main(config) {
       await step_13_apply_2025_state_qualifier_team_division_to_2026();
 
       log_step_success(13, `Append 2025 state qualifier & place to 2026`, Date.now() - start);
-    } else log_step_skip(13, "append 2025 state qualifier & place to 2026");
+    } else log_step_skip(13, "Append 2025 state qualifier & place to 2026");
 
-    // === STEP 14 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    // === STEP 14 APPEND ONTHEMAT RANKINGS TO 2026 ===
     if (step_flags.step_14) {
       const start = Date.now();
 
-      log_step_start(14, "Start Loading Data to Google Cloud & Bigquery 🔗");
+      log_step_start(14, "Start append ONTHEMAT rankings to 2026 wrestler list 🔗");
+
+      await step_14_append_onthemat_rankings_to_wrestler_list();
+
+      log_step_success(14, `Append append ONTHEMAT rankings to 2026 wrestler list`, Date.now() - start);
+    } else log_step_skip(14, "Append append ONTHEMAT rankings to 2026 wrestler list");
+
+    // === STEP 15 APPEND ONTHEMAT RANKINGS TO 2026 ===
+    if (step_flags.step_15) {
+      const start = Date.now();
+
+      log_step_start(15, "Start append ONTHEMAT rankings to 2026 match history metrics🔗");
+
+      await step_15_append_onthemat_rankings_to_match_history();
+
+      log_step_success(15, `Append append ONTHEMAT rankings to 2026 match history metrics`, Date.now() - start);
+    } else log_step_skip(15, "Append append ONTHEMAT rankings to 2026 match history metrics");
+
+    // === step_17 LOAD DATA TO GOOGLE CLOULD / BIGQUERY ===
+    if (step_flags.step_17) {
+      const start = Date.now();
+
+      log_step_start(17, "Start Loading Data to Google Cloud & Bigquery 🔗");
 
       await execute_load_data_to_bigquery("wrestler");
 
-      log_step_success(14, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
-    } else log_step_skip(14, "Load Data to Google Cloud & Bigquery 🔗");
+      log_step_success(17, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
+    } else log_step_skip(17, "Load Data to Google Cloud & Bigquery 🔗");
     
     // === STEP 18 CLOSE BROWSER ===
     if (step_flags.step_18) {
@@ -498,7 +532,7 @@ async function main(config) {
       await step_19_close_chrome_dev(ctx.browser, ctx.context);
 
       log_step_success(19, "Browser closed successfully", Date.now() - start);
-    } else log_step_skip(19, "close browser");
+    } else log_step_skip(19, "Close browser");
 
     const total_ms = Date.now() - program_start;
     console.log(color_text(`\n⏲️  Total duration: ${format_duration(total_ms)}`, "cyan"));
