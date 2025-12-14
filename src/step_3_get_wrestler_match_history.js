@@ -121,7 +121,7 @@ async function safe_goto(page, url, opts = {}) {
 
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
       err.code = "E_TARGET_CLOSED"; // sentinel
       throw err;
@@ -200,7 +200,7 @@ async function wait_until_devtools_ready(port = 9222, max_wait_ms = 7000, host =
         if (j && j.Browser) return true;
         return true;
       }
-    } catch {}
+    } catch { }
     await wait_ms(200);
   }
 
@@ -453,20 +453,35 @@ async function main(
   const load_timeout_ms = 30000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
-  // 🔧 handle JS dialogs safely by doing NOTHING (do not dismiss/accept)
+  // 🔧 handle JS dialogs safely by auto-accepting so they don't block navigation
   if (page && !dialog_handler_attached) {
     dialog_handler_attached = true;
+
+    // page.on("dialog", async (dialog) => {
+    //   console.log(
+    //     color_text(
+    //       `📣 JS dialog detected (IGNORED completely): "${dialog.message()}"`,
+    //       "yellow"
+    //     )
+    //   );
+    //   // IMPORTANT: do not call dialog.dismiss() or dialog.accept()
+    //   // Returning immediately prevents Page.handleJavaScriptDialog from being sent,
+    //   // which avoids the "No dialog is showing" ProtocolError.
+    //   return;
+    // });
+
     page.on("dialog", async (dialog) => {
-      console.log(
-        color_text(
-          `📣 JS dialog detected (IGNORED completely): "${dialog.message()}"`,
-          "yellow"
-        )
-      );
-      // IMPORTANT: do not call dialog.dismiss() or dialog.accept()
-      // Returning immediately prevents Page.handleJavaScriptDialog from being sent,
-      // which avoids the "No dialog is showing" ProtocolError.
-      return;
+      try {
+        console.log(
+          color_text(
+            `📣 JS dialog detected: "${dialog.message()}" → auto-accepting so navigation can continue`,
+            "yellow"
+          )
+        );
+        await dialog.accept();
+      } catch (err) {
+        console.warn(`⚠️ Failed to handle dialog: ${err.message}`);
+      }
     });
   }
 
@@ -589,24 +604,24 @@ async function main(
   const iterator =
     mode === "events"
       ? iter_name_links_based_on_event_schedule({
-          start_at: loop_start,
-          limit: matches_page_limit,
-          batch_size: 500,
-          wrestling_season,
-          track_wrestling_category,
-        })
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+      })
       : iter_name_links_from_db({
-          start_at: loop_start,
-          limit: matches_page_limit,
-          batch_size: 500,
-          wrestling_season,
-          track_wrestling_category,
-          gender,
-          sql_where_filter_state_qualifier,
-          sql_where_filter_onthemat_ranking_list,
-          sql_team_id_list,
-          sql_wrestler_id_list,
-        });
+        start_at: loop_start,
+        limit: matches_page_limit,
+        batch_size: 500,
+        wrestling_season,
+        track_wrestling_category,
+        gender,
+        sql_where_filter_state_qualifier,
+        sql_where_filter_onthemat_ranking_list,
+        sql_team_id_list,
+        sql_wrestler_id_list,
+      });
 
   console.log("find console.log=================");
 
@@ -650,17 +665,17 @@ async function main(
           page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
 
         console.log("step 3: wait for redirect");
-        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
+        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
-          
+
           await safe_auto_login(page, wrestling_season, track_wrestling_category);
           await page.waitForTimeout(1000);
 
           const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
           console.log("step 3b: re-navigating to original URL after login:", effective_url_after_login);
-          
+
           await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
           await page.waitForTimeout(1000);
 
@@ -750,20 +765,20 @@ async function main(
           } catch (e) {
             console.error(
               "⚠️ failed to delete existing match history for wrestler_id=" +
-                this_wrestler_id +
-                ":",
+              this_wrestler_id +
+              ":",
               e?.message || e
             );
           }
         }
-        
+
         console.log("step 6: save to csv");
         csv_write_iterations += 1; // 🔢 track total CSV writes (including 0-row writes)
         const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
         headers_written = headers_written_now;
         total_rows_written_csv += all_rows.length; // 🔢 cumulative rows written to CSV
         console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
-        
+
         console.log("step 7: save to sql db\n");
         try {
           const { inserted, updated } = await upsert_wrestler_match_history(rows, {
@@ -779,10 +794,10 @@ async function main(
         } catch (e) {
           console.error("❌ DB upsert failed:", e?.message || e);
         }
-        
+
         processed += 1;
 
-        const HARD_RESET_LIMIT = 50;
+        const HARD_RESET_LIMIT = 30;
 
         // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
         if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
