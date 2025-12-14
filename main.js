@@ -85,10 +85,6 @@ const step_flags = {
   step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
   step_15: true, // append ONTHEMAT rankings to to match history metrics
 
-  // todo::
-  // add script to use the onthemat rankings to pull wrestler info
-  // convert tim's latest rankings format to the db
-
   // LOAD GOOGLE CLOUD / BIGQUERY
   step_17: false, // load data into Google cloud / bigquery
 
