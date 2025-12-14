@@ -73,53 +73,122 @@ async function step_14_append_onthemat_rankings_to_wrestler_list() {
   // 3) UPDATE LIST TABLE from OnTheMat rankings
   //    (transaction managed in JS; no multi-statement query)
   // -------------------------------------------------
+  // const update_sql = `
+  //   UPDATE wrestler_list_scrape_data l
+  //     LEFT JOIN (
+  //       SELECT
+  //         wrestler_name,
+  //         school,
+  //         source_file,
+  //         MIN(\`rank\`) AS onthemat_rank,
+  //         MIN(weight_lbs) AS weight_lbs
+
+  //       FROM reference_wrestler_rankings_list
+  //       GROUP BY wrestler_name, school, source_file
+  //     ) r
+  //       ON r.wrestler_name = l.name
+  //       AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- removed the ", CO" from team name for comparsion in step 2
+
+  //   SET
+  //     -- match flags
+  //     l.onthemat_is_name_match = 
+  //       CASE 
+  //         WHEN r.wrestler_name IS NULL THEN 0 
+  //         ELSE 1 
+  //     END,
+
+  //     l.onthemat_name = r.wrestler_name,
+
+  //     l.onthemat_is_team_match = 
+  //       CASE
+  //         WHEN r.wrestler_name IS NULL THEN NULL
+  //         WHEN r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) THEN 1
+  //         ELSE 0
+  //       END,
+      
+  //     l.onthemat_team = r.school,
+
+  //     l.onthemat_rankings_source_file = r.source_file,
+
+  //     -- appended fields
+  //     l.onthemat_rank = r.onthemat_rank,
+  //     l.onthemat_weight_lbs = r.weight_lbs,
+
+  //     -- timestamps
+  //     l.updated_at_mtn = ?,
+  //     l.updated_at_utc = ?
+
+  //   WHERE l.wrestling_season = '2025-26'
+  //     AND l.track_wrestling_category = 'High School Boys'
+  // `;
+
   const update_sql = `
     UPDATE wrestler_list_scrape_data l
       LEFT JOIN (
         SELECT
           wrestler_name,
           school,
-          source_file,
-          MIN(\`rank\`) AS onthemat_rank,
-          MIN(weight_lbs) AS weight_lbs
+
+          -- pick the latest week we have for this wrestler/school
+          MAX(ranking_week_number) AS latest_ranking_week_number,
+
+          -- carry the source_file corresponding to the latest week
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(source_file ORDER BY ranking_week_number DESC SEPARATOR '||'),
+            '||',
+            1
+          ) AS source_file,
+
+          -- rank/weight for the latest week (deterministic)
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(\`rank\` ORDER BY ranking_week_number DESC, \`rank\` ASC SEPARATOR '||'),
+            '||',
+            1
+          ) AS onthemat_rank,
+
+          SUBSTRING_INDEX(
+            GROUP_CONCAT(weight_lbs ORDER BY ranking_week_number DESC SEPARATOR '||'),
+            '||',
+            1
+          ) AS weight_lbs
 
         FROM reference_wrestler_rankings_list
-        GROUP BY wrestler_name, school, source_file
+        WHERE 1 = 1
+          -- If you want to restrict the join to specific snapshots (recommended while validating week_0 vs week_1):
+          -- AND ranking_week_number IN (0, 1)
+
+          -- Default / production behavior:
+          -- Leave this commented out to include ALL ranking weeks.
+        GROUP BY wrestler_name, school
       ) r
         ON r.wrestler_name = l.name
-        AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- removed the ", CO" from team name for comparsion in step 2
+        AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
 
     SET
-      -- match flags
-      l.onthemat_is_name_match = 
-        CASE 
-          WHEN r.wrestler_name IS NULL THEN 0 
-          ELSE 1 
-      END,
+      l.onthemat_is_name_match =
+        CASE WHEN r.wrestler_name IS NULL THEN 0 ELSE 1 END,
 
       l.onthemat_name = r.wrestler_name,
 
-      l.onthemat_is_team_match = 
+      l.onthemat_is_team_match =
         CASE
           WHEN r.wrestler_name IS NULL THEN NULL
           WHEN r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) THEN 1
           ELSE 0
         END,
-      
+
       l.onthemat_team = r.school,
 
       l.onthemat_rankings_source_file = r.source_file,
 
-      -- appended fields
       l.onthemat_rank = r.onthemat_rank,
       l.onthemat_weight_lbs = r.weight_lbs,
 
-      -- timestamps
       l.updated_at_mtn = ?,
       l.updated_at_utc = ?
 
     WHERE l.wrestling_season = '2025-26'
-      AND l.track_wrestling_category = 'High School Boys'
+      AND l.track_wrestling_category = 'High School Boys';
   `;
 
   // NOTE:

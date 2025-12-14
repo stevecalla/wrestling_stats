@@ -1,48 +1,167 @@
+/* ============================================================================
+   OnTheMat rankings → wrestler_list_scrape_data mapping & validation
+   Database: wrestling_stats
+
+   Purpose
+   -------
+   This file contains:
+   1) quick sanity checks for the source tables
+   2) matching/overlap diagnostics across ranking weeks (week_0 vs week_1)
+   3) preview queries to validate join logic before UPDATEs
+   4) downstream checks for match-history metrics enrichment
+
+   Notes / Gotchas
+   --------------
+   - reference_wrestler_rankings_list contains WEEKLY snapshots (week_0, week_1, ...)
+   - If you join rankings across multiple weeks, you MUST choose which week "wins"
+     (typically latest week) to avoid non-deterministic updates.
+   - GROUP BY wrestler_name alone can merge different wrestlers that share a name.
+     Prefer (wrestler_name, school) when possible.
+============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   0) Select schema / DB
+---------------------------------------------------------------------------- */
 USE wrestling_stats;
 
-SELECT * FROM reference_wrestler_rankings_list LIMIT 10;
-SELECT FORMAT(COUNT(*), 0), (668 * 2) AS math_calc FROM reference_wrestler_rankings_list LIMIT 10;
+/* ----------------------------------------------------------------------------
+   1) Quick sanity checks: rankings list table
+      - Spot-check rows
+      - Confirm row count
+---------------------------------------------------------------------------- */
+SELECT *
+FROM reference_wrestler_rankings_list
+LIMIT 10;
 
-SELECT * FROM wrestler_list_scrape_data LIMIT 10;
-SELECT FORMAT(COUNT(*), 0) FROM wrestler_list_scrape_data LIMIT 10;
-SELECT name, team FROM wrestler_list_scrape_data WHERE name LIKE "%Elijah Baumgardner%"; -- Elijah Baumgartner vs Elijah Baumgardner
-SELECT name, team, wrestling_season, track_wrestling_category, grade FROM wrestler_list_scrape_data WHERE name = "Cade Hirstine"; -- 'Cade Hirstine' vs Cade Hirstine, Grandview, CO
-SELECT name, team, wrestling_season, track_wrestling_category, grade FROM wrestler_list_scrape_data WHERE name LIKE "%Aaron Garcia%"; -- 'Cade Hirstine' vs Cade Hirstine, Grandview, CO
+SELECT FORMAT(COUNT(*), 0) AS reference_wrestler_rankings_list_row_count
+FROM reference_wrestler_rankings_list;
 
+/* ----------------------------------------------------------------------------
+   2) Quick sanity checks: wrestler list scrape table
+      - Spot-check rows
+      - Confirm row count
+---------------------------------------------------------------------------- */
+SELECT *
+FROM wrestler_list_scrape_data
+LIMIT 10;
+
+SELECT FORMAT(COUNT(*), 0) AS wrestler_list_scrape_data_row_count
+FROM wrestler_list_scrape_data;
+
+/* ----------------------------------------------------------------------------
+   3) Spot-check known name/team issues (examples)
+      - Useful when troubleshooting mismatches in joins
+---------------------------------------------------------------------------- */
+SELECT name, team
+FROM wrestler_list_scrape_data
+WHERE name LIKE "%Elijah Baumgardner%"; -- Elijah Baumgartner vs Elijah Baumgardner (typo case)
+
+SELECT name, team, wrestling_season, track_wrestling_category, grade
+FROM wrestler_list_scrape_data
+WHERE name = "Cade Hirstine"; -- example exact match check
+
+SELECT name, team, wrestling_season, track_wrestling_category, grade
+FROM wrestler_list_scrape_data
+WHERE name LIKE "%Aaron Garcia%"; -- example LIKE match check
+
+/* ----------------------------------------------------------------------------
+   4) Diagnostic: union-style join (week 0 + week 1) aggregated by wrestler_name
+      - Shows how often the same wrestler_name appears across different weeks/files
+      - WHY "488/503/564" happens:
+          week0_total + week1_total - overlap = union_total
+      - This query is grouped by wrestler_name only (collisions possible)
+---------------------------------------------------------------------------- */
 SELECT
-	r.wrestler_name,
-    r.school,
-    r.rank,
-    r.weight_lbs,
-    MIN(l.wrestling_season),
-    MIN(l.track_wrestling_category),
-    MIN(l.name),
-    MIN(l.wrestler_id),
-    MIN(l.team),
-    CASE 
-        WHEN l.name IS NULL THEN 0
-        ELSE 1
-    END AS is_name_match,
+    r.wrestler_name,
+
+    -- raw, unsorted (kept for reference)
+    GROUP_CONCAT(r.school) AS schools_unsorted,
+
+    -- sorted by week number to compare evolution across weeks
+    GROUP_CONCAT(r.school      ORDER BY r.ranking_week_number SEPARATOR ', ') AS schools_by_week,
+    GROUP_CONCAT(r.`rank`      ORDER BY r.ranking_week_number SEPARATOR ', ') AS ranks_by_week,
+    GROUP_CONCAT(r.weight_lbs  ORDER BY r.ranking_week_number SEPARATOR ', ') AS weights_by_week,
+    GROUP_CONCAT(r.source_file ORDER BY r.ranking_week_number SEPARATOR ', ') AS source_files_by_week,
+
+    MIN(l.wrestling_season) AS wrestling_season,
+    MIN(l.track_wrestling_category) AS track_wrestling_category,
+    MIN(l.name) AS matched_name,
+    MIN(l.wrestler_id) AS matched_wrestler_id,
+    MIN(l.team) AS matched_team,
+
+    -- match flags derived from whether the JOIN found anything
+    CASE WHEN MIN(l.name) IS NULL THEN 0 ELSE 1 END AS is_name_match,
+
+    -- team check: compare ranking school vs list team prefix
     CASE
         WHEN MIN(l.name) IS NULL THEN NULL
-        WHEN r.school NOT LIKE MIN(l.team) THEN 1
+        WHEN MIN(r.school) NOT LIKE MIN(l.team) THEN 1
         ELSE 0
     END AS is_team_match,
-    COUNT(*),
-    SUM(CASE WHEN MIN(l.name) IS NOT NULL THEN 1 ELSE 0 END) OVER () AS matched_rows,
-    SUM(CASE WHEN MIN(l.name) IS NULL THEN 1 ELSE 0 END) OVER () AS unmatched_rows,
-    COUNT(*) OVER () AS total_row_count
-FROM reference_wrestler_rankings_list AS r
-	LEFT JOIN wrestler_list_scrape_data AS l ON r.wrestler_name = l.name
-		AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- removed the ", CO" from team name for comparsion in step 2
-		AND l.wrestling_season = '2025-26'
-		AND l.track_wrestling_category = 'High School Boys'
--- WHERE r.wrestler_name = 'Cade Hirstine'
-GROUP BY 1, 2, 3, 4
-HAVING is_name_match = 1
-ORDER BY 1
-;
 
+    -- number of ranking rows included in this group (can be >1 because multiple weeks)
+    COUNT(*) AS ranking_rows_in_group,
+
+    -- these window metrics reflect grouped results (not raw rows)
+    SUM(CASE WHEN MIN(l.name) IS NOT NULL THEN 1 ELSE 0 END) OVER () AS matched_groups,
+    SUM(CASE WHEN MIN(l.name) IS NULL THEN 1 ELSE 0 END) OVER () AS unmatched_groups,
+    COUNT(*) OVER () AS total_groups
+FROM reference_wrestler_rankings_list AS r
+LEFT JOIN wrestler_list_scrape_data AS l
+  ON r.wrestler_name = l.name
+ AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1) -- team prefix only (removes ", CO")
+ AND l.wrestling_season = '2025-26'
+ AND l.track_wrestling_category = 'High School Boys'
+WHERE r.ranking_week_number IN (0, 1)
+GROUP BY r.wrestler_name
+HAVING is_name_match = 1
+ORDER BY r.wrestler_name;
+
+/* ----------------------------------------------------------------------------
+   5) Week overlap math (week0_only, week1_only, both, union)
+      - This reproduces the "564 union" concept deterministically.
+      - IMPORTANT: This uses wrestler_name only. Consider (wrestler_name, school).
+---------------------------------------------------------------------------- */
+WITH matches AS (
+  SELECT DISTINCT
+    r.ranking_week_number,
+    r.wrestler_name
+  FROM reference_wrestler_rankings_list r
+  JOIN wrestler_list_scrape_data l
+    ON r.wrestler_name = l.name
+   AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
+   AND l.wrestling_season = '2025-26'
+   AND l.track_wrestling_category = 'High School Boys'
+  WHERE r.ranking_week_number IN (0,1)
+),
+per_name AS (
+  SELECT
+    wrestler_name,
+    MAX(ranking_week_number = 0) AS has_week0,
+    MAX(ranking_week_number = 1) AS has_week1
+  FROM matches
+  GROUP BY wrestler_name
+)
+SELECT
+  -- per-week totals
+  SUM(has_week0 = 1) AS week0_total,
+  SUM(has_week1 = 1) AS week1_total,
+
+  -- exclusives + overlap
+  SUM(has_week0 = 1 AND has_week1 = 0) AS week0_only,
+  SUM(has_week0 = 0 AND has_week1 = 1) AS week1_only,
+  SUM(has_week0 = 1 AND has_week1 = 1) AS both_weeks,
+
+  -- union
+  COUNT(*) AS union_total
+FROM per_name;
+
+/* ----------------------------------------------------------------------------
+   6) PREVIEW join (no update): what OnTheMat fields would be set on the list table?
+      - This is a preview query to validate join logic before any UPDATE.
+      - WARNING: If you do not select a single "winning week", results can be ambiguous.
+      - The subquery below uses MIN(rank) / MIN(weight) across ALL weeks (not preferred).
+---------------------------------------------------------------------------- */
 SELECT
   l.id,
   l.name,
@@ -50,8 +169,8 @@ SELECT
   l.wrestling_season,
   l.track_wrestling_category,
 
-  r.onthemat_rank       AS preview_onthemat_rank,
-  r.weight_lbs          AS preview_onthemat_weight_lbs,
+  r.onthemat_rank AS preview_onthemat_rank,
+  r.weight_lbs    AS preview_onthemat_weight_lbs,
 
   CASE WHEN r.wrestler_name IS NULL THEN 0 ELSE 1 END AS preview_is_name_match,
   CASE
@@ -71,94 +190,79 @@ LEFT JOIN (
   GROUP BY wrestler_name, school
 ) r
   ON r.wrestler_name = l.name
-  AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
+ AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
 
 WHERE l.wrestling_season = '2025-26'
   AND l.track_wrestling_category = 'High School Boys'
 ORDER BY l.name
 LIMIT 100;
 
+/* ----------------------------------------------------------------------------
+   7) Post-update coverage check (list table)
+      - How many rows have onthemat fields populated?
+      - Run after your UPDATE step.
+---------------------------------------------------------------------------- */
 SELECT
   COUNT(*) AS total,
   SUM(onthemat_rank IS NOT NULL) AS with_rank,
   SUM(onthemat_weight_lbs IS NOT NULL) AS with_weight
 FROM wrestler_list_scrape_data
 WHERE wrestling_season = '2025-26'
-  AND track_wrestling_category = 'High School Boys'
-;
-  
-  
+  AND track_wrestling_category = 'High School Boys';
+
+/* ----------------------------------------------------------------------------
+   8) Identify duplicates / collisions in list table among matched rows
+      - Useful to identify cases where the same name appears multiple times
+        (different wrestler_id or different teams).
+---------------------------------------------------------------------------- */
 SELECT
   name,
-  GROUP_CONCAT(wrestler_id),
-  GROUP_CONCAT(team),
-  COUNT(*)
+  GROUP_CONCAT(wrestler_id) AS wrestler_ids,
+  GROUP_CONCAT(team) AS teams,
+  COUNT(*) AS row_count
 FROM wrestler_list_scrape_data
 WHERE wrestling_season = '2025-26'
   AND track_wrestling_category = 'High School Boys'
   AND onthemat_rank IS NOT NULL
-GROUP BY 1
-;
+GROUP BY name;
 
-SELECT
-  *
+/* ----------------------------------------------------------------------------
+   9) Targeted spot checks for specific names
+---------------------------------------------------------------------------- */
+SELECT *
 FROM wrestler_list_scrape_data
 WHERE wrestling_season = '2025-26'
   AND track_wrestling_category = 'High School Boys'
   AND name IN ('Noah Garcia-Salazar', 'Ryder Martyn', 'traysen Rosane')
-GROUP BY 1
-;
+ORDER BY name;
 
-SELECT * FROM wrestler_match_history_metrics_data LIMIT 10;
+/* ----------------------------------------------------------------------------
+   10) Quick sanity checks: match history metrics table
+---------------------------------------------------------------------------- */
+SELECT *
+FROM wrestler_match_history_metrics_data
+LIMIT 10;
 
-SELECT
-  *
+/* ----------------------------------------------------------------------------
+   11) Targeted spot checks: metrics for specific names
+---------------------------------------------------------------------------- */
+SELECT *
 FROM wrestler_match_history_metrics_data
 WHERE wrestling_season = '2025-26'
   AND track_wrestling_category = 'High School Boys'
   AND wrestler_name IN ('Noah Garcia-Salazar', 'Ryder Martyn', 'traysen Rosane')
-GROUP BY 1
-;
+ORDER BY wrestler_name;
 
-SELECT
-	r.wrestler_name,
-    r.school,
-    r.rank,
-    r.weight_lbs,
-	MIN(h.wrestling_season),
-    MIN(h.track_wrestling_category),
-    MIN(h.wrestler_name),
-	MIN(h.wrestler_id),
-	MIN(h.wrestler_team),
-    CASE 
-        WHEN h.wrestler_name IS NULL THEN 0
-        ELSE 1
-    END AS is_name_match,
-    CASE
-        WHEN MIN(h.wrestler_name) IS NULL THEN NULL
-        WHEN r.school NOT LIKE MIN(h.wrestler_team) THEN 1
-        ELSE 0
-    END AS is_team_match,
-    COUNT(*),
-    SUM(CASE WHEN MIN(h.wrestler_name) IS NOT NULL THEN 1 ELSE 0 END) OVER () AS matched_rows,
-    SUM(CASE WHEN MIN(h.wrestler_name) IS NULL THEN 1 ELSE 0 END) OVER () AS unmatched_rows,
-    COUNT(*) OVER () AS total_row_count
-FROM reference_wrestler_rankings_list AS r
-	LEFT JOIN wrestler_match_history_metrics_data AS h ON r.wrestler_name = h.wrestler_name
-		AND r.school LIKE SUBSTRING_INDEX(h.wrestler_team, ',', 1) -- removed the ", CO" from team name for comparsion in step 2
-		AND h.wrestling_season = '2025-26'
-		AND h.track_wrestling_category = 'High School Boys'
-GROUP BY 1, 2, 3, 4
-HAVING is_name_match = 1
-ORDER BY 1
-;
-
--- ///////////////
-SELECT * FROM wrestler_list_scrape_data LIMIT 10;
+/* ----------------------------------------------------------------------------
+   12) Validate list enrichment is visible via wrestler_id join into metrics
+      - Joins match history metrics to the list table by wrestler_id
+      - Filters to only those with a successful OnTheMat name match
+---------------------------------------------------------------------------- */
 SELECT
   h.wrestling_season,
   h.track_wrestling_category,
   h.wrestler_id AS wrestler_id_metrics,
+
   l.wrestler_id AS wrestler_id_list,
   l.onthemat_is_name_match,
   l.onthemat_name,
@@ -167,14 +271,15 @@ SELECT
   l.onthemat_rank,
   l.onthemat_weight_lbs,
   l.onthemat_rankings_source_file
---   FORMAT(COUNT(DISTINCT h.wrestler_id), 0) AS count_distinct_wrestler_id,
---   FORMAT(COUNT(*), 0)
+
+  -- optional rollups:
+  -- FORMAT(COUNT(DISTINCT h.wrestler_id), 0) AS count_distinct_wrestler_id,
+  -- FORMAT(COUNT(*), 0) AS row_count
+
 FROM wrestler_match_history_metrics_data AS h
 LEFT JOIN wrestler_list_scrape_data AS l
   ON h.wrestler_id = l.wrestler_id
 WHERE h.wrestling_season = '2025-26'
   AND h.track_wrestling_category = 'High School Boys'
   AND l.onthemat_is_name_match = 1
--- GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
-ORDER BY 1
-;
+ORDER BY h.wrestling_season, h.track_wrestling_category, h.wrestler_id;

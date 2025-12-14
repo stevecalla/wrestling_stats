@@ -10,6 +10,13 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import { get_pool } from "../utilities/mysql/mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
+// -------------------------------------------------
+// SAFETY FLAG
+// -------------------------------------------------
+// true  = log duplicate join keys and CONTINUE
+// false = throw error and ABORT
+const ALLOW_PREFLIGHT_DUPLICATES = true;
+
 /* -------------------------------------------------
    Ensure OnTheMat columns exist on MATCH HISTORY table
 --------------------------------------------------*/
@@ -55,11 +62,60 @@ async function ensure_onthemat_columns(pool) {
   }
 }
 
+/* -------------------------------------------------
+   Preflight: ensure wrestler_list join keys are unique
+--------------------------------------------------*/
+async function preflight_check_list_uniqueness(pool) {
+  const dup_sql = `
+    SELECT
+      wrestler_id,
+      wrestling_season,
+      track_wrestling_category,
+      COUNT(*) AS row_count
+    FROM wrestler_list_scrape_data
+    GROUP BY wrestler_id, wrestling_season, track_wrestling_category
+    HAVING COUNT(*) > 1
+  `;
+
+  const [rows] = await pool.query(dup_sql);
+
+  if (rows.length > 0) {
+    console.warn("⚠️  PRE-FLIGHT WARNING: duplicate wrestler_list rows detected");
+    console.warn("Duplicate key = (wrestler_id, wrestling_season, track_wrestling_category)");
+    console.warn("Total duplicate groups:", rows.length);
+
+    console.warn("Sample duplicates (up to 10):");
+    rows.slice(0, 10).forEach((r, i) => {
+      console.warn(
+        `  ${i + 1}. wrestler_id=${r.wrestler_id}, season=${r.wrestling_season}, category=${r.track_wrestling_category}, rows=${r.row_count}`
+      );
+    });
+
+    if (!ALLOW_PREFLIGHT_DUPLICATES) {
+      throw new Error(
+        "Preflight check failed due to duplicate join keys. " +
+        "Set ALLOW_PREFLIGHT_DUPLICATES = true to continue anyway."
+      );
+    }
+
+    console.warn(
+      "⚠️  Continuing despite duplicate join keys because " +
+      "ALLOW_PREFLIGHT_DUPLICATES = true"
+    );
+    return;
+  }
+
+  console.log("✅ Preflight check passed: wrestler_list_scrape_data join keys are unique");
+}
+
 async function step_15_append_onthemat_rankings_to_match_history() {
   const pool = await get_pool();
 
   // 1) Ensure columns exist
   await ensure_onthemat_columns(pool);
+
+  // 1.5) Preflight (warn-only by default)
+  await preflight_check_list_uniqueness(pool);
 
   // 2) Timestamps
   const now_utc = new Date();
@@ -70,13 +126,7 @@ async function step_15_append_onthemat_rankings_to_match_history() {
   const updated_at_utc = now_utc;
 
   // -------------------------------------------------
-  // 3) UPDATE MATCH HISTORY METRICS TABLE from LIST TABLE
-  //
-  // Key idea:
-  //   match_history_metrics (m) -> wrestler_list (l) by wrestler_id + season + category
-  //   then copy l.onthemat_* fields to m.onthemat_* fields
-  //
-  // Assumes step_14 has already populated wrestler_list_scrape_data.onthemat_*.
+  // 3) UPDATE MATCH HISTORY METRICS FROM LIST TABLE
   // -------------------------------------------------
   const update_sql = `
     UPDATE wrestler_match_history_metrics_data m
@@ -103,8 +153,7 @@ async function step_15_append_onthemat_rankings_to_match_history() {
   `;
 
   let update_result;
-  // let rollback_or_commit = "ROLLBACK"; // change to "COMMIT" when ready
-  let rollback_or_commit = "COMMIT"; // change to "ROLLBACK" when testing
+  let rollback_or_commit = "COMMIT"; // flip to "ROLLBACK" for dry runs
 
   try {
     await pool.query("START TRANSACTION");
@@ -133,7 +182,7 @@ async function step_15_append_onthemat_rankings_to_match_history() {
   );
 
   // -------------------------------------------------
-  // 4) Summary (MATCH HISTORY table perspective)
+  // 4) Summary
   // -------------------------------------------------
   const summary_sql = `
     SELECT
