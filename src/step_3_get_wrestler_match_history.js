@@ -820,7 +820,7 @@ async function main(
             wrestling_season,
             track_wrestling_category,
             url_login_page,
-            "processed 50 pages"
+            `processed ${HARD_RESET_LIMIT} pages`
           ));
         }
 
