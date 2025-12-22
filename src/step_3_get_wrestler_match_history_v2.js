@@ -29,10 +29,12 @@ function get_now_mtn() {
 // }
 
 function format_ymd(date) {
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
+    // takes in: 2025-12-22T01:13:16.162Z
+
+    const formatted_date = date.toISOString().slice(0, 10);
+
+    // returns ************** 2025-12-22
+    return formatted_date;
 }
 
 function format_ymd_hour(date) {
@@ -46,8 +48,30 @@ function format_ymd_hour(date) {
 /* -------------------------------------------------
    STEP 3 ORCHESTRATOR
 --------------------------------------------------*/
+export async function main(
+    url_home_page,
+    url_login_page,
+    matches_page_limit = 5,
+    loop_start = 0,
 
-async function run_step_3() {
+    wrestling_season = "2024-25",
+    track_wrestling_category = "High School Boys",
+    gender,
+
+    sql_where_filter_state_qualifier,
+    sql_where_filter_onthemat_ranking_list,
+    sql_team_id_list,
+    sql_wrestler_id_list,
+
+    page,
+    browser,
+    context,
+
+    file_path,
+
+    use_scheduled_events_iterator_query = false,
+    use_wrestler_list_iterator_query = true
+) {
     // -----------------------------------------------
     // STEP 1: ensure scrape task table exists
     // -----------------------------------------------
@@ -56,43 +80,30 @@ async function run_step_3() {
     // -----------------------------------------------
     // STEP 2: seed tasks
     // -----------------------------------------------
-    const hs_boys_2026 = {
-        // HIGH SCHOOL BOYS = set category, season & gender
-        track_wrestling_category: "High School Boys",
-        wrestling_season: "2025-26",
-        gender: "M",
-
-        use_scheduled_events_iterator_query: true,
-        use_wrestler_list_iterator_query: false,
-
-        // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
-        // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
-        // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
-    };
-
     const now_mtn = get_now_mtn();
 
     const { task_set_id } = await step_2_seed_tasks({
-        wrestling_season: hs_boys_2026.wrestling_season,
-        track_wrestling_category: hs_boys_2026.track_wrestling_category,
-        gender: hs_boys_2026.gender,
+        wrestling_season,
+        track_wrestling_category,
+        gender,
 
-        sql_where_filter_state_qualifier: "",
-        sql_team_id_list: "",
-        sql_wrestler_id_list: "",
+        // optional list filters
+        sql_where_filter_state_qualifier,
+        sql_where_filter_onthemat_ranking_list,
+        sql_team_id_list,
+        sql_wrestler_id_list,
 
-        job_type: "hs_boys_2026",
+        use_scheduled_events_iterator_query,
+        use_wrestler_list_iterator_query,
 
-        seed_limit: 10,          // 👈 only seed 10 tasks; set to 0 to eliminate limit
+        job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-        reset_pending: true,   // if true, sets DONE/FAILED back to PENDING
-
+        seed_limit: 0,          // 👈 only seed 10 tasks; set to 0 to eliminate limit
+        reset_pending: true,   // if true, sets DONE/FAILED back to PcENDING
         time_bucket: format_ymd(now_mtn),           // daily MTN bucket
-        // time_bucket: format_ymd_hour(now_mtn),   // hourly MTN bucket
-
+        // time_bucket: format_ymd_hour(now_mtn),   // hourly MTN buket
         prune_keep_last_n: 3,
     });
-
 
     console.log(
         color_text(
@@ -161,7 +172,7 @@ async function run_step_3() {
    invoke orchestrator
 --------------------------------------------------*/
 
-await run_step_3();
+export { main as step_3_get_wrestler_match_history_v2 };
 
 
 

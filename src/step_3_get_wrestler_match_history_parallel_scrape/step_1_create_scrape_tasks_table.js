@@ -16,8 +16,8 @@ async function main() {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
       -- ✅ isolates separate scheduled jobs / scopes / runs
-      task_set_id VARCHAR(64) NOT NULL,
-      job_type VARCHAR(32) NOT NULL DEFAULT 'list',
+      task_set_id VARCHAR(255) NOT NULL,
+      job_type VARCHAR(255) NOT NULL DEFAULT 'list',
 
       wrestling_season VARCHAR(32) NOT NULL,
       track_wrestling_category VARCHAR(64) NOT NULL,

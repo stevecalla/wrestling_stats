@@ -36,6 +36,7 @@ export async function count_rows_in_db_wrestler_links(
  * Async generator: yields { i, url } without loading everything into memory.
  * Uses LIMIT/OFFSET in small batches for stable, low-memory iteration.
  */
+
 export async function* iter_name_links_from_db({
   start_at = 0,
   limit = Infinity,           // same semantic as CSV version
@@ -63,7 +64,6 @@ export async function* iter_name_links_from_db({
         AND track_wrestling_category = "${track_wrestling_category}"
         AND wrestling_season = "${wrestling_season}"
         AND gender = "${gender}"
-        AND onthemat_is_name_match = 1
         ${sql_where_filter_state_qualifier}
         ${sql_where_filter_onthemat_ranking_list}
         ${sql_team_id_list}

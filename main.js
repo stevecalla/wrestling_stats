@@ -14,6 +14,8 @@ import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.j
 import { step_2_get_team_schedule } from "./src/step_2_get_team_schedule.js";
 
 import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_match_history.js";
+import { step_3_get_wrestler_match_history_v2 } from "./src/step_3_get_wrestler_match_history_v2.js";
+
 import { step_4_create_wrestler_match_history_data } from "./src/step_4_create_wrestler_match_history_metrics.js";
 
 import { step_5_create_team_division_data } from "./src/step_5_create_team_division_data.js";
@@ -56,40 +58,41 @@ const step_flags = {
   step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1:  true,  // 📄 get wrestler list
+  step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  true, // get team schedule
+  step_2:  false, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
-  step_3:  true,  // 🏟️ get match history
-  step_4:  true, // 📄 create match history metrics
+  step_3:  false,  // 🏟️ get match history
+  step_3_v2:  true,  // 🏟️ get match history
+  step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5:  true, // create team division
-  step_6:  true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7:  true, // append team division to match history metrics
-  step_8:  true, // append team division to wrestler list
+  step_5:  false, // create team division
+  step_6:  false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7:  false, // append team division to match history metrics
+  step_8:  false, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9:  true, // create 2024-25 state qualifier list
-  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: true, // append state qualifier to match history metrics
-  step_12: true, // append state qualifier to wrestler list
+  step_9:  false, // create 2024-25 state qualifier list
+  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: false, // append state qualifier to match history metrics
+  step_12: false, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
-  step_15: true, // append ONTHEMAT rankings to to match history metrics
+  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: false, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_17: true, // load data into Google cloud / bigquery
+  step_17: false, // load data into Google cloud / bigquery
 
   // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: true,  // 🧹 transfer tables between windos & mac
+  step_18: false,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
@@ -171,7 +174,7 @@ const hs_girls_2026 = {
 // 🎨 HELPERS
 // ====================================================
 const step_icons = {
-  0:"0️⃣",1:"1️⃣",2:"2️⃣",3:"3️⃣",4:"4️⃣",
+  0:"0️⃣",1:"1️⃣",2:"2️⃣",3:"3️⃣",3_2:"3️⃣_2️⃣",4:"4️⃣",
   5:"5️⃣",6:"6️⃣",7:"7️⃣",8:"8️⃣",9:"9️⃣",
   10:"1️⃣0️⃣",11:"1️⃣1️⃣",12:"1️⃣2️⃣",13:"1️⃣3️⃣",14:"1️⃣4️⃣",
   15:"1️⃣5️⃣",16:"1️⃣6️⃣",17:"1️⃣7️⃣",18:"1️⃣8️⃣",19:"1️⃣9️⃣"
@@ -366,6 +369,41 @@ async function main(config) {
 
       log_step_success(3, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
     } else log_step_skip(3, "Match history");
+
+    if (step_flags.step_3_v2) {
+      const start = Date.now();
+
+      const is_test = test_flags.step_3_v2_is_test;
+      const limit = is_test ? config.matches_page_limit_test : config.matches_page_limit_full;
+      const loop_start = config.step_3_v2_loop_start;
+
+      log_step_start(
+        3_2,
+        `Scraping match history (limit=${limit}, step_3_v2_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
+      );
+
+      await step_3_get_wrestler_match_history_v2(
+        config.url_home_page,
+        config.url_login_page,
+        limit,
+        loop_start,
+        config.wrestling_season,
+        config.track_wrestling_category,
+        config.gender,
+        config.sql_where_filter_state_qualifier,
+        config.sql_where_filter_onthemat_ranking_list,
+        config.sql_team_id_list,
+        config.sql_wrestler_id_list,
+        ctx.page,
+        ctx.browser,
+        ctx.context,
+        ctx.paths.match_csv,
+        config.use_scheduled_events_iterator_query,
+        config.use_wrestler_list_iterator_query,
+      );
+
+      log_step_success(3_2, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
+    } else log_step_skip(3_2, "Match history");
 
     // === STEP 4  CREATE MATCH HISTORY METRICS ===
     if (step_flags.step_4) {
