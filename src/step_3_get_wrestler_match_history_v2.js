@@ -5,9 +5,13 @@
 //   STEP 2 → seed tasks
 //   STEP 4 → run parallel workers (which call STEP 3 workers internally)
 
+import { step_0_launch_chrome_developer_parallel_scrape } from "./step_3_get_wrestler_match_history_parallel_scrape/step_0_launch_chrome_developer_parallel_scrape.js";
+
 import { step_1_create_scrape_tasks_table } from "./step_3_get_wrestler_match_history_parallel_scrape/step_1_create_scrape_tasks_table.js";
 
 import { step_2_seed_tasks } from "./step_3_get_wrestler_match_history_parallel_scrape/step_2_insert_seed_tasks.js";
+
+import { step_3_get_wrestler_match_history_scrape } from "./step_3_get_wrestler_match_history_parallel_scrape/step_3_get_wrestler_match_history_scrape.js";
 
 // import { step_4_run_workers } from "./step_3_get_wrestler_match_history_parallel_scrape/step_4_run_workers.js";
 
@@ -63,15 +67,13 @@ export async function main(
     sql_team_id_list,
     sql_wrestler_id_list,
 
-    page,
-    browser,
-    context,
-
     file_path,
 
     use_scheduled_events_iterator_query = false,
     use_wrestler_list_iterator_query = true
 ) {
+    
+    console.log('********** 2', file_path);
     // -----------------------------------------------
     // STEP 1: ensure scrape task table exists
     // -----------------------------------------------
@@ -98,7 +100,7 @@ export async function main(
 
         job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-        seed_limit: 0,          // 👈 only seed 10 tasks; set to 0 to eliminate limit
+        seed_limit: 10,          // 👈 only seed 10 tasks; set to 0 to eliminate limit
         reset_pending: true,   // if true, sets DONE/FAILED back to PcENDING
         time_bucket: format_ymd(now_mtn),           // daily MTN bucket
         // time_bucket: format_ymd_hour(now_mtn),   // hourly MTN buket
@@ -110,6 +112,35 @@ export async function main(
             `\n📌 Step_3 task_set_id = ${task_set_id}`,
             "cyan"
         )
+    );
+
+    // -----------------------------------------------
+    // STEP 2: open chrome
+    // -----------------------------------------------
+    const port_list = [9223, 9224, 9225, 9226];
+    const { browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(url_home_page, port_list[0]);
+
+    // -----------------------------------------------
+    // STEP 3: get match history data
+    // -----------------------------------------------
+    await step_3_get_wrestler_match_history_scrape(
+        url_home_page,
+        url_login_page,
+        matches_page_limit,                         
+        loop_start,                                
+
+        wrestling_season,                  
+        track_wrestling_category, 
+        gender,
+
+        page,
+        browser,
+        context,
+
+        file_path,
+
+        task_set_id,
+        port_list[0]
     );
 
     // -----------------------------------------------

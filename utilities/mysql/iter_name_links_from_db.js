@@ -233,3 +233,63 @@ export async function* iter_name_links_based_on_event_schedule({
     offset += rows.length;
   }
 }
+
+
+
+export async function count_rows_in_db_scrape_task(
+    task_set_id
+ ) {
+  const pool = await get_pool();
+  const [rows] = await pool.query(
+    `
+      SELECT 
+        COUNT(*) AS cnt 
+      FROM wrestler_match_history_scrape_tasks
+      WHERE 1 = 1
+        AND task_set_id = "${task_set_id}"
+      ;
+    `
+  );
+  return Number(rows?.[0]?.cnt || 0);
+}
+
+export async function* iter_name_links_based_on_scrape_task({
+  start_at = 0,
+  limit = Infinity,           // same semantic as CSV version
+  batch_size = 500,           // tune as desired
+  task_set_id
+} = {}) {
+  const pool = await get_pool();
+
+  let yielded = 0;
+  let offset = start_at;
+
+  const link_query = `
+      SELECT 
+        * 
+      FROM wrestler_match_history_scrape_tasks
+      WHERE 1 = 1
+        AND task_set_id = "${task_set_id}"
+      LIMIT ? OFFSET ?
+      ;
+  `;
+
+  console.log('log inside iter_name_links_from_db', link_query);
+
+  while (yielded < limit) {
+    const to_fetch = Math.min(batch_size, limit - yielded);
+    const [rows] = await pool.query(link_query, [to_fetch, offset]);
+
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      const url = row.name_link;
+      const i = yielded + 1; // 1-based like your CSV logs
+      yield { i, url };
+      yielded += 1;
+      if (yielded >= limit) break;
+    }
+
+    offset += rows.length;
+  }
+}

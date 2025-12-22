@@ -55,7 +55,7 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  true,  // 🚀 launch chrome
+  step_0:  false,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
   step_1:  false,  // 📄 get wrestler list
@@ -382,22 +382,25 @@ async function main(config) {
         `Scraping match history (limit=${limit}, step_3_v2_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
       );
 
+      console.log('********** 1', ctx.paths.match_csv);
+
       await step_3_get_wrestler_match_history_v2(
         config.url_home_page,
         config.url_login_page,
         limit,
         loop_start,
+
         config.wrestling_season,
         config.track_wrestling_category,
         config.gender,
+        
         config.sql_where_filter_state_qualifier,
         config.sql_where_filter_onthemat_ranking_list,
         config.sql_team_id_list,
         config.sql_wrestler_id_list,
-        ctx.page,
-        ctx.browser,
-        ctx.context,
+        
         ctx.paths.match_csv,
+
         config.use_scheduled_events_iterator_query,
         config.use_wrestler_list_iterator_query,
       );
