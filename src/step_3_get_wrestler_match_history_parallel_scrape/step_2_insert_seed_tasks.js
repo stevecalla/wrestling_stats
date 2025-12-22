@@ -186,10 +186,7 @@ async function main({
     return "list";
   })();
 
-  const select_query =
-    mode === "events"
-      ? 
-      `
+  const select_query = mode === "events" ? `
         -- retrieves events from yesterday & today
         WITH recent_events AS (
           SELECT 
@@ -239,9 +236,7 @@ async function main({
           AND w.name_link IS NOT NULL AND w.name_link <> ''
         -- GROUP BY 1, 2
         ORDER BY w.wrestler_id, w.name_link
-      `
-      : 
-      `
+` : `
         SELECT
           ? AS task_set_id,
           ? AS job_type,
