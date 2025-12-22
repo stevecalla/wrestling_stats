@@ -382,8 +382,6 @@ async function main(config) {
         `Scraping match history (limit=${limit}, step_3_v2_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
       );
 
-      console.log('********** 1', ctx.paths.match_csv);
-
       await step_3_get_wrestler_match_history_v2(
         config.url_home_page,
         config.url_login_page,
@@ -398,7 +396,7 @@ async function main(config) {
         config.sql_where_filter_onthemat_ranking_list,
         config.sql_team_id_list,
         config.sql_wrestler_id_list,
-        
+
         ctx.paths.match_csv,
 
         config.use_scheduled_events_iterator_query,
