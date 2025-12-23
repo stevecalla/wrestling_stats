@@ -1,14 +1,14 @@
 // src/utilities/chrome_dev_tools/launch_chrome_win_parallel_scrape.js
 // (Windows-only, ESM)
 //
-// ✅ UPDATE (Unique user-data-dir per worker/port):
-// - Instead of using a shared USER_DATA_DIR_DEFAULT for all workers,
-//   we create a per-port subdirectory: <base>/port_<PORT>
-// - This prevents Chrome profile locking conflicts when running multiple
-//   parallel Chrome instances (9223, 9224, ...)
+// ✅ Stable parallel Chrome launcher for CDP workers.
+// - Per-port user-data-dir to avoid profile lock conflicts
+// - Extra stability flags (GPU/background throttling, etc.)
+// - Optional per-port disk cache dir
+// - DevTools readiness checks (json/version)
+// - Best-effort open tab via /json/new
 
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
@@ -38,7 +38,6 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function resolve_powershell_exe_candidates() {
   const system_root = process.env.SystemRoot || "C:\\Windows";
 
-  // Windows PowerShell
   const win_ps = path.join(
     system_root,
     "System32",
@@ -47,7 +46,6 @@ function resolve_powershell_exe_candidates() {
     "powershell.exe"
   );
 
-  // PowerShell 7 common locations
   const pf = process.env.ProgramFiles || "C:\\Program Files";
   const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
   const pwsh_1 = path.join(pf, "PowerShell", "7", "pwsh.exe");
@@ -62,8 +60,7 @@ function pick_first_existing_path(candidates) {
     if (c.endsWith(".exe")) {
       if (exists(c)) return c;
     } else {
-      // bare name "powershell.exe" / "pwsh.exe" — may resolve via PATH
-      return c;
+      return c; // bare name via PATH
     }
   }
   return "powershell.exe";
@@ -79,13 +76,13 @@ async function fetch_ok(url) {
 }
 
 async function is_devtools_up(current_port) {
-  return fetch_ok(`http://localhost:${current_port}/json/version`);
+  return fetch_ok(`http://127.0.0.1:${current_port}/json/version`);
 }
 
 async function open_new_tab_via_devtools(url, current_port, opts = {}) {
   const { retries = 5, delay_ms = 250, debug = false } = opts;
 
-  const endpoint = `http://localhost:${current_port}/json/new?${encodeURIComponent(
+  const endpoint = `http://127.0.0.1:${current_port}/json/new?${encodeURIComponent(
     url
   )}`;
 
@@ -97,10 +94,7 @@ async function open_new_tab_via_devtools(url, current_port, opts = {}) {
       if (debug && i === retries - 1) {
         const body = await res.text().catch(() => "");
         console.warn(
-          `[WARN] /json/new failed status=${res.status} body=${body.slice(
-            0,
-            250
-          )}`
+          `[WARN] /json/new failed status=${res.status} body=${body.slice(0, 250)}`
         );
       }
     } catch (e) {
@@ -133,35 +127,33 @@ function ensure_writable_dir(preferred, fallback) {
   );
 }
 
-// ✅ NEW: make a per-port profile directory to avoid lock conflicts
 function ensure_dir(p) {
   fs.mkdirSync(p, { recursive: true });
   return p;
 }
 
-// ✅ NEW: use a stable per-port subfolder so multiple Chromes can run in parallel
 function resolve_user_data_dir_per_port(base_dir, port) {
   const safe_port = String(port || "").trim() || "noport";
   return ensure_dir(path.join(base_dir, `port_${safe_port}`));
 }
 
+function resolve_cache_dir_per_port(base_dir, port) {
+  const safe_port = String(port || "").trim() || "noport";
+  return ensure_dir(path.join(base_dir, `cache_${safe_port}`));
+}
+
 function launch_via_powershell(bin, args_arr) {
   const ps_exe = pick_first_existing_path(resolve_powershell_exe_candidates());
-
-  // Build a single argument string for Chrome (keeps quoting simple)
   const args_str = args_arr.join(" ");
 
-  // IMPORTANT: surface errors — do not fail silently
   const ps_args = [
     "-NoProfile",
     "-Command",
-    `Start-Process ${q(bin)} -ArgumentList ${q(
-      args_str
-    )} -WindowStyle Normal`,
+    `Start-Process ${q(bin)} -ArgumentList ${q(args_str)} -WindowStyle Normal`,
   ];
 
   const child = spawn(ps_exe, ps_args, {
-    stdio: ["ignore", "ignore", "pipe"], // keep stderr
+    stdio: ["ignore", "ignore", "pipe"],
     detached: true,
     shell: false,
   });
@@ -215,37 +207,48 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
     throw new Error("Chrome binary not found. Set CHROME_PATH to chrome.exe.");
   }
 
+  // Prefer user home base dir, fallback to C:\tmp
   const fallback_dir = path.join("C:", "tmp", "chrome-tw-user-data");
 
-  // 1) ensure base dir is writable
-  const user_data_dir_base = ensure_writable_dir(
-    USER_DATA_DIR_DEFAULT,
-    fallback_dir
-  );
-
-  // 2) ✅ derive a per-port profile directory under the base
+  const user_data_dir_base = ensure_writable_dir(USER_DATA_DIR_DEFAULT, fallback_dir);
   const user_data_dir = resolve_user_data_dir_per_port(user_data_dir_base, port);
+
+  // Optional: separate disk cache to reduce I/O contention
+  const cache_base = ensure_writable_dir(path.join("C:", "tmp", "chrome-tw-cache"), null);
+  const disk_cache_dir = resolve_cache_dir_per_port(cache_base, port);
 
   console.log(`[INFO] user_data_dir_base=${user_data_dir_base}`);
   console.log(`[INFO] user_data_dir=${user_data_dir}`);
+  console.log(`[INFO] disk_cache_dir=${disk_cache_dir}`);
 
   const open_url = URL || target_url;
 
-  // Keep args as an array for direct spawn
   const base_args_arr = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${user_data_dir}`,
+    `--disk-cache-dir=${disk_cache_dir}`,
 
     // reduce profile/first-run noise
     `--no-first-run`,
     `--no-default-browser-check`,
 
-    // `--new-window`,
+    // stability flags (Windows parallel automation)
+    `--disable-gpu`,
+    `--disable-software-rasterizer`,
+    `--disable-background-timer-throttling`,
+    `--disable-backgrounding-occluded-windows`,
+    `--disable-renderer-backgrounding`,
+    `--disable-features=TranslateUI`,
+    `--disable-popup-blocking`,
+    `--disable-notifications`,
+    `--mute-audio`,
+
+    // good hygiene
+    `--new-window`,
     `--headless=new`,
-    open_url, // include URL as arg so Chrome opens a visible tab
+    open_url,
   ];
 
-  // If DevTools already up: try to open a tab (optional) and return
   if (await is_devtools_up(port)) {
     console.log(`[OK] DevTools already listening on ${port}.`);
     const ok = await open_new_tab_via_devtools(open_url, port, {
@@ -253,73 +256,51 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
       delay_ms: 250,
       debug: false,
     });
-    console.log(
-      ok
-        ? "[OK] New tab opened via /json/new"
-        : "[WARN] /json/new failed; continuing (Playwright can open a page)."
-    );
-    console.log(`[TIP] DevTools endpoint: http://localhost:${port}/json/version`);
+    console.log(ok ? "[OK] New tab opened via /json/new" : "[WARN] /json/new failed.");
+    console.log(`[TIP] DevTools endpoint: http://127.0.0.1:${port}/json/version`);
     return;
   }
 
-  // 1) Try PowerShell
   console.log(`[INFO] Launch via PowerShell…`);
   launch_via_powershell(chrome_bin, base_args_arr);
 
-  // Wait up to 10s for DevTools
-  const ps_deadline = Date.now() + 10000;
+  const ps_deadline = Date.now() + 12000;
   while (Date.now() < ps_deadline) {
     if (await is_devtools_up(port)) {
       console.log(`[OK] DevTools is listening on ${port} (PS).`);
-
-      // /json/new is best-effort only
-      const ok = await open_new_tab_via_devtools(open_url, port, {
+      await open_new_tab_via_devtools(open_url, port, {
         retries: 5,
         delay_ms: 250,
         debug: false,
-      });
-      console.log(
-        ok
-          ? "[OK] New tab opened via /json/new"
-          : "[WARN] /json/new failed; a tab should already be open (or Playwright will create one)."
-      );
-
-      console.log(`[TIP] http://localhost:${port}/json/version`);
+      }).catch(() => {});
+      console.log(`[TIP] http://127.0.0.1:${port}/json/version`);
       return;
     }
     await wait(250);
   }
 
-  // 2) Fallback: direct spawn
   console.log(`[WARN] PowerShell launch didn’t surface DevTools. Trying direct spawn…`);
   launch_direct(chrome_bin, base_args_arr);
 
-  const direct_deadline = Date.now() + 12000;
+  const direct_deadline = Date.now() + 15000;
   while (Date.now() < direct_deadline) {
     if (await is_devtools_up(port)) {
       console.log(`[OK] DevTools is listening on ${port} (direct).`);
-
-      const ok = await open_new_tab_via_devtools(open_url, port, {
+      await open_new_tab_via_devtools(open_url, port, {
         retries: 5,
         delay_ms: 250,
         debug: false,
-      });
-      console.log(
-        ok
-          ? "[OK] New tab opened via /json/new"
-          : "[WARN] /json/new failed; a tab should already be open (or Playwright will create one)."
-      );
-
-      console.log(`[TIP] http://localhost:${port}/json/version`);
+      }).catch(() => {});
+      console.log(`[TIP] http://127.0.0.1:${port}/json/version`);
       return;
     }
     await wait(300);
   }
 
-  // If we get here, we never detected DevTools
   throw new Error(
-    `[ERR] Couldn’t detect DevTools on ${port}. Close all Chrome windows, or try a different port:\n` +
-      `    set CHROME_DEVTOOLS_PORT=9333 && node launch_chrome_win_parallel_scrape.js`
+    `[ERR] Couldn’t detect DevTools on ${port}.\n` +
+      `Close all Chrome instances OR pick a different port.\n` +
+      `Tip: make sure no regular Chrome is using this profile dir.\n`
   );
 }
 

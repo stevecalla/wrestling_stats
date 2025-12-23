@@ -252,7 +252,6 @@ async function main({
   url_home_page = "https://www.trackwrestling.com",
   url_login_page = "https://www.trackwrestling.com/seasons/index.jsp",
 
-  slow_mo_ms = 0,
   navigation_timeout_ms = 30000,
 
   // ✅ per-worker port (required in your newer mode)

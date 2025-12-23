@@ -84,7 +84,6 @@ async function main({
         url_home_page,
         url_login_page,
 
-        slow_mo_ms,
         navigation_timeout_ms,
 
         file_path,
