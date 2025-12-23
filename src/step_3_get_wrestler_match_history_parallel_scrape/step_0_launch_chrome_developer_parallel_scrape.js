@@ -21,6 +21,23 @@ async function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function wait_for_cdp_ws(connect_url, max_wait_ms = 15000) {
+  const deadline = Date.now() + max_wait_ms;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${connect_url}/json/version`, { cache: "no-store" });
+      if (res.ok) {
+        const j = await res.json().catch(() => null);
+        if (j?.webSocketDebuggerUrl) return true;
+      }
+    } catch { }
+    await wait(250);
+  }
+
+  return false;
+}
+
 async function fetch_ok(url) {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -65,13 +82,18 @@ function looks_like_cdp_zombie_error(e) {
 }
 
 async function connect_and_prepare_page(URL, CONNECT_URL, LOAD_TIMEOUT_MS) {
-  const browser = await chromium.connectOverCDP(CONNECT_URL);
+  const ok = await wait_for_cdp_ws(CONNECT_URL, 15000);
+  if (!ok) {
+    throw new Error(`CDP preflight failed: webSocketDebuggerUrl not ready at ${CONNECT_URL}`);
+  }
+
+  const browser = await chromium.connectOverCDP(CONNECT_URL, { timeout: 90000 });
 
   const contexts = browser.contexts();
   if (!contexts.length) {
     try {
       await browser.close();
-    } catch {}
+    } catch { }
     throw new Error("No contexts from CDP connection.");
   }
 
@@ -87,7 +109,7 @@ async function connect_and_prepare_page(URL, CONNECT_URL, LOAD_TIMEOUT_MS) {
   // CDP health check: do something that forces a real session interaction
   try {
     if (URL) {
-      await page.bringToFront().catch(() => {});
+      await page.bringToFront().catch(() => { });
       await page.goto(URL, { waitUntil: "commit", timeout: 15000 });
       await page.waitForTimeout(150);
     } else {
@@ -97,7 +119,7 @@ async function connect_and_prepare_page(URL, CONNECT_URL, LOAD_TIMEOUT_MS) {
     const msg = String(e?.message || e);
     try {
       await browser.close();
-    } catch {}
+    } catch { }
     const err = new Error(`CDP health check failed: ${msg}`);
     err.code = "E_CDP_ZOMBIE";
     throw err;
@@ -174,7 +196,17 @@ async function main(
       await wait(500);
     }
 
-    return await connect_with_retries(URL, CONNECT_URL, LOAD_TIMEOUT_MS, 2);
+    try {
+      return await connect_with_retries(URL, CONNECT_URL, LOAD_TIMEOUT_MS, 3);
+    } catch (e) {
+      console.warn(`[WARN] connect failed on existing DevTools; force_relaunch once: ${e?.message || e}`);
+      // best-effort relaunch (will create a new Chrome instance/profile-per-port)
+      if (platform === "win32") await launch_chrome_win(URL, USER_DATA_DIR_DEFAULT, PORT);
+      else if (platform === "linux") await launch_chrome_linux(URL, USER_DATA_DIR_DEFAULT, PORT, { headless: true });
+      else if (platform === "darwin") await launch_chrome_mac(URL, USER_DATA_DIR_DEFAULT, PORT);
+
+      return await connect_with_retries(URL, CONNECT_URL, LOAD_TIMEOUT_MS, 3);
+    }
   }
 
   // Otherwise launch best-effort via OS helper

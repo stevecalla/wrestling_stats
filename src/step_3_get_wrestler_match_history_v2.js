@@ -107,7 +107,7 @@ export async function main(
     // -----------------------------------------------
     // STEP 4: run parallel workers (each worker uses a port from port_list)
     // -----------------------------------------------
-    const port_list = [9223, 9224, 9225, 9226];
+    const port_list = [9223, 9224, 9225, 9226, 9227];
 
     const t0 = Date.now(); // ⏱ start timer
 
@@ -126,7 +126,7 @@ export async function main(
         // slow_mo_ms: 10, // note: test
 
         // optional parallelism
-        workers: Math.min(1, port_list.length), // 👈 bump to 4 when ready
+        workers: Math.min(3, port_list.length), // 👈 bump to 4 when ready
         batch_size: 5,
 
         // safety / retry behavior
@@ -134,7 +134,7 @@ export async function main(
         lock_ttl_minutes: 30,
 
         // worker behavior
-        idle_sleep_ms: 1500,
+        idle_sleep_ms: 500,
         log_every_batches: 5,
 
         // scraper behavior (passed through to workers/sessions)
@@ -150,7 +150,7 @@ export async function main(
 
         file_path,
 
-        slow_mo_ms: 50,
+        slow_mo_ms: 0,
         navigation_timeout_ms: 30000,
 
         // ✅ NEW: ports for per-worker chrome sessions

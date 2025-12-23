@@ -154,7 +154,7 @@ async function claim_tasks({
   } catch (err) {
     try {
       await conn.rollback();
-    } catch {}
+    } catch { }
     throw err;
   } finally {
     conn.release();
@@ -275,13 +275,13 @@ async function main({
   console.log(
     color_text(
       `\n🏃 Step_3 worker starting\n` +
-        `   worker_id=${worker_id}\n` +
-        `   task_set_id=${task_set_id}\n` +
-        `   port=${port}\n` +
-        `   batch_size=${batch_size}\n` +
-        `   max_attempts=${max_attempts}\n` +
-        `   lock_ttl_minutes=${lock_ttl_minutes}\n` +
-        `   total_in_task_set=${total_in_task_set}\n`,
+      `   worker_id=${worker_id}\n` +
+      `   task_set_id=${task_set_id}\n` +
+      `   port=${port}\n` +
+      `   batch_size=${batch_size}\n` +
+      `   max_attempts=${max_attempts}\n` +
+      `   lock_ttl_minutes=${lock_ttl_minutes}\n` +
+      `   total_in_task_set=${total_in_task_set}\n`,
       "cyan"
     )
   );
@@ -319,16 +319,27 @@ async function main({
 
     console.log(color_text(`🧩 [${worker_id}] launching/attaching chrome on port=${port}`, "cyan"));
 
-    ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
-      url_home_page,
-      port,
-      { force_relaunch: false }
-    ));
+    try {
+      ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
+        url_home_page,
+        port,
+        { force_relaunch: false }
+      ));
+    } catch (e) {
+      const msg = String(e?.message || e);
+      console.warn(color_text(`⚠️ [${worker_id}] CDP connect failed; force_relaunch retry: ${msg}`, "yellow"));
+
+      ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
+        url_home_page,
+        port,
+        { force_relaunch: true }
+      ));
+    }
 
     try {
       page.setDefaultTimeout?.(navigation_timeout_ms);
       page.setDefaultNavigationTimeout?.(navigation_timeout_ms);
-    } catch {}
+    } catch { }
 
     return { browser, page, context };
   }
@@ -340,7 +351,7 @@ async function main({
       console.log(color_text(`🧹 [${worker_id}] closing browser session (${reason})`, "yellow"));
       try {
         await browser.close(); // closes CDP connection
-      } catch {}
+      } catch { }
       browser = null;
       page = null;
       context = null;
@@ -367,7 +378,7 @@ async function main({
         console.log(
           color_text(
             `\n⏹️  Worker ${worker_id} stopped early\n` +
-              `   processed=${processed}, done=${done}, failed=${failed}\n`,
+            `   processed=${processed}, done=${done}, failed=${failed}\n`,
             "yellow"
           )
         );
@@ -403,7 +414,7 @@ async function main({
           console.log(
             color_text(
               `\n✅ Worker ${worker_id} done — no PENDING/LOCKED remaining\n` +
-                `   processed=${processed}, done=${done}, failed=${failed}\n`,
+              `   processed=${processed}, done=${done}, failed=${failed}\n`,
               "green"
             )
           );
@@ -465,7 +476,7 @@ async function main({
             console.warn(color_text(`♻️ [${worker_id}] scraper session died; restarting session`, "yellow"));
             try {
               await browser?.close?.();
-            } catch {}
+            } catch { }
             browser = null;
             page = null;
             context = null;
@@ -488,7 +499,7 @@ async function main({
         console.log(
           color_text(
             `📦 worker=${worker_id} batches=${batch_i} processed=${processed} done=${done} failed=${failed} ` +
-              `| counts=${JSON.stringify(counts)}`,
+            `| counts=${JSON.stringify(counts)}`,
             "cyan"
           )
         );

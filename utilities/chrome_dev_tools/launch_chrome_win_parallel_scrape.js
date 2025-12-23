@@ -66,17 +66,20 @@ function pick_first_existing_path(candidates) {
   return "powershell.exe";
 }
 
-async function fetch_ok(url) {
+async function fetch_json(url) {
   try {
     const res = await fetch(url, { cache: "no-store" });
-    return res.ok;
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function is_devtools_up(current_port) {
-  return fetch_ok(`http://127.0.0.1:${current_port}/json/version`);
+async function is_devtools_ready(port) {
+  const j = await fetch_json(`http://localhost:${port}/json/version`);
+  // require the field Playwright actually needs
+  return Boolean(j && (j.webSocketDebuggerUrl || j.webSocketDebuggerUrl === ""));
 }
 
 async function open_new_tab_via_devtools(url, current_port, opts = {}) {
@@ -249,7 +252,7 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
     open_url,
   ];
 
-  if (await is_devtools_up(port)) {
+  if (await is_devtools_ready(port)) {
     console.log(`[OK] DevTools already listening on ${port}.`);
     const ok = await open_new_tab_via_devtools(open_url, port, {
       retries: 3,
@@ -264,9 +267,9 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
   console.log(`[INFO] Launch via PowerShell…`);
   launch_via_powershell(chrome_bin, base_args_arr);
 
-  const ps_deadline = Date.now() + 12000;
+  const ps_deadline = Date.now() + 20000;
   while (Date.now() < ps_deadline) {
-    if (await is_devtools_up(port)) {
+    if (await is_devtools_ready(port)) {
       console.log(`[OK] DevTools is listening on ${port} (PS).`);
       await open_new_tab_via_devtools(open_url, port, {
         retries: 5,
@@ -282,9 +285,9 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
   console.log(`[WARN] PowerShell launch didn’t surface DevTools. Trying direct spawn…`);
   launch_direct(chrome_bin, base_args_arr);
 
-  const direct_deadline = Date.now() + 15000;
+  const direct_deadline = Date.now() + 25000;
   while (Date.now() < direct_deadline) {
-    if (await is_devtools_up(port)) {
+    if (await is_devtools_ready(port)) {
       console.log(`[OK] DevTools is listening on ${port} (direct).`);
       await open_new_tab_via_devtools(open_url, port, {
         retries: 5,
