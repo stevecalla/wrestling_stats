@@ -1,4 +1,4 @@
-// src/step_3_get_wrestler_match_history_parallel_scrape/step_3_parallel_scrape_worker.js
+// src/step_3_get_wrestler_match_history_parallel_scrape/step_4_parallel_scrape_worker.js
 //
 // Step 3: Worker that claims tasks (SKIP LOCKED) and processes them safely in parallel.
 //
@@ -7,21 +7,16 @@
 // ✅ attempt_count increment on claim
 // ✅ DONE / FAILED with last_error
 // ✅ writes BOTH MTN + UTC updated timestamps
-//
-// 🔧 UPDATE: integrates real scraping logic via per-worker Playwright session (Option A)
-// 🔧 UPDATE: graceful shutdown on Ctrl+C via AbortSignal:
-//    - stop claiming new tasks
-//    - close Playwright session
-//    - optionally release locks for THIS worker (keeps TTL safety)
 
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
 import { color_text } from "../../utilities/console_logs/console_colors.js";
 import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
-import {
-  create_scraper_session,
-  is_target_closed_error,
-} from "./step_3_scrape_match_history_task.js";
+import { step_0_launch_chrome_developer_parallel_scrape } from "./step_0_launch_chrome_developer_parallel_scrape.js";
+import { step_3_get_wrestler_match_history_scrape } from "./step_3_get_wrestler_match_history_scrape.js";
+
+// ✅ NEW: get total count for nicer progress logs
+import { count_rows_in_db_scrape_task } from "../../utilities/mysql/iter_name_links_from_db.js";
 
 /* -------------------------------------------------
 helpers
@@ -59,6 +54,19 @@ function is_abort_error(err) {
     msg.includes("aborted") ||
     msg.includes("AbortError") ||
     msg.includes("The operation was aborted")
+  );
+}
+
+function is_target_closed_error(err) {
+  const msg = String(err?.message || "");
+  return (
+    err?.code === "E_TARGET_CLOSED" ||
+    msg.includes("Target closed") ||
+    msg.includes("Target page, context or browser has been closed") ||
+    msg.includes("CDP connection closed") ||
+    msg.includes("WebSocket is not open") ||
+    msg.includes("Execution context was destroyed") ||
+    msg.includes("Frame was detached")
   );
 }
 
@@ -203,7 +211,6 @@ async function get_task_counts({ pool, task_set_id } = {}) {
   return out;
 }
 
-// ✅ optional: release locks held by THIS worker on shutdown
 async function release_my_locks({ pool, task_set_id, worker_id } = {}) {
   const { updated_at_utc, updated_at_mtn } = build_batch_timestamps();
 
@@ -241,33 +248,41 @@ async function main({
   idle_sleep_ms = 1500,
   log_every_batches = 5,
 
-  // scraper behavior (passed to step_3_run_worker)
+  // scraper behavior
   url_home_page = "https://www.trackwrestling.com",
   url_login_page = "https://www.trackwrestling.com/seasons/index.jsp",
 
-  headless = false,
   slow_mo_ms = 0,
   navigation_timeout_ms = 30000,
 
-  // ✅ NEW: graceful stop signal
-  signal = null,
+  // ✅ per-worker port (required in your newer mode)
+  port = null,
 
-  // ✅ NEW: when stopping, release locks held by this worker (safe in single runner)
+  // passthrough
+  file_path = null,
+
+  // graceful stop
+  signal = null,
   release_locks_on_shutdown = true,
 } = {}) {
   if (!task_set_id) throw new Error("run_worker requires task_set_id");
+  if (!port) throw new Error("run_worker requires port");
 
   const pool = await get_pool();
+
+  // ✅ NEW: compute total once for better “X of Y” logs
+  const total_in_task_set = await count_rows_in_db_scrape_task(task_set_id);
 
   console.log(
     color_text(
       `\n🏃 Step_3 worker starting\n` +
         `   worker_id=${worker_id}\n` +
         `   task_set_id=${task_set_id}\n` +
+        `   port=${port}\n` +
         `   batch_size=${batch_size}\n` +
         `   max_attempts=${max_attempts}\n` +
         `   lock_ttl_minutes=${lock_ttl_minutes}\n` +
-        `   headless=${headless}\n`,
+        `   total_in_task_set=${total_in_task_set}\n`,
       "cyan"
     )
   );
@@ -293,51 +308,45 @@ async function main({
     }
   }
 
-  // per-worker scraper session (lazy init on first task)
-  let session = null;
-  let session_scope_key = null;
+  // per-worker browser session (reuse across tasks)
+  let browser = null;
+  let page = null;
+  let context = null;
 
-  async function ensure_session_for_task(t) {
-    const scope_key = `${t.wrestling_season}|${t.track_wrestling_category}|${t.gender}`;
-
-    if (session && session_scope_key === scope_key) return session;
-
-    if (session) {
-      console.log(color_text(`♻️ [${worker_id}] scope changed → restarting browser`, "yellow"));
-      await session.close().catch(() => {});
-      session = null;
-      session_scope_key = null;
+  async function ensure_session() {
+    if (browser && page && context && browser.isConnected?.() && !page.isClosed?.()) {
+      return { browser, page, context };
     }
 
-    session = await create_scraper_session({
-      worker_id,
-      url_home_page,
-      url_login_page,
-      wrestling_season: t.wrestling_season,
-      track_wrestling_category: t.track_wrestling_category,
-      gender: t.gender,
-      headless,
-      slow_mo_ms,
-      navigation_timeout_ms,
-    });
+    console.log(color_text(`🧩 [${worker_id}] launching/attaching chrome on port=${port}`, "cyan"));
 
-    session_scope_key = scope_key;
-    return session;
+    ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
+      url_home_page,
+      port,
+      { force_relaunch: false }
+    ));
+
+    try {
+      page.setDefaultTimeout?.(navigation_timeout_ms);
+      page.setDefaultNavigationTimeout?.(navigation_timeout_ms);
+    } catch {}
+
+    return { browser, page, context };
   }
 
   async function cleanup(reason = "cleanup") {
-    // Stop future work
     stop_requested = true;
 
-    // close browser/session
-    if (session) {
+    if (browser) {
       console.log(color_text(`🧹 [${worker_id}] closing browser session (${reason})`, "yellow"));
-      await session.close().catch(() => {});
-      session = null;
-      session_scope_key = null;
+      try {
+        await browser.close(); // closes CDP connection
+      } catch {}
+      browser = null;
+      page = null;
+      context = null;
     }
 
-    // optional: release locks this worker holds so tasks can be re-claimed
     if (release_locks_on_shutdown) {
       try {
         const released = await release_my_locks({ pool, task_set_id, worker_id });
@@ -345,7 +354,9 @@ async function main({
           console.log(color_text(`🔓 [${worker_id}] released locks: ${released}`, "yellow"));
         }
       } catch (e) {
-        console.warn(color_text(`⚠️ [${worker_id}] release locks failed: ${e?.message || e}`, "yellow"));
+        console.warn(
+          color_text(`⚠️ [${worker_id}] release locks failed: ${e?.message || e}`, "yellow")
+        );
       }
     }
   }
@@ -400,7 +411,6 @@ async function main({
           return { processed, done, failed, stopped: false };
         }
 
-        // sleep in small chunks so Ctrl+C abort is responsive
         const chunk = 250;
         let slept = 0;
         while (slept < idle_sleep_ms) {
@@ -415,28 +425,36 @@ async function main({
 
       for (const t of tasks) {
         processed += 1;
-
         if (stop_requested) break;
 
         try {
-          const s = await ensure_session_for_task(t);
+          const s = await ensure_session();
 
-          // 1) scrape
-          const rows = await s.scrape_one({ name_link: t.name_link });
+          await step_3_get_wrestler_match_history_scrape(
+            url_home_page,
+            url_login_page,
 
-          // 2) persist (delete snapshot + upsert)
-          await s.persist_one({
-            rows,
-            wrestling_season: t.wrestling_season,
-            track_wrestling_category: t.track_wrestling_category,
-            gender: t.gender,
-          });
+            1, // matches_page_limit: single task
+            0, // loop_start
 
-          // 3) mark done
+            t.wrestling_season,
+            t.track_wrestling_category,
+            t.gender,
+
+            s.page,
+            s.browser,
+            s.context,
+
+            file_path,
+
+            task_set_id,
+            port,
+            worker_id
+          );
+
           await mark_done({ pool, id: t.id });
           done += 1;
         } catch (err) {
-          // If we're stopping, don't convert mid-shutdown errors into FAILED if they are abort-ish
           if (stop_requested && (is_abort_error(err) || is_target_closed_error(err))) {
             console.log(color_text(`🛑 [${worker_id}] abort during task; exiting loop`, "yellow"));
             break;
@@ -445,12 +463,13 @@ async function main({
           const msg = stringify_err(err);
 
           if (is_target_closed_error(err)) {
-            console.warn(color_text(`♻️ [${worker_id}] scraper died; restarting session`, "yellow"));
-            if (session) {
-              await session.close().catch(() => {});
-              session = null;
-              session_scope_key = null;
-            }
+            console.warn(color_text(`♻️ [${worker_id}] scraper session died; restarting session`, "yellow"));
+            try {
+              await browser?.close?.();
+            } catch {}
+            browser = null;
+            page = null;
+            context = null;
           }
 
           await mark_failed({ pool, id: t.id, err_msg: msg });
@@ -481,4 +500,4 @@ async function main({
   }
 }
 
-export { main as step_3_run_worker };
+export { main as step_4_run_worker };

@@ -1,5 +1,11 @@
 // src/utilities/chrome_dev_tools/launch_chrome_win_parallel_scrape.js
 // (Windows-only, ESM)
+//
+// ✅ UPDATE (Unique user-data-dir per worker/port):
+// - Instead of using a shared USER_DATA_DIR_DEFAULT for all workers,
+//   we create a per-port subdirectory: <base>/port_<PORT>
+// - This prevents Chrome profile locking conflicts when running multiple
+//   parallel Chrome instances (9223, 9224, ...)
 
 import fs from "fs";
 import os from "os";
@@ -127,6 +133,18 @@ function ensure_writable_dir(preferred, fallback) {
   );
 }
 
+// ✅ NEW: make a per-port profile directory to avoid lock conflicts
+function ensure_dir(p) {
+  fs.mkdirSync(p, { recursive: true });
+  return p;
+}
+
+// ✅ NEW: use a stable per-port subfolder so multiple Chromes can run in parallel
+function resolve_user_data_dir_per_port(base_dir, port) {
+  const safe_port = String(port || "").trim() || "noport";
+  return ensure_dir(path.join(base_dir, `port_${safe_port}`));
+}
+
 function launch_via_powershell(bin, args_arr) {
   const ps_exe = pick_first_existing_path(resolve_powershell_exe_candidates());
 
@@ -198,7 +216,17 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
   }
 
   const fallback_dir = path.join("C:", "tmp", "chrome-tw-user-data");
-  const user_data_dir = ensure_writable_dir(USER_DATA_DIR_DEFAULT, fallback_dir);
+
+  // 1) ensure base dir is writable
+  const user_data_dir_base = ensure_writable_dir(
+    USER_DATA_DIR_DEFAULT,
+    fallback_dir
+  );
+
+  // 2) ✅ derive a per-port profile directory under the base
+  const user_data_dir = resolve_user_data_dir_per_port(user_data_dir_base, port);
+
+  console.log(`[INFO] user_data_dir_base=${user_data_dir_base}`);
   console.log(`[INFO] user_data_dir=${user_data_dir}`);
 
   const open_url = URL || target_url;
@@ -207,9 +235,13 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
   const base_args_arr = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${user_data_dir}`,
+
+    // reduce profile/first-run noise
     `--no-first-run`,
     `--no-default-browser-check`,
-    `--new-window`,
+
+    // `--new-window`,
+    `--headless=new`,
     open_url, // include URL as arg so Chrome opens a visible tab
   ];
 

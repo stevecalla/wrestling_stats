@@ -1,4 +1,21 @@
 // src/step_3_get_wrestler_match_history.js (ESM, snake_case)
+//
+// ✅ Update in this version:
+// - This module can now run in TWO modes:
+//   A) "external session" mode (backward compatible): you pass in page/browser/context
+//   B) "self-managed session" mode: if page/browser/context are not provided, it will
+//      wait for DevTools, launch/attach via step_0_launch_chrome_developer_parallel_scrape(url_home_page, port),
+//      login, scrape, and then close the CDP connection.
+//
+// This makes it usable from a parallel worker that only knows { port, task_set_id }.
+//
+//
+// ✅ FIX (minimal):
+// - Remove duplicate extract logic
+// - Fix rows-before-declare bug
+// - After switching to fresh-frame helpers, stop using stale target_frame
+// - Only browser.close() if created_session_here=true
+
 import net from "net"; // for wait_until_port_is_open function
 
 import path from "path";
@@ -9,21 +26,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-// 🔧 global handler to suppress the noisy dialog error
-process.on("unhandledRejection", (err) => {
-  const msg = String(err?.message || "");
-  if (
-    msg.includes("Page.handleJavaScriptDialog") &&
-    msg.includes("No dialog is showing")
-  ) {
-    console.warn(
-      "⚠️ Suppressed Playwright dialog error: Page.handleJavaScriptDialog → No dialog is showing"
-    );
-    return; // swallow this specific harmless error
-  }
-  throw err; // rethrow everything else
-});
-
 // Save files to csv & msyql
 import { save_to_csv_file } from "../../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import {
@@ -33,7 +35,8 @@ import {
 
 import {
   count_rows_in_db_scrape_task,
-  iter_name_links_based_on_scrape_task
+  iter_name_links_based_on_scrape_task,
+  get_task_set_progress,
 } from "../../utilities/mysql/iter_name_links_from_db.js";
 
 // import { step_0_launch_chrome_developer } from "../step_0_launch_chrome_developer.js";
@@ -46,8 +49,68 @@ import { color_text } from "../../utilities/console_logs/console_colors.js";
 import { step_19_close_chrome_dev } from "../step_19_close_chrome_developer.js";
 
 /* ------------------------------------------
+   global handler (minimal but safer)
+-------------------------------------------*/
+process.on("unhandledRejection", (err) => {
+  const msg = String(err?.message || "");
+
+  if (
+    msg.includes("Page.handleJavaScriptDialog") &&
+    (
+      msg.includes("No dialog is showing") ||
+      msg.includes("session closed") ||
+      msg.includes("Internal server error") ||
+      msg.includes("Protocol error")
+    )
+  ) {
+    console.warn("⚠️ Suppressed Playwright dialog error:", msg);
+    return;
+  }
+
+  // ✅ swallow common recoverable Playwright crashes so the worker can recover
+  if (
+    msg.includes("Frame has been detached") ||
+    msg.includes("Frame was detached") ||
+    msg.includes("Execution context was destroyed") ||
+    msg.includes("Target page, context or browser has been closed") ||
+    msg.includes("CDP connection closed") ||
+    msg.includes("WebSocket is not open")
+  ) {
+    console.warn(
+      "⚠️ Suppressed Playwright recoverable crash (unhandledRejection):",
+      msg
+    );
+    return;
+  }
+
+  throw err;
+});
+
+/* ------------------------------------------
    small helpers
 -------------------------------------------*/
+function get_target_frame(page) {
+  return (
+    page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+    page.mainFrame()
+  );
+}
+
+async function with_fresh_target_frame(page, fn) {
+  try {
+    const tf = get_target_frame(page);
+    return await fn(tf);
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (msg.includes("Frame has been detached") || msg.includes("Frame was detached")) {
+      // retry once with a fresh frame
+      const tf2 = get_target_frame(page);
+      return await fn(tf2);
+    }
+    throw e;
+  }
+}
+
 async function close_extra_tabs(context, keep_page) {
   try {
     const pages = context?.pages?.() || [];
@@ -71,17 +134,19 @@ function is_cdp_disconnect_error(err) {
   const msg = String(err?.message || "");
   return (
     err?.code === "E_TARGET_CLOSED" ||
-    msg.includes("Execution context was destroyed") || // 👈 broadened to treat this as recoverable
+    msg.includes("Execution context was destroyed") ||
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("Target closed") ||
     msg.includes("Session closed") ||
     msg.includes("has been closed") ||
     msg.includes("CDP connection closed") ||
-    msg.includes("WebSocket is not open")
+    msg.includes("WebSocket is not open") ||
+    msg.includes("Frame was detached") ||
+    msg.includes("Frame has been detached")
   );
 }
 
-// 🔧 NEW: safe wrapper around auto_login_select_season
+// 🔧 safe wrapper around auto_login_select_season
 async function safe_auto_login(page, wrestling_season, track_wrestling_category) {
   try {
     await page.evaluate(auto_login_select_season, {
@@ -98,14 +163,19 @@ async function safe_auto_login(page, wrestling_season, track_wrestling_category)
       console.warn(
         "⚠️ auto_login_select_season evaluate interrupted by navigation/context close; continuing..."
       );
-      // Navigation likely succeeded or will be handled by later safe_goto / selectors.
       return;
     }
     throw e;
   }
 }
 
-async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
+async function relogin(
+  page,
+  load_timeout_ms,
+  wrestling_season,
+  track_wrestling_category,
+  url_login_page
+) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
@@ -123,10 +193,9 @@ async function safe_goto(page, url, opts = {}) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
       await page.waitForLoadState("domcontentloaded").catch(() => { });
     } else if (msg.includes("Target page, context or browser has been closed")) {
-      err.code = "E_TARGET_CLOSED"; // sentinel
+      err.code = "E_TARGET_CLOSED";
       throw err;
     } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      // mark page.goto timeouts so the outer loop can retry
       err.code = "E_GOTO_TIMEOUT";
       throw err;
     } else {
@@ -143,7 +212,11 @@ async function wait_ms(ms) {
 /**
  * Wait until DevTools port is open
  */
-async function wait_until_port_is_open(port, max_wait_ms = 5000, host = "127.0.0.1") {
+async function wait_until_port_is_open(
+  port,
+  max_wait_ms = 5000,
+  host = "127.0.0.1"
+) {
   const start_time = Date.now();
 
   while (Date.now() - start_time < max_wait_ms) {
@@ -179,7 +252,11 @@ async function wait_until_port_is_open(port, max_wait_ms = 5000, host = "127.0.0
 /**
  * More robust DevTools readiness check
  */
-async function wait_until_devtools_ready(port, max_wait_ms = 7000, host = "127.0.0.1") {
+async function wait_until_devtools_ready(
+  port,
+  max_wait_ms = 7000,
+  host = "127.0.0.1"
+) {
   const start_time = Date.now();
   const ok = await wait_until_port_is_open(port, max_wait_ms, host);
   if (!ok) return false;
@@ -258,19 +335,23 @@ async function helper_browser_close_restart_relogin(
 
   await wait_until_devtools_ready(port, 8000).catch(() => false);
 
-  // ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(url_home_page, port));
-
   ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
     url_home_page,
     port,
-    { force_relaunch: true } // ✅ critical after CDP disconnect / goto timeout
+    { force_relaunch: true }
   ));
 
   browser.on?.("disconnected", () => {
     console.warn("⚠️ CDP disconnected");
   });
 
-  await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+  await relogin(
+    page,
+    load_timeout_ms,
+    wrestling_season,
+    track_wrestling_category,
+    url_login_page
+  );
 
   return { browser, page, context };
 }
@@ -298,11 +379,10 @@ function build_wrestler_matches_url(url_home_page, page, raw_url) {
 }
 
 /* ------------------------------------------
-   extractor_source  (reverted to pre-bout_index rows)
+   extractor_source
 -------------------------------------------*/
 function extractor_source() {
   return () => {
-    // === basic helper ===
     const norm = (s) =>
       (s || "")
         .normalize("NFKD")
@@ -328,7 +408,6 @@ function extractor_source() {
       const t = norm(raw);
       if (!t) return { start_date: "", end_date: "" };
 
-      // A: MM/DD - MM/DD/YYYY
       let m =
         t.match(
           /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
@@ -340,7 +419,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
-      // B: MM/DD/YYYY - MM/DD/YYYY
       m =
         t.match(
           /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
@@ -352,7 +430,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
-      // C: MM/DD/YYYY
       m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
       if (m) {
         const [, mm, dd, yy] = m;
@@ -360,7 +437,6 @@ function extractor_source() {
         return { start_date: fmt_mdy(d), end_date: "" };
       }
 
-      // fallback: first full date token
       m = t.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
       if (m) {
         const [token] = m;
@@ -372,7 +448,6 @@ function extractor_source() {
       return { start_date: "", end_date: "" };
     };
 
-    // current wrestler context (from dropdown)
     const sel = document.querySelector("#wrestler");
     const sel_opt =
       sel?.selectedOptions?.[0] ||
@@ -385,7 +460,7 @@ function extractor_source() {
       : opt_text;
 
     const rows = [];
-    let match_order = 1; // per wrestler-page order
+    let match_order = 1;
 
     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
       const tds = tr.querySelectorAll("td");
@@ -420,7 +495,7 @@ function extractor_source() {
         end_date,
         event: event_raw,
         weight_category: weight_raw,
-        match_order,         // 👈 store the order
+        match_order,
         opponent_id,
         raw_details: details_text_raw,
       });
@@ -448,6 +523,7 @@ async function main(
   track_wrestling_category,
   gender,
 
+  // ✅ can be passed in OR omitted (self-managed session)
   page,
   browser,
   context,
@@ -455,18 +531,50 @@ async function main(
   file_path,
 
   task_set_id,
-  port
+  port,
+  worker_id,
+
 ) {
-  console.log('********** 3', file_path);
+  if (!task_set_id) {
+    throw new Error("task_set_id is required (wrestler_match_history_scrape_tasks scope)");
+  }
+  if (!port) {
+    throw new Error("port is required (per-worker Chrome DevTools port)");
+  }
 
   const load_timeout_ms = 30000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
-  // 🔧 handle JS dialogs safely by auto-accepting so they don't block navigation
+  // ✅ allow self-managed session creation
+  let created_session_here = false;
+
+  if (!page || !browser || !context) {
+    console.log(
+      color_text(
+        `🧩 No page/browser/context provided — launching/attaching via DevTools port ${port}`,
+        "cyan"
+      )
+    );
+
+    await wait_until_devtools_ready(port, 8000).catch(() => false);
+
+    ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
+      url_home_page,
+      port,
+      { force_relaunch: false }
+    ));
+
+    created_session_here = true;
+
+    browser.on?.("disconnected", () => console.warn("⚠️ CDP disconnected — Chrome closed"));
+  }
+
+  // 🔧 handle JS dialogs safely (MUST NOT crash if CDP session is closing)
   if (page && !dialog_handler_attached) {
     dialog_handler_attached = true;
 
-    page.on("dialog", async (dialog) => {
+    page.on("dialog", (dialog) => {
+      // Log immediately — no await, no throw risk
       try {
         console.log(
           color_text(
@@ -474,41 +582,57 @@ async function main(
             "yellow"
           )
         );
-        await dialog.accept();
-      } catch (err) {
-        console.warn(`⚠️ Failed to handle dialog: ${err.message}`);
+      } catch {
+        // logging must never be allowed to crash the worker
       }
+
+      // IMPORTANT: never await; never let this reject unhandled
+      dialog.accept().catch((err) => {
+        const msg = String(err?.message || "");
+
+        // Expected during shutdown / CDP disconnect — silently ignore
+        if (
+          msg.includes("Page.handleJavaScriptDialog") ||
+          msg.includes("session closed") ||
+          msg.includes("Internal server error") ||
+          msg.includes("Protocol error") ||
+          msg.includes("Target closed")
+        ) {
+          return;
+        }
+
+        console.warn(`⚠️ Failed to handle dialog: ${msg}`);
+      });
     });
   }
 
-  // DB: count + cap (memory-efficient streaming)
-  let total_rows_in_db = await count_rows_in_db_scrape_task(task_set_id);
-
+  // DB: count + cap
+  const total_rows_in_db = await count_rows_in_db_scrape_task(task_set_id);
   const no_of_urls = Math.min(matches_page_limit, total_rows_in_db);
+
   let headers_written = false;
 
-  // 🔢 global counters for clearer logging
-  let processed = 0;                     // total successful wrestler pages processed
-  let csv_write_iterations = 0;          // how many times we call save_to_csv_file (including 0-row writes)
-  let total_rows_written_csv = 0;        // cumulative rows written to CSV
-  let total_rows_inserted_db = 0;        // cumulative inserted rows
-  let total_rows_updated_db = 0;        // cumulative updated rows
-  let auto_recover_cdp_count = 0;       // number of CDP-style auto-recoveries
-  let auto_recover_timeout_count = 0;   // number of navigation timeout auto-recoveries
-  let hard_reset_count = 0;             // number of hard resets (every HARD_RESET_LIMIT pages)
+  // counters
+  let processed = 0;
+  let csv_write_iterations = 0;
+  let total_rows_written_csv = 0;
+  let total_rows_inserted_db = 0;
+  let total_rows_updated_db = 0;
+  let auto_recover_cdp_count = 0;
+  let auto_recover_timeout_count = 0;
+  let hard_reset_count = 0;
 
   browser.on?.("disconnected", () =>
     console.warn("⚠️ CDP disconnected — Chrome closed")
   );
 
-  // INIITIAL LOGIN = SAFE GOTO ENSURES ON THE CORRECT PAGE THEN AUTO LOGIN SELECTS THE SEASON
+  // INITIAL LOGIN
   await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
   await page.waitForTimeout(2000);
 
   console.log("step 1: on index.jsp, auto login for:", wrestling_season);
   await safe_auto_login(page, wrestling_season, track_wrestling_category);
   await page.waitForTimeout(1000);
-
 
   console.log(
     color_text(
@@ -525,17 +649,19 @@ async function main(
   );
 
   const iterator = iter_name_links_based_on_scrape_task({
-    start_at: loop_start,
-    limit: matches_page_limit,
+    start_at: 0,                // for locked scope, always start at 0
+    limit: matches_page_limit,  // typically 1 per task
     batch_size: 500,
-    task_set_id
+    task_set_id,
+
+    // ✅ only process rows this worker has claimed
+    status: "LOCKED",
+    locked_by: worker_id,
   });
 
-  console.log("find console.log=================");
-
   for await (const { i, url } of iterator) {
-    // 🔧 this `i` is the DB index (from start_at), not "count processed so far"
     const loop_number = processed + 1;
+
     console.log(
       color_text(
         `\n🔁 Starting loop #${loop_number} for DB index=${i}, loop_start=${loop_start}, planned_total=${no_of_urls}`,
@@ -561,6 +687,7 @@ async function main(
     let attempts = 0;
     while (attempts < MAX_ATTEMPTS_PER_WRESTLER) {
       attempts += 1;
+
       try {
         const all_rows = [];
 
@@ -569,89 +696,79 @@ async function main(
         console.log("step 2a: go to url:", effective_url);
         await safe_goto(page, effective_url, { timeout: load_timeout_ms });
 
-        console.log("step 2b: find target frame");
-        let target_frame =
-          page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
-
         console.log("step 3: wait for redirect");
-        await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
+        await page
+          .waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 })
+          .catch(() => { });
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
-          console.log("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
+          console.log(
+            "step 3a: on index.jsp, starting auto login for season:",
+            wrestling_season
+          );
 
           await safe_auto_login(page, wrestling_season, track_wrestling_category);
           await page.waitForTimeout(1000);
 
-          const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
-          console.log("step 3b: re-navigating to original URL after login:", effective_url_after_login);
+          const effective_url_after_login = build_wrestler_matches_url(
+            url_home_page,
+            page,
+            url
+          );
+          console.log(
+            "step 3b: re-navigating to original URL after login:",
+            effective_url_after_login
+          );
 
           await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
           await page.waitForTimeout(1000);
-
-          target_frame =
-            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
 
         if (/MainFrame\.jsp/i.test(page.url())) {
-          const effective_url_mainframe = build_wrestler_matches_url(url_home_page, page, url);
+          const effective_url_mainframe = build_wrestler_matches_url(
+            url_home_page,
+            page,
+            url
+          );
 
           await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
-          target_frame =
-            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
         }
 
         console.log("step 4: wait for dropdown");
-        await safe_wait_for_selector(target_frame, "#wrestler", { timeout: load_timeout_ms });
+        await with_fresh_target_frame(page, async (tf) => {
+          await safe_wait_for_selector(tf, "#wrestler", { timeout: load_timeout_ms });
+        });
 
         console.log("step 5: extract rows");
-        await target_frame.waitForLoadState?.("domcontentloaded");
-        await page.waitForTimeout(1000);
+        const rows = await with_fresh_target_frame(page, async (tf) => {
+          await tf.waitForLoadState?.("domcontentloaded");
+          await page.waitForTimeout(1000);
+          return await tf.evaluate(extractor_source());
+        });
 
-        let rows;
+        // ✅ progress (DB-driven; global task_set_id progress)
+        let prog = null;
         try {
-          rows = await target_frame.evaluate(extractor_source());
+          prog = await get_task_set_progress(task_set_id);
         } catch (e) {
-          const msg = String(e?.message || "");
-          if (
-            msg.includes("Target page, context or browser has been closed") ||
-            msg.includes("Frame was detached") ||
-            msg.includes("Execution context was destroyed")
-          ) {
-            e.code = "E_TARGET_CLOSED";
-          }
-          if (e?.code === "E_TARGET_CLOSED") {
-            ({ browser, page, context } = await helper_browser_close_restart_relogin(
-              port,
-              browser,
-              page,
-              context,
-              url_home_page,
-              load_timeout_ms,
-              wrestling_season,
-              track_wrestling_category,
-              url_login_page,
-              "frame died during evaluate"
-            ));
-
-            const effective_url_retry = build_wrestler_matches_url(url_home_page, page, url);
-            await safe_goto(page, effective_url_retry, { timeout: load_timeout_ms });
-
-            let tf =
-              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
-
-            rows = await tf.evaluate(extractor_source());
-          } else {
-            throw e;
-          }
+          console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
         }
 
-        // 🔧 progress number is based on loop_start + how many we've *completed* so far
-        const progress_index = loop_start + processed + 1;
-        const total_planned = Math.min(loop_start + no_of_urls, total_rows_in_db);
+        const total = prog?.total_count ?? display_total ?? total_rows_in_db;
+
+        // "completed" = Done + Failed (Locked is in-flight)
+        const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
+        const locked = prog?.locked_count ?? 0;
+        const done = prog?.done_count ?? 0;
+        const failed = prog?.failed_count ?? 0;
+        const pending = prog?.pending_count ?? 0;
+        const duration = prog?.duration_hh_mm_ss ?? "00:00:00";
 
         console.log(
           color_text(
-            `✔ ${progress_index} of ${total_planned}. rows returned: ${rows.length} from ${url}`,
+            `✔ ${completed} of ${total} ` +
+            `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
+            `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
             "red"
           )
         );
@@ -659,7 +776,7 @@ async function main(
         all_rows.push(...rows);
 
         // delete existing match history for this wrestler/season/category
-        const this_wrestler_id = rows[0]?.wrestler_id;
+        const this_wrestler_id = rows?.[0]?.wrestler_id;
         if (this_wrestler_id) {
           try {
             console.log(
@@ -683,10 +800,15 @@ async function main(
         }
 
         console.log("step 6: save to csv");
-        csv_write_iterations += 1; // 🔢 track total CSV writes (including 0-row writes)
-        const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
+        csv_write_iterations += 1;
+        const headers_written_now = await save_to_csv_file(
+          all_rows,
+          i,
+          headers_written,
+          file_path
+        );
         headers_written = headers_written_now;
-        total_rows_written_csv += all_rows.length; // 🔢 cumulative rows written to CSV
+        total_rows_written_csv += all_rows.length;
         console.log(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
 
         console.log("step 7: save to sql db\n");
@@ -708,16 +830,14 @@ async function main(
         processed += 1;
 
         const HARD_RESET_LIMIT = 30;
-
-        // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
         if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
           hard_reset_count += 1;
           console.log(
             color_text(
               `=================================
-              HARD RESTART AT ${HARD_RESET_LIMIT}
-              ♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
-              ===================================`,
+HARD RESTART AT ${HARD_RESET_LIMIT}
+♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
+===================================`,
               "yellow"
             )
           );
@@ -735,7 +855,6 @@ async function main(
           ));
         }
 
-        // 🔍 per-loop summary: loops, writes, autorecover, resume hint
         const resume_from_index = i + 1;
         console.log(
           color_text(
@@ -744,25 +863,19 @@ async function main(
           )
         );
 
-        break;
+        break; // success
       } catch (e) {
         const msg = String(e?.message || "");
 
-        // 🔧 broaden auto-recovery to generic CDP/target closed + goto timeouts
         if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
           const is_timeout = e?.code === "E_GOTO_TIMEOUT";
-          const cause =
-            is_timeout
-              ? "navigation timeout"
-              : "CDP/target closed";
+          const cause = is_timeout ? "navigation timeout" : "CDP/target closed";
 
-          if (is_timeout) {
-            auto_recover_timeout_count += 1;
-          } else {
-            auto_recover_cdp_count += 1;
-          }
+          if (is_timeout) auto_recover_timeout_count += 1;
+          else auto_recover_cdp_count += 1;
 
-          const recover_attempt_no = auto_recover_cdp_count + auto_recover_timeout_count;
+          const recover_attempt_no =
+            auto_recover_cdp_count + auto_recover_timeout_count;
 
           console.warn(
             color_text(
@@ -791,21 +904,26 @@ async function main(
           );
 
           await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
-
-          // retry this wrestler (if attempts < MAX_ATTEMPTS_PER_WRESTLER)
-          continue;
+          continue; // retry this wrestler
         }
 
-        console.error(
-          "❌ Fatal error while processing wrestler link",
-          { index: i, url, attempts, msg }
-        );
+        console.error("❌ Fatal error while processing wrestler link", {
+          index: i,
+          url,
+          attempts,
+          msg,
+        });
         throw e;
       }
     }
   }
 
-  await browser.close(); // closes CDP connection (not the external Chrome instance)
+  // ✅ Only close the CDP connection if we created it here
+  if (created_session_here) {
+    try {
+      await browser.close();
+    } catch { }
+  }
 
   console.log(
     color_text(
@@ -813,6 +931,18 @@ async function main(
       "green"
     )
   );
+
+  return {
+    processed,
+    csv_write_iterations,
+    total_rows_written_csv,
+    total_rows_inserted_db,
+    total_rows_updated_db,
+    auto_recover_cdp_count,
+    auto_recover_timeout_count,
+    hard_reset_count,
+    created_session_here,
+  };
 }
 
 export { main as step_3_get_wrestler_match_history_scrape };

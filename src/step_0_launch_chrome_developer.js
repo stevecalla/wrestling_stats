@@ -15,6 +15,7 @@ import { chromium } from "playwright";
 import { launch_chrome_win } from "../utilities/chrome_dev_tools/launch_chrome_win.js";
 import { launch_chrome_linux } from "../utilities/chrome_dev_tools/launch_chrome_linux.js";
 import { launch_chrome_mac } from "../utilities/chrome_dev_tools/launch_chrome_mac.js";
+
 import { step_19_close_chrome_dev } from "./step_19_close_chrome_developer.js";
 
 const PORT = String(process.env.CHROME_DEVTOOLS_PORT || 9222);
@@ -41,10 +42,13 @@ async function is_chrome_dev_up(url = `${CONNECT_URL}/json/version`) {
 
 async function go_to_website_in_chrome(URL) {
   const browser = await chromium.connectOverCDP(CONNECT_URL);
+
   const contexts = browser.contexts();
   if (!contexts.length) throw new Error("No contexts from CDP connection.");
   const context = contexts[0];
+
   const page = await context.newPage();
+  
   page.setDefaultTimeout(LOAD_TIMEOUT_MS);
   if (URL) {
     await page.goto(URL, { waitUntil: "domcontentloaded", timeout: LOAD_TIMEOUT_MS });

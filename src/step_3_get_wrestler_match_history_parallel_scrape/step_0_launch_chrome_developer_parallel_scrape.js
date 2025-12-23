@@ -21,6 +21,8 @@ import { chromium } from "playwright";
 
 // Windows launcher (parallel scrape variant)
 import { launch_chrome_win } from "../../utilities/chrome_dev_tools/launch_chrome_win_parallel_scrape.js";
+import { launch_chrome_linux } from "../../utilities/chrome_dev_tools/launch_chrome_linux_parallel_scrape.js";
+import { launch_chrome_mac } from "../../utilities/chrome_dev_tools/launch_chrome_mac_parallel_scrape.js";
 
 // ---- small helpers ----
 async function wait(ms) {
@@ -116,9 +118,13 @@ async function main(
     return go_to_website_in_chrome(URL, CONNECT_URL, LOAD_TIMEOUT_MS);
   }
 
-  // Delegate launch to the per-OS helpers
+  // Delegate launch to the per-OS helpers (we pass USER_DATA_DIR_DEFAULT + PORT)
   if (platform === "win32") {
     await launch_chrome_win(URL, USER_DATA_DIR_DEFAULT, PORT);
+  } else if (platform === "linux") {
+    await launch_chrome_linux(URL, USER_DATA_DIR_DEFAULT, PORT);
+  } else if (platform === "darwin") {
+    await launch_chrome_mac(URL, USER_DATA_DIR_DEFAULT, PORT);
   } else {
     console.warn(`[WARN] Unsupported platform: ${platform}.`);
     return;
