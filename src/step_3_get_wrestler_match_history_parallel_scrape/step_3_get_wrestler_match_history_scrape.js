@@ -86,6 +86,28 @@ process.on("unhandledRejection", (err) => {
   throw err;
 });
 
+process.on("uncaughtException", (err) => {
+  const msg = String(err?.message || "");
+
+  // Same bucket as your recoverable CDP/frame churn
+  if (
+    msg.includes("Frame has been detached") ||
+    msg.includes("Frame was detached") ||
+    msg.includes("Execution context was destroyed") ||
+    msg.includes("Target page, context or browser has been closed") ||
+    msg.includes("CDP connection closed") ||
+    msg.includes("WebSocket is not open") ||
+    msg.includes("is interrupted by another navigation")
+  ) {
+    console.warn("⚠️ Suppressed Playwright recoverable crash (uncaughtException):", msg);
+    return;
+  }
+
+  // Anything else should still crash loudly
+  console.error("❌ Uncaught exception (fatal):", err);
+  process.exit(1);
+});
+
 /* ------------------------------------------
    small helpers
 -------------------------------------------*/
@@ -754,7 +776,7 @@ async function main(
           console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
         }
 
-        const total = prog?.total_count ?? display_total ?? total_rows_in_db;
+        const total = prog?.total_count ?? total_rows_in_db;
 
         // "completed" = Done + Failed (Locked is in-flight)
         const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
