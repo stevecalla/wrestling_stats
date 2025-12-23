@@ -107,7 +107,7 @@ export async function main(
     // -----------------------------------------------
     // STEP 4: run parallel workers (each worker uses a port from port_list)
     // -----------------------------------------------
-    const port_list = [9223, 9224, 9225, 9226];
+    const port_list = [9223, 9224, 9225, 9226, 9227];
 
     const t0 = Date.now(); // ⏱ start timer
 
@@ -126,7 +126,7 @@ export async function main(
         // slow_mo_ms: 10, // note: test
 
         // optional parallelism
-        workers: Math.min(2, port_list.length), // 👈 bump to 4 when ready
+        workers: Math.min(3, port_list.length), // 👈 bump to 4 when ready
         batch_size: 5,
 
         // safety / retry behavior

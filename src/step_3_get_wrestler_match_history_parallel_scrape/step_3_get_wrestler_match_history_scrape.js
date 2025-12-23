@@ -1,22 +1,20 @@
 // src/step_3_get_wrestler_match_history.js (ESM, snake_case)
 //
 // ✅ Update in this version:
-// - This module can now run in TWO modes:
-//   A) "external session" mode (backward compatible): you pass in page/browser/context
-//   B) "self-managed session" mode: if page/browser/context are not provided, it will
-//      wait for DevTools, launch/attach via step_0_launch_chrome_developer_parallel_scrape(url_home_page, port),
-//      login, scrape, and then close the CDP connection.
+// - TWO modes:
+//   A) external session mode: pass in page/browser/context
+//   B) self-managed session mode: if not provided, attach via DevTools port,
+//      login, scrape, then close CDP connection.
 //
-// This makes it usable from a parallel worker that only knows { port, task_set_id }.
-//
-//
-// ✅ FIX (minimal):
-// - Remove duplicate extract logic
-// - Fix rows-before-declare bug
-// - After switching to fresh-frame helpers, stop using stale target_frame
+// ✅ Stability + correctness fixes:
+// - Fresh-frame helpers (never reuse stale target_frame)
+// - Dialog handler cannot crash worker during CDP churn
+// - Soft reset (new page in same context) before hard relaunch (Windows stability)
+// - Only attach browser disconnected log once
 // - Only browser.close() if created_session_here=true
+// - Smaller redirect wait (avoid 5s penalty on every loop)
 
-import net from "net"; // for wait_until_port_is_open function
+import net from "net";
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -26,11 +24,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-// Save files to csv & msyql
+// Save files to csv & mysql
 import { save_to_csv_file } from "../../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import {
   upsert_wrestler_match_history,
-  delete_wrestler_match_history_for_wrestler, // delete helper for per-wrestler snapshot
+  delete_wrestler_match_history_for_wrestler,
 } from "../../utilities/mysql/upsert_wrestler_match_history.js";
 
 import {
@@ -39,42 +37,39 @@ import {
   get_task_set_progress,
 } from "../../utilities/mysql/iter_name_links_from_db.js";
 
-// import { step_0_launch_chrome_developer } from "../step_0_launch_chrome_developer.js";
 import { step_0_launch_chrome_developer_parallel_scrape } from "./step_0_launch_chrome_developer_parallel_scrape.js";
 
 import { auto_login_select_season } from "../../utilities/scraper_tasks/auto_login_select_season.js";
 
 import { color_text } from "../../utilities/console_logs/console_colors.js";
-// import { step_19_close_chrome_dev } from "./step_19_close_chrome_developer.js";
-import { step_19_close_chrome_dev } from "../step_19_close_chrome_developer.js";
 
 /* ------------------------------------------
-   global handler (minimal but safer)
+   global handlers (safer)
 -------------------------------------------*/
 process.on("unhandledRejection", (err) => {
   const msg = String(err?.message || "");
 
   if (
     msg.includes("Page.handleJavaScriptDialog") &&
-    (
-      msg.includes("No dialog is showing") ||
+    (msg.includes("No dialog is showing") ||
       msg.includes("session closed") ||
       msg.includes("Internal server error") ||
-      msg.includes("Protocol error")
-    )
+      msg.includes("Protocol error") ||
+      msg.includes("Target closed"))
   ) {
     console.warn("⚠️ Suppressed Playwright dialog error:", msg);
     return;
   }
 
-  // ✅ swallow common recoverable Playwright crashes so the worker can recover
   if (
     msg.includes("Frame has been detached") ||
     msg.includes("Frame was detached") ||
     msg.includes("Execution context was destroyed") ||
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("CDP connection closed") ||
-    msg.includes("WebSocket is not open")
+    msg.includes("WebSocket is not open") ||
+    msg.includes("session closed") ||
+    msg.includes("Session closed")
   ) {
     console.warn(
       "⚠️ Suppressed Playwright recoverable crash (unhandledRejection):",
@@ -89,7 +84,6 @@ process.on("unhandledRejection", (err) => {
 process.on("uncaughtException", (err) => {
   const msg = String(err?.message || "");
 
-  // Same bucket as your recoverable CDP/frame churn
   if (
     msg.includes("Frame has been detached") ||
     msg.includes("Frame was detached") ||
@@ -97,13 +91,17 @@ process.on("uncaughtException", (err) => {
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("CDP connection closed") ||
     msg.includes("WebSocket is not open") ||
-    msg.includes("is interrupted by another navigation")
+    msg.includes("is interrupted by another navigation") ||
+    msg.includes("session closed") ||
+    msg.includes("Session closed")
   ) {
-    console.warn("⚠️ Suppressed Playwright recoverable crash (uncaughtException):", msg);
+    console.warn(
+      "⚠️ Suppressed Playwright recoverable crash (uncaughtException):",
+      msg
+    );
     return;
   }
 
-  // Anything else should still crash loudly
   console.error("❌ Uncaught exception (fatal):", err);
   process.exit(1);
 });
@@ -111,6 +109,10 @@ process.on("uncaughtException", (err) => {
 /* ------------------------------------------
    small helpers
 -------------------------------------------*/
+async function wait_ms(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function get_target_frame(page) {
   return (
     page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
@@ -125,7 +127,6 @@ async function with_fresh_target_frame(page, fn) {
   } catch (e) {
     const msg = String(e?.message || "");
     if (msg.includes("Frame has been detached") || msg.includes("Frame was detached")) {
-      // retry once with a fresh frame
       const tf2 = get_target_frame(page);
       return await fn(tf2);
     }
@@ -139,7 +140,7 @@ async function close_extra_tabs(context, keep_page) {
     for (const p of pages) {
       if (p !== keep_page && !p.isClosed?.()) {
         console.log("🧹 closing extra tab:", p.url?.() || "<no url yet>");
-        await p.close();
+        await p.close().catch(() => {});
       }
     }
   } catch (err) {
@@ -151,7 +152,6 @@ function handles_dead({ browser, context, page }) {
   return !browser?.isConnected?.() || !context || !page || page.isClosed?.();
 }
 
-// 🔧 NEW: central helper to recognize CDP/target closed style errors
 function is_cdp_disconnect_error(err) {
   const msg = String(err?.message || "");
   return (
@@ -160,6 +160,7 @@ function is_cdp_disconnect_error(err) {
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("Target closed") ||
     msg.includes("Session closed") ||
+    msg.includes("session closed") ||
     msg.includes("has been closed") ||
     msg.includes("CDP connection closed") ||
     msg.includes("WebSocket is not open") ||
@@ -168,7 +169,19 @@ function is_cdp_disconnect_error(err) {
   );
 }
 
-// 🔧 safe wrapper around auto_login_select_season
+async function attach_disconnected_logger_once(browser) {
+  try {
+    if (!browser) return;
+    if (browser.__has_disconnect_logger) return;
+    browser.__has_disconnect_logger = true;
+    browser.on?.("disconnected", () =>
+      console.warn("⚠️ CDP disconnected — Chrome closed")
+    );
+  } catch {
+    // never crash on logger attach
+  }
+}
+
 async function safe_auto_login(page, wrestling_season, track_wrestling_category) {
   try {
     await page.evaluate(auto_login_select_season, {
@@ -183,11 +196,56 @@ async function safe_auto_login(page, wrestling_season, track_wrestling_category)
       msg.includes("Target page, context or browser has been closed")
     ) {
       console.warn(
-        "⚠️ auto_login_select_season evaluate interrupted by navigation/context close; continuing..."
+        "⚠️ auto_login_select_season interrupted by navigation/context close; continuing..."
       );
       return;
     }
     throw e;
+  }
+}
+
+async function safe_goto(page, url, opts = {}) {
+  const timeout = opts.timeout ?? 30000;
+
+  try {
+    await page.goto(url, { waitUntil: "commit", timeout });
+    return page.url();
+  } catch (err) {
+    const msg = String(err?.message || "");
+
+    if (msg.includes("is interrupted by another navigation")) {
+      console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
+      return page.url();
+    }
+    if (msg.includes("Target page, context or browser has been closed")) {
+      err.code = "E_TARGET_CLOSED";
+      throw err;
+    }
+    if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
+      err.code = "E_GOTO_TIMEOUT";
+      throw err;
+    }
+    throw err;
+  }
+}
+
+async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
+  try {
+    await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
+  } catch (err) {
+    const msg = String(err?.message || "");
+
+    if (
+      msg.includes("Target page, context or browser has been closed") ||
+      msg.includes("Frame was detached") ||
+      msg.includes("Execution context was destroyed")
+    ) {
+      err.code = "E_TARGET_CLOSED";
+    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
+      err.code = "E_GOTO_TIMEOUT";
+    }
+
+    throw err;
   }
 }
 
@@ -198,47 +256,16 @@ async function relogin(
   track_wrestling_category,
   url_login_page
 ) {
-  const login_url = url_login_page;
-  await safe_goto(page, login_url, { timeout: load_timeout_ms });
+  await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
   await page.waitForTimeout(1000);
   await safe_auto_login(page, wrestling_season, track_wrestling_category);
   await page.waitForTimeout(800);
 }
 
-async function safe_goto(page, url, opts = {}) {
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", ...opts });
-  } catch (err) {
-    const msg = String(err?.message || "");
-
-    if (msg.includes("is interrupted by another navigation")) {
-      console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => { });
-    } else if (msg.includes("Target page, context or browser has been closed")) {
-      err.code = "E_TARGET_CLOSED";
-      throw err;
-    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      err.code = "E_GOTO_TIMEOUT";
-      throw err;
-    } else {
-      throw err;
-    }
-  }
-  return page.url();
-}
-
-async function wait_ms(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
- * Wait until DevTools port is open
+ * Wait until DevTools port is open (TCP)
  */
-async function wait_until_port_is_open(
-  port,
-  max_wait_ms = 5000,
-  host = "127.0.0.1"
-) {
+async function wait_until_port_is_open(port, max_wait_ms = 5000, host = "127.0.0.1") {
   const start_time = Date.now();
 
   while (Date.now() - start_time < max_wait_ms) {
@@ -263,7 +290,6 @@ async function wait_until_port_is_open(
     });
 
     if (is_open) return true;
-
     await wait_ms(200);
   }
 
@@ -272,34 +298,26 @@ async function wait_until_port_is_open(
 }
 
 /**
- * More robust DevTools readiness check
+ * DevTools readiness check (json/version)
  */
-async function wait_until_devtools_ready(
-  port,
-  max_wait_ms = 7000,
-  host = "127.0.0.1"
-) {
-  const start_time = Date.now();
+async function wait_until_devtools_ready(port, max_wait_ms = 7000, host = "127.0.0.1") {
   const ok = await wait_until_port_is_open(port, max_wait_ms, host);
   if (!ok) return false;
-
-  const elapsed = Date.now() - start_time;
-  const remaining = Math.max(max_wait_ms - elapsed, 0);
-  const deadline = Date.now() + remaining;
 
   if (typeof fetch !== "function") return true;
 
   const endpoint = `http://${host}:${port}/json/version`;
+  const deadline = Date.now() + max_wait_ms;
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(endpoint);
+      const res = await fetch(endpoint, { cache: "no-store" });
       if (res.ok) {
         const j = await res.json().catch(() => null);
         if (j && j.Browser) return true;
         return true;
       }
-    } catch { }
+    } catch {}
     await wait_ms(200);
   }
 
@@ -307,26 +325,45 @@ async function wait_until_devtools_ready(
   return false;
 }
 
-async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
+/**
+ * Soft reset: new tab in the SAME context (do not kill Chrome via browser.close()).
+ */
+async function soft_reset_page_and_relogin({
+  context,
+  page,
+  load_timeout_ms,
+  wrestling_season,
+  track_wrestling_category,
+  url_login_page,
+}) {
   try {
-    await frame_or_page.waitForSelector(selector, { state: "visible", ...opts });
-  } catch (err) {
-    const msg = String(err?.message || "");
+    if (context) await close_extra_tabs(context, page);
+  } catch {}
 
-    if (
-      msg.includes("Target page, context or browser has been closed") ||
-      msg.includes("Frame was detached") ||
-      msg.includes("Execution context was destroyed")
-    ) {
-      err.code = "E_TARGET_CLOSED";
-    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      err.code = "E_GOTO_TIMEOUT";
+  try {
+    if (page && !page.isClosed?.()) {
+      await page.close().catch(() => {});
     }
+  } catch {}
 
-    throw err;
-  }
+  const new_page = await context.newPage();
+  new_page.setDefaultTimeout(load_timeout_ms);
+  new_page.setDefaultNavigationTimeout(load_timeout_ms);
+
+  await relogin(
+    new_page,
+    load_timeout_ms,
+    wrestling_season,
+    track_wrestling_category,
+    url_login_page
+  );
+
+  return new_page;
 }
 
+/**
+ * Recovery helper: soft-reset first, hard relaunch only if needed.
+ */
 async function helper_browser_close_restart_relogin(
   port,
   browser,
@@ -339,22 +376,28 @@ async function helper_browser_close_restart_relogin(
   url_login_page,
   cause
 ) {
-  if (context) await close_extra_tabs(context, page);
+  if (cause) console.warn(`♻️ ${cause} — recovering...`);
+  else console.warn("♻️ recovering...");
 
+  // 1) SOFT path: if CDP still connected and we have a context, rotate tab + relogin
   try {
-    if (browser?.isConnected?.()) {
-      await browser.close();
+    if (browser?.isConnected?.() && context) {
+      page = await soft_reset_page_and_relogin({
+        context,
+        page,
+        load_timeout_ms,
+        wrestling_season,
+        track_wrestling_category,
+        url_login_page,
+      });
+      await attach_disconnected_logger_once(browser);
+      return { browser, page, context };
     }
   } catch (e) {
-    console.warn("⚠️ browser.close error ignored:", e?.message || e);
+    console.warn("⚠️ soft reset failed; will hard relaunch:", e?.message || e);
   }
 
-  if (cause) {
-    console.warn(`♻️ ${cause} — reconnecting...`);
-  } else {
-    console.warn("♻️ reconnecting...");
-  }
-
+  // 2) HARD path: relaunch + reconnect via step_0
   await wait_until_devtools_ready(port, 8000).catch(() => false);
 
   ({ browser, page, context } = await step_0_launch_chrome_developer_parallel_scrape(
@@ -363,9 +406,7 @@ async function helper_browser_close_restart_relogin(
     { force_relaunch: true }
   ));
 
-  browser.on?.("disconnected", () => {
-    console.warn("⚠️ CDP disconnected");
-  });
+  await attach_disconnected_logger_once(browser);
 
   await relogin(
     page,
@@ -430,10 +471,9 @@ function extractor_source() {
       const t = norm(raw);
       if (!t) return { start_date: "", end_date: "" };
 
-      let m =
-        t.match(
-          /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-        );
+      let m = t.match(
+        /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+      );
       if (m) {
         const [, m1, d1, m2, d2, y2] = m;
         const start_obj = to_date(y2, m1, d1);
@@ -441,10 +481,9 @@ function extractor_source() {
         return { start_date: fmt_mdy(start_obj), end_date: fmt_mdy(end_obj) };
       }
 
-      m =
-        t.match(
-          /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-        );
+      m = t.match(
+        /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+      );
       if (m) {
         const [, m1, d1, y1, m2, d2, y2] = m;
         const start_obj = to_date(y1, m1, d1);
@@ -502,9 +541,9 @@ function extractor_source() {
       );
       for (const a of link_nodes) {
         const href = a.getAttribute("href") || "";
-        const m = href.match(/wrestlerId=(\d+)/);
-        if (m && m[1] && m[1] !== wrestler_id) {
-          opponent_id = m[1];
+        const m2 = href.match(/wrestlerId=(\d+)/);
+        if (m2 && m2[1] && m2[1] !== wrestler_id) {
+          opponent_id = m2[1];
           break;
         }
       }
@@ -529,7 +568,7 @@ function extractor_source() {
   };
 }
 
-// 🔧 track whether we've already attached the dialog handler
+// dialog handler guard
 let dialog_handler_attached = false;
 
 /* ------------------------------------------
@@ -545,7 +584,7 @@ async function main(
   track_wrestling_category,
   gender,
 
-  // ✅ can be passed in OR omitted (self-managed session)
+  // optional external session
   page,
   browser,
   context,
@@ -554,8 +593,7 @@ async function main(
 
   task_set_id,
   port,
-  worker_id,
-
+  worker_id
 ) {
   if (!task_set_id) {
     throw new Error("task_set_id is required (wrestler_match_history_scrape_tasks scope)");
@@ -563,17 +601,20 @@ async function main(
   if (!port) {
     throw new Error("port is required (per-worker Chrome DevTools port)");
   }
+  if (!worker_id) {
+    throw new Error("worker_id is required (LOCKED task ownership)");
+  }
 
   const load_timeout_ms = 30000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
-  // ✅ allow self-managed session creation
   let created_session_here = false;
 
+  // self-managed attach if not provided
   if (!page || !browser || !context) {
     console.log(
       color_text(
-        `🧩 No page/browser/context provided — launching/attaching via DevTools port ${port}`,
+        `🧩 No page/browser/context provided — attaching via DevTools port ${port}`,
         "cyan"
       )
     );
@@ -587,16 +628,15 @@ async function main(
     ));
 
     created_session_here = true;
-
-    browser.on?.("disconnected", () => console.warn("⚠️ CDP disconnected — Chrome closed"));
   }
 
-  // 🔧 handle JS dialogs safely (MUST NOT crash if CDP session is closing)
+  await attach_disconnected_logger_once(browser);
+
+  // dialog handler (safe)
   if (page && !dialog_handler_attached) {
     dialog_handler_attached = true;
 
     page.on("dialog", (dialog) => {
-      // Log immediately — no await, no throw risk
       try {
         console.log(
           color_text(
@@ -604,25 +644,20 @@ async function main(
             "yellow"
           )
         );
-      } catch {
-        // logging must never be allowed to crash the worker
-      }
+      } catch {}
 
-      // IMPORTANT: never await; never let this reject unhandled
       dialog.accept().catch((err) => {
         const msg = String(err?.message || "");
-
-        // Expected during shutdown / CDP disconnect — silently ignore
         if (
           msg.includes("Page.handleJavaScriptDialog") ||
           msg.includes("session closed") ||
           msg.includes("Internal server error") ||
           msg.includes("Protocol error") ||
-          msg.includes("Target closed")
+          msg.includes("Target closed") ||
+          msg.includes("Session closed")
         ) {
           return;
         }
-
         console.warn(`⚠️ Failed to handle dialog: ${msg}`);
       });
     });
@@ -644,17 +679,14 @@ async function main(
   let auto_recover_timeout_count = 0;
   let hard_reset_count = 0;
 
-  browser.on?.("disconnected", () =>
-    console.warn("⚠️ CDP disconnected — Chrome closed")
-  );
-
   // INITIAL LOGIN
-  await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
-  await page.waitForTimeout(2000);
-
-  console.log("step 1: on index.jsp, auto login for:", wrestling_season);
-  await safe_auto_login(page, wrestling_season, track_wrestling_category);
-  await page.waitForTimeout(1000);
+  await relogin(
+    page,
+    load_timeout_ms,
+    wrestling_season,
+    track_wrestling_category,
+    url_login_page
+  );
 
   console.log(
     color_text(
@@ -671,12 +703,11 @@ async function main(
   );
 
   const iterator = iter_name_links_based_on_scrape_task({
-    start_at: 0,                // for locked scope, always start at 0
-    limit: matches_page_limit,  // typically 1 per task
+    start_at: 0,
+    limit: matches_page_limit,
     batch_size: 500,
     task_set_id,
 
-    // ✅ only process rows this worker has claimed
     status: "LOCKED",
     locked_by: worker_id,
   });
@@ -718,10 +749,11 @@ async function main(
         console.log("step 2a: go to url:", effective_url);
         await safe_goto(page, effective_url, { timeout: load_timeout_ms });
 
-        console.log("step 3: wait for redirect");
+        // ✅ only wait briefly for redirect; don't burn 5s on every loop
+        console.log("step 3: wait for redirect (brief)");
         await page
-          .waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 })
-          .catch(() => { });
+          .waitForURL(/seasons\/index\.jsp/i, { timeout: 800 })
+          .catch(() => {});
 
         if (/seasons\/index\.jsp/i.test(page.url())) {
           console.log(
@@ -730,7 +762,7 @@ async function main(
           );
 
           await safe_auto_login(page, wrestling_season, track_wrestling_category);
-          await page.waitForTimeout(1000);
+          await page.waitForTimeout(800);
 
           const effective_url_after_login = build_wrestler_matches_url(
             url_home_page,
@@ -743,7 +775,7 @@ async function main(
           );
 
           await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
-          await page.waitForTimeout(1000);
+          await page.waitForTimeout(800);
         }
 
         if (/MainFrame\.jsp/i.test(page.url())) {
@@ -752,7 +784,6 @@ async function main(
             page,
             url
           );
-
           await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
         }
 
@@ -763,12 +794,12 @@ async function main(
 
         console.log("step 5: extract rows");
         const rows = await with_fresh_target_frame(page, async (tf) => {
-          await tf.waitForLoadState?.("domcontentloaded");
-          await page.waitForTimeout(1000);
+          await tf.waitForLoadState?.("domcontentloaded").catch(() => {});
+          await page.waitForTimeout(400);
           return await tf.evaluate(extractor_source());
         });
 
-        // ✅ progress (DB-driven; global task_set_id progress)
+        // progress
         let prog = null;
         try {
           prog = await get_task_set_progress(task_set_id);
@@ -777,8 +808,6 @@ async function main(
         }
 
         const total = prog?.total_count ?? total_rows_in_db;
-
-        // "completed" = Done + Failed (Locked is in-flight)
         const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
         const locked = prog?.locked_count ?? 0;
         const done = prog?.done_count ?? 0;
@@ -789,15 +818,15 @@ async function main(
         console.log(
           color_text(
             `✔ ${completed} of ${total} ` +
-            `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
-            `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
+              `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
+              `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
             "red"
           )
         );
 
         all_rows.push(...rows);
 
-        // delete existing match history for this wrestler/season/category
+        // delete existing match history for this wrestler in this season/category
         const this_wrestler_id = rows?.[0]?.wrestler_id;
         if (this_wrestler_id) {
           try {
@@ -814,8 +843,8 @@ async function main(
           } catch (e) {
             console.error(
               "⚠️ failed to delete existing match history for wrestler_id=" +
-              this_wrestler_id +
-              ":",
+                this_wrestler_id +
+                ":",
               e?.message || e
             );
           }
@@ -858,11 +887,12 @@ async function main(
             color_text(
               `=================================
 HARD RESTART AT ${HARD_RESET_LIMIT}
-♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
+♻️ Processed ${processed} wrestler pages — recycling session (soft reset preferred).
 ===================================`,
               "yellow"
             )
           );
+
           ({ browser, page, context } = await helper_browser_close_restart_relogin(
             port,
             browser,
@@ -887,8 +917,6 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
 
         break; // success
       } catch (e) {
-        const msg = String(e?.message || "");
-
         if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
           const is_timeout = e?.code === "E_GOTO_TIMEOUT";
           const cause = is_timeout ? "navigation timeout" : "CDP/target closed";
@@ -896,8 +924,7 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
           if (is_timeout) auto_recover_timeout_count += 1;
           else auto_recover_cdp_count += 1;
 
-          const recover_attempt_no =
-            auto_recover_cdp_count + auto_recover_timeout_count;
+          const recover_attempt_no = auto_recover_cdp_count + auto_recover_timeout_count;
 
           console.warn(
             color_text(
@@ -925,7 +952,10 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
             url
           );
 
-          await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
+          await safe_goto(page, effective_url_after_reconnect, {
+            timeout: load_timeout_ms,
+          });
+
           continue; // retry this wrestler
         }
 
@@ -933,18 +963,19 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
           index: i,
           url,
           attempts,
-          msg,
+          msg: String(e?.message || ""),
         });
+
         throw e;
       }
     }
   }
 
-  // ✅ Only close the CDP connection if we created it here
+  // Only close CDP connection if we created it here
   if (created_session_here) {
     try {
       await browser.close();
-    } catch { }
+    } catch {}
   }
 
   console.log(
