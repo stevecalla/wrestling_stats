@@ -123,20 +123,18 @@ export async function main(
         // V2
         // batch_size: 1, // note: test
         // idle_sleep_ms: 200, // note: test
-        // slow_mo_ms: 0, // note: test
+        // slow_mo_ms: 10, // note: test
 
         // optional parallelism
-        workers: Math.min(4, port_list.length), // 👈 bump to 4 when ready
-        // batch_size: 5,
-        batch_size: 1, // note: test
+        workers: Math.min(2, port_list.length), // 👈 bump to 4 when ready
+        batch_size: 5,
 
         // safety / retry behavior
         max_attempts: 3,
         lock_ttl_minutes: 30,
 
         // worker behavior
-        // idle_sleep_ms: 1500,
-        idle_sleep_ms: 200, // note: test
+        idle_sleep_ms: 500,
         log_every_batches: 5,
 
         // scraper behavior (passed through to workers/sessions)
@@ -152,8 +150,7 @@ export async function main(
 
         file_path,
 
-        // slow_mo_ms: 50,
-        slow_mo_ms: 0, // note: test
+        slow_mo_ms: 0,
         navigation_timeout_ms: 30000,
 
         // ✅ NEW: ports for per-worker chrome sessions
