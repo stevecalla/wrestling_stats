@@ -436,11 +436,13 @@ WHERE 1 = 1
 ORDER BY h.wrestling_season, h.track_wrestling_category, h.wrestler_id
 ;
 
+-- *******************************
 SELECT 
 	wrestler_name,
     school,
     FORMAT(COUNT(*), 0)
 FROM reference_wrestler_rankings_list
+-- WHERE wrestler_name LIKE "%Lopez"
 GROUP BY 1, 2
 ORDER BY 1, 2
 ;
@@ -456,4 +458,42 @@ WHERE 1 = 1
     AND onthemat_is_name_match = 1
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3
+;
+
+WITH rankings AS (
+SELECT 
+	wrestler_name AS name,
+    school AS team,
+    FORMAT(COUNT(*), 0)
+FROM reference_wrestler_rankings_list
+GROUP BY 1, 2
+ORDER BY 1, 2
+)
+-- SELECT * FROM ranking;
+, list AS (
+SELECT 
+	name,
+    team,
+    onthemat_is_name_match,
+    FORMAT(COUNT(*), 0)
+FROM wrestler_list_scrape_data AS l
+WHERE 1 = 1
+	AND wrestling_season = '2025-26'
+    AND onthemat_is_name_match = 1
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3
+)
+-- SELECT * FROM list;
+, join_lists AS (
+SELECT 
+	r.name AS rank_list,
+    l.name AS name_list,
+    FORMAT(COUNT(*), 0)
+FROM rankings AS r
+	LEFT JOIN list AS l on r.name = l.name
+		-- AND r.team = l.team
+--         AND l.onthemat_is_name_match = 1
+GROUP BY r.name, l.name
+)
+SELECT * FROM join_lists WHERE name_list IS NULL;
 ;

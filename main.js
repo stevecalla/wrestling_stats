@@ -66,8 +66,8 @@ const step_flags = {
 
   // GET MATCH HISTORY
   step_3:  false,  // 🏟️ get match history
-  step_3_v2:  false,  // 🏟️ get match history
-  step_4:  true, // 📄 create match history metrics
+  step_3_v2:  true,  // 🏟️ get match history
+  step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
   step_5:  false, // create team division
