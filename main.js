@@ -55,13 +55,13 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  false,  // 🚀 launch chrome
+  step_0:  true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
   step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  false, // get team schedule
+  step_2:  true, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
@@ -85,7 +85,7 @@ const step_flags = {
   step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
+  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
   step_15: false, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
