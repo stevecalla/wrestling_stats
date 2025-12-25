@@ -289,10 +289,6 @@ async function expand_multi_team_rows(rows, target_frame, page) {
       continue;
     }
 
-    // ✅ classification: 2 teams => dual, otherwise tournament
-    const event_team_count = teams.length;
-    const event_type = event_team_count === 2 ? "dual" : "tournament";
-
     teams.forEach((t, index) => {
       expanded_rows.push({
         ...row,
@@ -300,10 +296,6 @@ async function expand_multi_team_rows(rows, target_frame, page) {
         team_id: t.team_id,
         team_role: row.team_role ?? null,
         team_index: index + 1,
-
-        // ✅ include in CSV + DB payload
-        event_team_count,
-        event_type,
       });
     });
   }
@@ -428,10 +420,6 @@ function schedule_extractor_source() {
             // per-team score (null for '@' pattern)
             team_score: t.team_score,
 
-            // ✅ classification: 2 teams => dual
-            event_team_count: 2,
-            event_type: "dual",
-
             row_index_in_span,
           });
         }
@@ -483,10 +471,6 @@ function schedule_extractor_source() {
             // per-team score from the parsed pattern
             team_score: t.team_score,
 
-            // ✅ classification: 2 teams => dual
-            event_team_count: 2,
-            event_type: "dual",
-
             row_index_in_span,
           });
         }
@@ -515,10 +499,6 @@ function schedule_extractor_source() {
 
           // no score for non-duals
           team_score: null,
-
-          // ✅ default classification for non-2-team rows (will be overridden if expanded later)
-          event_team_count: null,
-          event_type: "tournament",
 
           row_index_in_span,
         });
@@ -702,7 +682,6 @@ async function main(
     });
   }
 
-  // NOTE: SET DATE P
   // Rolling date window: 7 days ago from today & today
   function get_rolling_date_range() {
 
@@ -719,7 +698,7 @@ async function main(
       start_date.setDate(start_date.getDate() - 7); // last 7 days
     }
 
-    const end = TEST_MODE ? new Date(2025, 12 - 1, 2) : new Date();
+    const end = TEST_MODE ? new Date(2025, 12 - 1, 14) : new Date();
     end.setHours(0, 0, 0, 0);
 
     const end_date = new Date(end);
@@ -994,52 +973,17 @@ async function main(
       // Expand multi-team events (no '@' + javascript:openEvent)
       const rows = await expand_multi_team_rows(raw_rows, target_frame, page);
 
-      // ✅ classification for rows that were NOT expanded:
-      // rule: any event with 2 teams => dual; otherwise tournament
-      // - '@' and score-duals come in as 2 rows (team_index 1/2)
-      // - tournament rows have team_index null (and may later be expanded)
-      const grouped_by_event = new Map();
-      for (const r of rows) {
-        const key = r.event_key || r.event_js || r.event_name || "";
-        if (!grouped_by_event.has(key)) grouped_by_event.set(key, []);
-        grouped_by_event.get(key).push(r);
-      }
-
-      const classified_rows = rows.map((r) => {
-        // if expansion already set these, keep them
-        if (r.event_team_count != null && r.event_type != null) return r;
-
-        const key = r.event_key || r.event_js || r.event_name || "";
-        const group = grouped_by_event.get(key) || [];
-
-        const team_rows = group.filter((x) => x.team_index != null);
-        const team_count = team_rows.length;
-
-        // if we have exactly 2 team rows, it's a dual; else tournament
-        const event_team_count =
-          team_count > 0 ? team_count : r.event_team_count ?? null;
-
-        const event_type =
-          team_count === 2 ? "dual" : "tournament";
-
-        return {
-          ...r,
-          event_team_count,
-          event_type,
-        };
-      });
-
-      if (classified_rows.length !== raw_rows.length) {
+      if (rows.length !== raw_rows.length) {
         console.log(
           color_text(
-            `🔁 expanded multi-team events: ${raw_rows.length} → ${classified_rows.length} rows`,
+            `🔁 expanded multi-team events: ${raw_rows.length} → ${rows.length} rows`,
             "yellow"
           )
         );
       }
 
       // Enrich rows with audit fields before saving.
-      const enriched_rows = classified_rows.map((r, idx) => {
+      const enriched_rows = rows.map((r, idx) => {
         const row_index_global = global_row_counter + idx + 1;
 
         return {
@@ -1049,8 +993,8 @@ async function main(
         };
       });
 
-      written_rows_seen_in_span += classified_rows.length;
-      global_row_counter += classified_rows.length;
+      written_rows_seen_in_span += rows.length;
+      global_row_counter += rows.length;
 
       console.log("step 3: save schedule rows to csv");
       const headers_written_now = await save_to_csv_file(

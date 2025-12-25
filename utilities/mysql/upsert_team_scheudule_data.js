@@ -32,6 +32,9 @@ async function ensure_table() {
       end_date                 DATE         NULL,
 
       event_name               VARCHAR(255) NULL,
+      event_team_count         INT UNSIGNED NULL,
+      event_type               VARCHAR(32)  NULL,
+
       event_js                 VARCHAR(512) NULL,
       event_key                VARCHAR(255) NULL,
 
@@ -155,6 +158,9 @@ export async function upsert_team_schedule(rows, meta) {
     "end_date",
 
     "event_name",
+    "event_team_count",
+    "event_type",
+
     "event_js",
     "event_key",
 
@@ -194,6 +200,14 @@ export async function upsert_team_schedule(rows, meta) {
       end_date: to_mysql_date(r.end_date),
 
       event_name: r.event_name ?? null,
+      event_team_count:
+        typeof r.event_team_count === "number"
+          ? r.event_team_count
+          : r.event_team_count != null
+          ? Number(r.event_team_count)
+          : null,
+      event_type: r.event_type ?? null,
+
       event_js: r.event_js ?? null,
       event_key: r.event_key ?? null,
 
@@ -260,6 +274,8 @@ export async function upsert_team_schedule(rows, meta) {
               start_date               <=> VALUES(start_date) AND
               end_date                 <=> VALUES(end_date) AND
               event_name               <=> VALUES(event_name) AND
+              event_team_count         <=> VALUES(event_team_count) AND
+              event_type               <=> VALUES(event_type) AND
               event_js                 <=> VALUES(event_js) AND
               event_key                <=> VALUES(event_key) AND
               team_name_raw            <=> VALUES(team_name_raw) AND
@@ -286,6 +302,8 @@ export async function upsert_team_schedule(rows, meta) {
               start_date               <=> VALUES(start_date) AND
               end_date                 <=> VALUES(end_date) AND
               event_name               <=> VALUES(event_name) AND
+              event_team_count         <=> VALUES(event_team_count) AND
+              event_type               <=> VALUES(event_type) AND
               event_js                 <=> VALUES(event_js) AND
               event_key                <=> VALUES(event_key) AND
               team_name_raw            <=> VALUES(team_name_raw) AND
@@ -311,6 +329,9 @@ export async function upsert_team_schedule(rows, meta) {
         end_date                 = VALUES(end_date),
 
         event_name               = VALUES(event_name),
+        event_team_count         = VALUES(event_team_count),
+        event_type               = VALUES(event_type),
+
         event_js                 = VALUES(event_js),
         event_key                = VALUES(event_key),
 
