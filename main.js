@@ -66,7 +66,7 @@ const step_flags = {
 
   // GET MATCH HISTORY
   step_3:  false,  // 🏟️ get match history
-  step_3_v2:  true,  // 🏟️ get match history
+  step_3_v2:  false,  // 🏟️ get match history
   step_4:  false, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
@@ -85,7 +85,7 @@ const step_flags = {
   step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
+  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
   step_15: false, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
