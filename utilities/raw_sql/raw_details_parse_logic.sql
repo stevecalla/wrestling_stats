@@ -28,19 +28,20 @@ WITH base AS (
         LEFT JOIN wrestler_list_scrape_data AS l ON h.wrestler_id = l.wrestler_id
 
     WHERE 1 = 1
+		AND h.wrestling_season = '2025-26'
         -- AND h.wrestler_id IN (29790065132, 30579778132)
         -- AND h.id IN ('24913', '130451') -- nicknames used thus outcome was U rather than W or L
         -- AND h.id IN (43744, 43745, 43746, 1628, 1629) -- names were mispelled thus outcome was U rather than W or L
         -- AND h.wrestler_id IN (29937046132) -- Tatum Williams = missing many opponent_names
-        AND h.wrestler_id IN ('30586917132') -- issue with max match labeling
+        -- AND h.wrestler_id IN ('30586917132') -- issue with max match labeling
 
     ORDER BY h.wrestling_season, h.wrestler_id, h.match_order
         
-    LIMIT 100 OFFSET 0
+    LIMIT 10000 OFFSET 0
     -- LIMIT ${limit_size} OFFSET ${offset_size}
 
 )
--- SELECT * FROM base;
+-- SELECT event, event_type, FORMAT(COUNT(*), 0) FROM base GROUP BY 1, 2 ORDER BY 1;
 
 /* -------------------------
     Step 2: cheap parse + flags
