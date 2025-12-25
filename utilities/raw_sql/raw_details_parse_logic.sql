@@ -15,6 +15,11 @@ WITH base AS (
         h.opponent_id,
 
         h.event,
+        CASE 
+			WHEN h.event LIKE "%vs%"  THEN "dual"
+            WHEN h.event NOT LIKE "%vs%" THEN "tournament"
+            ELSE "other"
+		END AS event_type,
         h.start_date,
         h.end_date,
 
@@ -55,6 +60,7 @@ WITH base AS (
     b.wrestler_name,
     b.match_order,
     b.event,
+    b.event_type,
     b.start_date,
     b.raw_details,
 
@@ -574,7 +580,9 @@ SELECT
   l.grade       AS wrestler_grade,
   l.level       AS wrestler_level,
 
-  h.event, h.start_date, h.end_date, h.weight_category,
+  h.event, 
+  s10.event_type,
+  h.start_date, h.end_date, h.weight_category,
 
   s10.match_order,
   s10.opponent_id,

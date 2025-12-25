@@ -18,6 +18,7 @@ const id_fields = `
   wrestler_level            VARCHAR(64)  NULL,
 
   event                     VARCHAR(255)  NULL,
+  event_type                VARCHAR(255)  NULL,
   start_date                DATE          NULL,
   end_date                  DATE          NULL,
   weight_category           VARCHAR(64)   NULL,
