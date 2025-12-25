@@ -103,9 +103,9 @@ SELECT
   -- JS-style array literal you can copy/paste into NAME_FIXES:
   CONCAT(
     "['",
-    REPLACE(ranking_wrestler_name, "'", "\\'"),
-    "', '",
     REPLACE(list_wrestler_name, "'", "\\'"),
+    "', '",
+    REPLACE(ranking_wrestler_name, "'", "\\'"),
     "']"
   ) AS name_fix_array,
 
@@ -135,9 +135,10 @@ SELECT
     END
   ) AS name_diff_hint
 FROM ranked
-WHERE rn = 1
-ORDER BY match_score_0_to_5 DESC, list_id;
-
+WHERE 1 = 1
+  AND rn = 1
+ORDER BY match_score_0_to_5 DESC, list_id
+;
 
 /* ---------------------------------------------------------------------------
 QUERY B — “SHOW ME ALL CANDIDATES” (DEBUG / TUNING)
@@ -216,4 +217,155 @@ WHERE
 ORDER BY
   l.list_id,
   score_0_to_5 DESC,
-  candidate_name;
+  candidate_name
+;
+
+/* ---------------------------------------------------------------------------
+QUERY C — “SHOW ME ALL CANDIDATES” (DEBUG / TUNING)
+
+Removed all the filtering from Query A to show all candidates
+--------------------------------------------------------------------------- */
+WITH
+r AS (
+  SELECT
+    r.wrestler_name AS ranking_wrestler_name,
+    r.school        AS ranking_school,
+    r.weight_lbs    AS ranking_weight_lbs,
+    LOWER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(r.wrestler_name,'[^A-Za-z0-9 ]',' '),'\\s+',' '))) AS ranking_name_norm,
+    LOWER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(r.school,'[^A-Za-z0-9 ]',' '),'\\s+',' ')))       AS ranking_school_norm
+  FROM reference_wrestler_rankings_list r
+  WHERE 1 = 1
+    AND r.wrestling_season = '2025-26'
+    AND r.track_wrestling_category = 'High School Boys'
+    -- AND r.wrestler_name = "Brennan White"
+)
+-- SELECT * FROM r;
+, l AS (
+  SELECT
+    l.id AS list_id,
+    l.name AS list_wrestler_name,
+    SUBSTRING_INDEX(l.team, ',', 1) AS list_school,
+    l.weight_class AS list_weight_lbs,
+    LOWER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(l.name,'[^A-Za-z0-9 ]',' '),'\\s+',' '))) AS list_name_norm,
+    LOWER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(SUBSTRING_INDEX(l.team, ',', 1),'[^A-Za-z0-9 ]',' '),'\\s+',' '))) AS list_school_norm
+  FROM wrestler_list_scrape_data l
+  WHERE 1 = 1
+    AND l.wrestling_season = '2025-26'
+    AND l.track_wrestling_category = 'High School Boys'
+    -- AND (l.onthemat_is_name_match = 0 OR l.onthemat_is_name_match IS NULL)
+    -- AND l.name = "Brennen White"
+)
+-- SELECT * FROM l;
+, candidates AS (
+  SELECT
+    l.list_id,
+    l.list_wrestler_name,
+    l.list_school,
+    l.list_weight_lbs,
+
+    r.ranking_wrestler_name,
+    r.ranking_school,
+    r.ranking_weight_lbs,
+
+    l.list_name_norm,
+    r.ranking_name_norm,
+
+    (
+      (LOCATE(SUBSTRING_INDEX(l.list_name_norm,' ',1),   r.ranking_name_norm) > 0) +
+      (LOCATE(SUBSTRING_INDEX(l.list_name_norm,' ', -1), r.ranking_name_norm) > 0) +
+      (SOUNDEX(l.list_name_norm) = SOUNDEX(r.ranking_name_norm)) +
+      (r.ranking_school_norm LIKE CONCAT('%', l.list_school_norm, '%')) +
+      (l.list_school_norm LIKE CONCAT('%', r.ranking_school_norm, '%'))
+    ) AS match_score_0_to_5
+  FROM l
+  JOIN r ON 
+  
+  r.ranking_school_norm LIKE CONCAT('%', l.list_school_norm, '%')
+            OR l.list_school_norm LIKE CONCAT('%', r.ranking_school_norm, '%')
+
+-- 	  r.ranking_weight_lbs = l.list_weight_lbs
+--       AND (
+--             r.ranking_school_norm LIKE CONCAT('%', l.list_school_norm, '%')
+--             OR l.list_school_norm LIKE CONCAT('%', r.ranking_school_norm, '%')
+--       )
+  WHERE 1 = 1 
+    AND 
+    (
+		SOUNDEX(l.list_name_norm) = SOUNDEX(r.ranking_name_norm)
+		OR LOCATE(SUBSTRING_INDEX(l.list_name_norm,' ', -1), r.ranking_name_norm) > 0
+    )
+)
+-- SELECT * FROM candidates;
+, ranked AS (
+  SELECT
+    c.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY c.list_id
+      ORDER BY c.match_score_0_to_5 DESC, c.ranking_wrestler_name
+    ) AS rn
+  FROM candidates c
+)
+, final AS (
+SELECT
+  list_id,
+  list_wrestler_name,
+  list_school,
+  list_weight_lbs,
+
+  ranking_wrestler_name,
+  ranking_school,
+  ranking_weight_lbs,
+  
+  CASE WHEN list_weight_lbs <> ranking_weight_lbs THEN 0 WHEN list_weight_lbs = ranking_weight_lbs THEN 1 ELSE 0 END AS is_weight_same,
+
+  match_score_0_to_5,
+
+  -- JS-style array literal you can copy/paste into NAME_FIXES:
+  CONCAT(
+    "['",
+    REPLACE(list_wrestler_name, "'", "\\'"),
+    "', '",
+    REPLACE(ranking_wrestler_name, "'", "\\'"),
+    "']"
+  ) AS name_fix_array,
+
+  SUBSTRING_INDEX(list_name_norm,' ',1)   AS list_first_name_norm,
+  SUBSTRING_INDEX(list_name_norm,' ', -1) AS list_last_name_norm,
+  SUBSTRING_INDEX(ranking_name_norm,' ',1)   AS ranking_first_name_norm,
+  SUBSTRING_INDEX(ranking_name_norm,' ', -1) AS ranking_last_name_norm,
+
+  CHAR_LENGTH(SUBSTRING_INDEX(list_name_norm,' ', -1))
+    - CHAR_LENGTH(SUBSTRING_INDEX(
+        SUBSTRING_INDEX(list_name_norm,' ', -1),
+        SUBSTRING_INDEX(ranking_name_norm,' ', -1),
+        1
+      )) AS last_name_common_prefix_len,
+
+  CONCAT(
+    CASE
+      WHEN SUBSTRING_INDEX(list_name_norm,' ',1) = SUBSTRING_INDEX(ranking_name_norm,' ',1)
+        THEN 'first=OK'
+      ELSE CONCAT('first:', SUBSTRING_INDEX(list_name_norm,' ',1), '→', SUBSTRING_INDEX(ranking_name_norm,' ',1))
+    END,
+    ' | ',
+    CASE
+      WHEN SUBSTRING_INDEX(list_name_norm,' ', -1) = SUBSTRING_INDEX(ranking_name_norm,' ', -1)
+        THEN 'last=OK'
+      ELSE CONCAT('last:', SUBSTRING_INDEX(list_name_norm,' ', -1), '→', SUBSTRING_INDEX(ranking_name_norm,' ', -1))
+    END
+  ) AS name_diff_hint
+FROM ranked
+WHERE 1 = 1
+  AND rn = 1
+ORDER BY match_score_0_to_5 DESC, list_id
+) 
+SELECT 
+	* 
+FROM final 
+WHERE 1 = 1 
+	-- remove to view entire list
+	-- AND name_diff_hint <> 'first=OK | last=OK'
+  AND match_score_0_to_5 >= 4
+  -- AND list_wrestler_name IN ("Brennen White")
+ORDER BY list_wrestler_name
+;

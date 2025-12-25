@@ -548,7 +548,7 @@ export async function upload_wrestler_list_to_mysql(
 // -----------------------------------------------------------------------------
 // Runner (standalone execution)
 // -----------------------------------------------------------------------------
-export async function run_parse_wrestler_docx({
+export async function run_parse_wrestler_docx_v2({
   docx_path,
   excel_path,
   json_path,
@@ -626,7 +626,7 @@ export async function run_parse_wrestler_docx({
   return all_rows_with_meta;
 }
 
-run_parse_wrestler_docx().catch((err) => {
-  console.error("[parse_wrestler_list] error:", err);
-  process.exit(1);
-});
+// run_parse_wrestler_docx_v2().catch((err) => {
+//   console.error("[parse_wrestler_list] error:", err);
+//   process.exit(1);
+// });
