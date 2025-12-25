@@ -55,19 +55,19 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0:  true,  // 🚀 launch chrome
+  step_0:  false,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
   step_1:  false,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2:  true, // get team schedule
+  step_2:  false, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
   step_3:  false,  // 🏟️ get match history
   step_3_v2:  false,  // 🏟️ get match history
-  step_4:  false, // 📄 create match history metrics
+  step_4:  true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
   step_5:  false, // create team division
