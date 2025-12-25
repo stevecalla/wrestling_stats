@@ -95,7 +95,7 @@ export async function main(
 
         job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-        seed_limit: 0, // 👈 only seed 10 tasks; set to 0 to eliminate limit
+        seed_limit: 20, // 👈 only seed 10 tasks; set to 0 to eliminate limit
         reset_pending: true, // if true, sets DONE/FAILED back to PENDING
         time_bucket: format_ymd(now_mtn), // daily MTN bucket
         // time_bucket: format_ymd_hour(now_mtn), // hourly MTN bucket
@@ -126,7 +126,7 @@ export async function main(
         // slow_mo_ms: 10, // note: test
 
         // optional parallelism
-        workers: Math.min(3, port_list.length), // 👈 bump to 4 when ready
+        workers: Math.min(1, port_list.length), // 👈 bump to 4 when ready
         batch_size: 5,
 
         // safety / retry behavior
