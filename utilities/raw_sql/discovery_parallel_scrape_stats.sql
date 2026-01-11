@@ -1,7 +1,7 @@
 USE wrestling_stats;
 -- DROP TABLE wrestler_match_history_scrape_tasks;
 
-SELECT FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_tasks;
+SELECT FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_tasks LIMIT 10;
 SELECT
   task_set_id,
   SUM(status='Done')   AS done_count,
@@ -33,6 +33,7 @@ SELECT
   COUNT(*) AS total_count,
   MIN(updated_at_mtn) AS min_updated_at_mtn,
   MAX(updated_at_mtn) AS max_updated_at_mtn,
+  MAX(updated_at_utc) AS max_updated_at_utc,
     -- duration between min/max in HH:MM:SS
     SEC_TO_TIME(
         TIMESTAMPDIFF(
@@ -41,12 +42,15 @@ SELECT
             
             MAX(updated_at_mtn)
         )
-    ) AS duration_hh_mm_ss
+    ) AS duration_hh_mm_ss,
+	MAX(updated_at_utc) AS max_updated_at_utc
 FROM wrestler_match_history_scrape_tasks
 GROUP BY task_set_id, locked_by WITH ROLLUP
 ORDER BY 1, 2 ASC;
 
+SELECT * FROM wrestler_match_history_scrape_tasks LIMIT 10;
 SELECT * FROM wrestler_match_history_scrape_tasks WHERE last_error IS NOT NULL LIMIT 10;
+SELECT * FROM wrestler_match_history_scrape_tasks WHERE updated_at_mtn = '2026-01-10 13:26:25' LIMIT 10;
 
 SELECT * FROM wrestler_match_history_scrape_data WHERE wrestler_id = 35021874132;
 SELECT * FROM wrestler_match_history_scrape_data WHERE wrestler_id = 35021875132;

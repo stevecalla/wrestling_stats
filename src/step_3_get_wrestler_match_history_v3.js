@@ -39,7 +39,7 @@ import {
   iter_name_links_based_on_event_schedule,
 } from "../utilities/mysql/iter_name_links_from_db.js";
 
-import { step_0_launch_chrome_developer_v3 } from "./step_0_launch_chrome_developer_v3.js";
+import { step_0_launch_chrome_developer_v3 } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_0_launch_chrome_developer_v3.js";
 import { auto_login_select_season } from "../utilities/scraper_tasks/auto_login_select_season.js";
 
 import { color_text } from "../utilities/console_logs/console_colors.js";
