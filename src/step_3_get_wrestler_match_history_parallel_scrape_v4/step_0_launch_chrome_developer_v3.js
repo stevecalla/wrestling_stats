@@ -13,8 +13,8 @@ import { chromium } from "playwright";
 
 // import all three launchers
 import { launch_chrome_win_v3 } from "../../utilities/chrome_dev_tools/launch_chrome_win_parallel_scrape_v3.js";
-import { launch_chrome_linux } from "../../utilities/chrome_dev_tools/launch_chrome_linux.js";
-import { launch_chrome_mac } from "../../utilities/chrome_dev_tools/launch_chrome_mac.js";
+import { launch_chrome_linux_v3 } from "../../utilities/chrome_dev_tools/launch_chrome_linux_parallel_scrape_v3.js";
+import { launch_chrome_mac_v3 } from "../../utilities/chrome_dev_tools/launch_chrome_mac_parallel_scrape_v3.js";
 
 import { step_19_close_chrome_dev } from "../step_19_close_chrome_developer.js";
 
@@ -79,9 +79,9 @@ async function main(URL = process.env.TARGET_URL || "https://www.google.com", PO
   if (platform === "win32") {
     await launch_chrome_win_v3(URL, USER_DATA_DIR_DEFAULT, PORT);
   } else if (platform === "linux") {
-    await launch_chrome_linux(URL, USER_DATA_DIR_DEFAULT, PORT);
+    await launch_chrome_linux_v3(URL, USER_DATA_DIR_DEFAULT, PORT);
   } else if (platform === "darwin") {
-    await launch_chrome_mac(URL, USER_DATA_DIR_DEFAULT, PORT);
+    await launch_chrome_mac_v3(URL, USER_DATA_DIR_DEFAULT, PORT);
   } else {
     console.warn(`[WARN] Unsupported platform: ${platform}.`);
     return;

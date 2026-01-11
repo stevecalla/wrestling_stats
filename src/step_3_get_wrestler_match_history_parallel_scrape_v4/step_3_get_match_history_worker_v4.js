@@ -37,6 +37,7 @@ import {
   iter_name_links_from_db,
   count_name_links_based_on_event_schedule,
   iter_name_links_based_on_event_schedule,
+  get_task_set_progress,
 } from "../../utilities/mysql/iter_name_links_from_db.js";
 
 import { step_0_launch_chrome_developer_v3 } from "./step_0_launch_chrome_developer_v3.js";
@@ -974,17 +975,28 @@ async function main({
             throw e;
           }
         }
+        
+        // progress (multi-scraper DB tasks version)
+        let prog = null;
+        try {
+          prog = await get_task_set_progress(task_set_id);
+        } catch (e) {
+          console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
+        }
 
-        // 🔧 progress number is based on loop_start + how many we've *completed* so far
-        const progress_index = loop_start + processed + 1;
-        const total_planned =
-          mode === "tasks"
-            ? "(tasks)"
-            : Math.min(loop_start + no_of_urls, total_rows_in_db);
+        const total = prog?.total_count ?? total_rows_in_db;
+        const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
+        const locked = prog?.locked_count ?? 0;
+        const done = prog?.done_count ?? 0;
+        const failed = prog?.failed_count ?? 0;
+        const pending = prog?.pending_count ?? 0;
+        const duration = prog?.duration_hh_mm_ss ?? "00:00:00";
 
         p(
           color_text(
-            `✔ ${progress_index} of ${total_planned}. rows returned: ${rows.length} from ${url}`,
+            `✔ ${completed} of ${total} ` +
+            `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
+            `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
             "red"
           )
         );

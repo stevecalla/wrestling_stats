@@ -1,4 +1,5 @@
 // src\step_3_get_wrestler_match_history_v4.js
+import os from "os";
 
 import { step_0_launch_chrome_developer_v3 } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_0_launch_chrome_developer_v3.js";
 import { step_1_create_scrape_tasks_table, step_1_truncate_scrape_tasks_table } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_1_create_scrape_tasks_table.js";
@@ -7,7 +8,7 @@ import { step_3_get_match_history_worker_v4 } from "./step_3_get_wrestler_match_
 
 import { color_text } from "../utilities/console_logs/console_colors.js";
 
-import { build_worker_id } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_4_scrape_tasks_repo.js";
+// import { build_worker_id } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_4_scrape_tasks_repo.js";
 
 /* -------------------------------------------------
     GET MTN TIME
@@ -76,7 +77,7 @@ export async function main(
 
     job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-    seed_limit: 5, // 👈 only seed n tasks; set to 0 to eliminate limit
+    seed_limit: 10, // 👈 only seed n tasks; set to 0 to eliminate limit
     reset_pending: true, // if true, sets DONE/FAILED back to PENDING
 
     time_bucket: format_ymd(now_mtn), // daily MTN bucket
@@ -91,22 +92,26 @@ export async function main(
   // -----------------------------------------------
   const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
 
-  const PORTS_TO_LAUNCH = 1;
+  const PORTS_TO_LAUNCH = 2;
   const ports_to_use = port_list.slice(0, PORTS_TO_LAUNCH);
 
   const LAUNCH_DELAY_MS = 750;
 
   // how many tasks to claim per DB transaction
-  const claim_batch_size = 1;
+  const claim_batch_size = 2;
 
   const wall_start = Date.now();
+
+  async function build_worker_id(port) {
+    return `${os.hostname()}|pid=${process.pid}|port=${port}`;
+  }
 
   const results = await Promise.allSettled(
     ports_to_use.map((port, idx) => (async () => {
       if (idx > 0) await new Promise((res) => setTimeout(res, LAUNCH_DELAY_MS));
 
       const port_start = Date.now();
-      const worker_id = build_worker_id(port);
+      const worker_id = await build_worker_id(port);
 
       console.log(color_text(`\n🚀 Worker starting: ${worker_id}`, "cyan"));
 
