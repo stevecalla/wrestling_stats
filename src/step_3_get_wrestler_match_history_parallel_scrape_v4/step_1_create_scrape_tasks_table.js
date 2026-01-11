@@ -1,20 +1,49 @@
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
 
+// async function step_1_truncate_scrape_tasks_table() {
+//   const pool = await get_pool();
+
+//   const sql = `
+//     TRUNCATE TABLE wrestler_match_history_scrape_tasks;
+//   `;
+
+//   try {
+//     console.log(
+//       "🛠️ Preparing table wrestler_match_history_scrape_tasks..."
+//     );
+//     await pool.query(sql);
+//     console.log("✅ Table truncated: wrestler_match_history_scrape_tasks (v3)");
+//   } catch (err) {
+//     console.error("❌ Failed to create table:", err?.message || err);
+//     throw err;
+//   }
+// }
+
 async function step_1_truncate_scrape_tasks_table() {
   const pool = await get_pool();
 
-  const sql = `
-    TRUNCATE TABLE wrestler_match_history_scrape_tasks;
-  `;
-
   try {
-    console.log(
-      "🛠️ Creating table wrestler_match_history_scrape_tasks (v3, UTC+MTN timestamps) (if not exists)..."
-    );
-    await pool.query(sql);
-    console.log("✅ Table ready: wrestler_match_history_scrape_tasks (v3)");
+    // 1️⃣ Check if table exists
+    const [[{ table_exists }]] = await pool.query(`
+      SELECT 
+        COUNT(*) AS table_exists
+      FROM information_schema.tables
+      WHERE table_schema = DATABASE()
+        AND table_name = 'wrestler_match_history_scrape_tasks'
+    `);
+
+    // 2️⃣ Conditionally truncate
+    if (table_exists > 0) {
+      await pool.query(`TRUNCATE TABLE wrestler_match_history_scrape_tasks;`);
+      console.log("🧹 TRUNCATED: wrestler_match_history_scrape_tasks");
+    } else {
+      console.log("⚠️ SKIPPED: wrestler_match_history_scrape_tasks does not exist");
+    }
   } catch (err) {
-    console.error("❌ Failed to create table:", err?.message || err);
+    console.error(
+      "❌ Failed while truncating wrestler_match_history_scrape_tasks:",
+      err?.message || err
+    );
     throw err;
   }
 }

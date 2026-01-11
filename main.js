@@ -8,7 +8,7 @@ import { color_text } from "./utilities/console_logs/console_colors.js";
 
 // === imports for each step ===
 import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_developer.js";
-import { step_0_launch_chrome_developer_v3 } from "./src/step_0_launch_chrome_developer_v3.js";
+import { step_0_launch_chrome_developer_v3 } from "./src/step_3_get_wrestler_match_history_parallel_scrape_v4/step_0_launch_chrome_developer_v3.js";
 
 import { step_1_run_alpha_wrestler_list } from "./src/step_1_get_wrestler_list.js";
 
@@ -17,6 +17,7 @@ import { step_2_get_team_schedule } from "./src/step_2_get_team_schedule.js";
 import { step_3_get_wrestler_match_history } from "./src/step_3_get_wrestler_match_history.js";
 import { step_3_get_wrestler_match_history_v2 } from "./src/step_3_get_wrestler_match_history_v2.js";
 import { step_3_get_wrestler_match_history_v3 } from "./src/step_3_get_wrestler_match_history_v3.js";
+import { step_3_get_wrestler_match_history_v4 } from "./src/step_3_get_wrestler_match_history_v4.js";
 
 import { step_4_create_wrestler_match_history_data } from "./src/step_4_create_wrestler_match_history_metrics.js";
 
@@ -57,47 +58,47 @@ import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_appe
 const step_flags = {
 
   // LAUNCH CHROME
-  step_0: false,  // 🚀 launch chrome
+  step_0: true,  // 🚀 launch chrome
 
   // GET WRESTLER LIST
-  step_1: false,  // 📄 get wrestler list
+  step_1: true,  // 📄 get wrestler list
 
   // GET TEAM SCHEDULE
-  step_2: false, // get team schedule
+  step_2: true, // get team schedule
   // step_2a: false, // happens inside step2; append team id to team schedule scrape data 
 
   // GET MATCH HISTORY
   step_3: false,  // 🏟️ get match history
-  step_3_v2: false,  // 🏟️ get match history
-  step_3_v3: true,  // 🏟️ get match history
-  step_3_v4: false,  // 🏟️ get match history
+  step_3_v2: false,  // 🏟️ get match history - parallel version that doesn't work
+  step_3_v3: false,  // 🏟️ get match history - parallel version test, precessor to v4
+  step_3_v4: true,  // 🏟️ get match history
 
-  step_4: false, // 📄 create match history metrics
+  step_4: true, // 📄 create match history metrics
 
   // CREATE TEAM REGION / DIVISION
-  step_5: false, // create team division
-  step_6: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_7: false, // append team division to match history metrics
-  step_8: false, // append team division to wrestler list
+  step_5: true, // create team division
+  step_6: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_7: true, // append team division to match history metrics
+  step_8: true, // append team division to wrestler list
 
   // CREATE 2024-25 STATE QUALIFIER LIST
-  step_9: false, // create 2024-25 state qualifier list
-  step_10: false, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
-  step_11: false, // append state qualifier to match history metrics
-  step_12: false, // append state qualifier to wrestler list
+  step_9: true, // create 2024-25 state qualifier list
+  step_10: true, // append team division to table (ad hoc updates for teams that don't have division/regoin data)
+  step_11: true, // append state qualifier to match history metrics
+  step_12: true, // append state qualifier to wrestler list
 
   // APPLY 2025 STATE QUALIFIER & TEAM DIVISION TO 2026 WRESTLER LIST
-  step_13: false, // append 2025 state qualifier & team division to 2026 wrestler list
+  step_13: true, // append 2025 state qualifier & team division to 2026 wrestler list
 
   // APPEND ONTHEMAT RANKINGS TO 2026 WRESTLER LIST
-  step_14: false, // append ONTHEMAT rankings to 2026 wrestler list
-  step_15: false, // append ONTHEMAT rankings to to match history metrics
+  step_14: true, // append ONTHEMAT rankings to 2026 wrestler list
+  step_15: true, // append ONTHEMAT rankings to to match history metrics
 
   // LOAD GOOGLE CLOUD / BIGQUERY
-  step_17: false, // load data into Google cloud / bigquery
+  step_17: true, // load data into Google cloud / bigquery
 
   // TRANSFER TABLES BETWEEN WINDOWS & MAC
-  step_18: false,  // 🧹 transfer tables between windos & mac
+  step_18: true,  // 🧹 transfer tables between windos & mac
 
   step_19: false,  // 🧹 close browser
 };
@@ -413,133 +414,8 @@ async function main(config) {
     } else log_step_skip(3_2, "Match history");
 
     // parallel; no tracking ports 4 seems to work well, 5 okay, 6 fine
-    // todo: not setup to run on linux or mac... need to adjust launch v3 and parallel scrape v3
+    // todo: not setup to run on linux or mac... need to adjust launch v3 and parallel v3
     if (step_flags.step_3_v3) {
-
-      const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
-
-      const PORTS_TO_LAUNCH = 6;
-      const ports_to_use = port_list.slice(0, PORTS_TO_LAUNCH);
-
-      const LAUNCH_DELAY_MS = 750;
-      const limit = 5;
-
-      // =============================
-      // TOTAL WALL TIME (START)
-      // =============================
-      const wall_start = Date.now();
-
-      const results = await Promise.allSettled(
-        ports_to_use.map((port, idx) => (async () => {
-
-          // stagger launches
-          if (idx > 0) {
-            await new Promise(res => setTimeout(res, LAUNCH_DELAY_MS));
-          }
-
-          // =============================
-          // PER-PORT TIME (START)
-          // =============================
-          const port_start = Date.now();
-
-          // auto-advance by 5 per port
-          const loop_start = idx * limit;
-
-          log_step_start(
-            3_3,
-            `Scraping match history (port=${port}, loop_start=${loop_start}, limit=${limit})`
-          );
-
-          log_step_start(0, `Launching Chrome DevTools 🚀 (port=${port})`);
-
-          const { browser, page, context } =
-            await step_0_launch_chrome_developer_v3(config.url_home_page, port);
-
-          log_step_success(
-            0,
-            `Chrome launched successfully (port=${port})`,
-            Date.now() - port_start
-          );
-
-          const match_csv_path = ctx.paths.match_csv.replace(
-            /\.csv$/i,
-            `_${port}.csv`
-          );
-
-          await step_3_get_wrestler_match_history_v3(
-            config.url_home_page,
-            config.url_login_page,
-            limit,
-            loop_start,
-
-            config.wrestling_season,
-            config.track_wrestling_category,
-            config.gender,
-
-            config.sql_where_filter_state_qualifier,
-            config.sql_where_filter_onthemat_ranking_list,
-            config.sql_team_id_list,
-            config.sql_wrestler_id_list,
-
-            page,
-            browser,
-            context,
-            port,
-
-            match_csv_path,
-            config.use_scheduled_events_iterator_query,
-            config.use_wrestler_list_iterator_query
-          );
-
-          // =============================
-          // PER-PORT TIME (END)
-          // =============================
-          const port_ms = Date.now() - port_start;
-
-          log_step_success(
-            3_3,
-            `Match history saved → ${match_csv_path} (port=${port})`,
-            port_ms
-          );
-
-          // Return timing so we can summarize after allSettled
-          return { port, loop_start, limit, match_csv_path, port_ms };
-
-        })())
-      );
-
-      // =============================
-      // TOTAL WALL TIME (END)
-      // =============================
-      const wall_ms = Date.now() - wall_start;
-
-      console.log("========================================");
-      console.log(`⏱️  TOTAL WALL TIME: ${wall_ms} ms (${(wall_ms / 1000).toFixed(2)}s)`);
-      console.log("========================================");
-
-      // -----------------------------
-      // INSPECT RESULTS + PORT TIMINGS
-      // -----------------------------
-      results.forEach((result, idx) => {
-        const port = ports_to_use[idx];
-
-        if (result.status === "rejected") {
-          console.error(`❌ Port ${port} failed`, result.reason);
-        } else {
-          const { port_ms, loop_start, limit } = result.value;
-          console.log(
-            `✅ Port ${port} completed — port_time=${port_ms} ms (${(port_ms / 1000).toFixed(2)}s) ` +
-            `slice=[${loop_start}..${loop_start + limit - 1}]`
-          );
-        }
-      });
-
-    } else {
-      log_step_skip(3_3, "Match history");
-    };
-
-    // parallel with db tracking
-    if (step_flags.step_3_v4) {
 
       const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
 
@@ -571,7 +447,7 @@ async function main(config) {
           const loop_start = idx * limit;
 
           log_step_start(
-            3_4,
+            3_3,
             `Scraping match history (port=${port}, loop_start=${loop_start}, limit=${limit})`
           );
 
@@ -622,7 +498,7 @@ async function main(config) {
           const port_ms = Date.now() - port_start;
 
           log_step_success(
-            3_4,
+            3_3,
             `Match history saved → ${match_csv_path} (port=${port})`,
             port_ms
           );
@@ -659,9 +535,47 @@ async function main(config) {
         }
       });
 
-    } else {
-      log_step_skip(3_4, "Match history");
-    };
+    } else log_step_skip(3_3, "Match history");
+
+    // parallel with db tracking
+    if (step_flags.step_3_v4) {
+
+      const start = Date.now();
+
+      const is_test = test_flags.step_3_is_test;
+      const limit = is_test ? config.matches_page_limit_test : config.matches_page_limit_full;
+      const loop_start = config.step_3_loop_start;
+
+      // log_step_start(
+      //   3_4,
+      //   `Scraping match history (limit=${limit}, step_3_v2_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
+      // );
+
+      await step_3_get_wrestler_match_history_v4(
+        config.url_home_page,
+        config.url_login_page,
+
+        limit,
+        loop_start,
+
+        config.wrestling_season,
+        config.track_wrestling_category,
+        config.gender,
+
+        config.sql_where_filter_state_qualifier,
+        config.sql_where_filter_onthemat_ranking_list,
+        config.sql_team_id_list,
+        config.sql_wrestler_id_list,
+
+        ctx.paths.match_csv,
+
+        config.use_scheduled_events_iterator_query,
+        config.use_wrestler_list_iterator_query,
+      );
+
+      log_step_success(3_4, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
+
+    } else log_step_skip(3_4, "Match history");
 
     // === STEP 4  CREATE MATCH HISTORY METRICS ===
     if (step_flags.step_4) {
