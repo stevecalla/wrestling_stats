@@ -12,7 +12,9 @@ function find_mac_chrome() {
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
   ];
   for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch {}
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {}
   }
   return null;
 }
@@ -22,9 +24,14 @@ function ensure_dir(dir) {
   return dir;
 }
 
-async function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function wait(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-async function is_devtools_up(url = `http://localhost:${port}/json/version`) {
+async function is_devtools_up(port) {
+  // ✅ use 127.0.0.1 to avoid localhost resolution quirks
+  const url = `http://127.0.0.1:${port}/json/version`;
+
   try {
     const res = await fetch(url, { cache: "no-store" });
     return res.ok;
@@ -34,16 +41,10 @@ async function is_devtools_up(url = `http://localhost:${port}/json/version`) {
 }
 
 async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
-  // CHANGES
   if (process.platform !== "darwin") {
-    throw new Error("[ERR] Linux-only script.");
+    // ✅ fix message (was "Linux-only script.")
+    throw new Error("[ERR] macOS-only script.");
   }
-
-  console.log(`[INFO] platform=darwin`);
-  console.log(`[INFO] port=${port}`);
-  console.log(`[INFO] target_url=${target_url}`);
-  console.log(`[INFO] chrome_bin=${chrome_bin} exists=${exists(chrome_bin)}`);
-  // CHANGES
 
   const user_data_dir = USER_DATA_DIR_DEFAULT;
   if (!user_data_dir) {
@@ -54,10 +55,23 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
   const chrome_bin = find_mac_chrome();
   if (!chrome_bin) throw new Error("Chrome not found under /Applications.");
 
-  if (await is_devtools_up()) {
+  // ✅ BUGFIX: must pass port
+  if (await is_devtools_up(port)) {
     console.log(`[CDP] Chrome already listening on ${port}.`);
     return;
   }
+
+  console.log(`[INFO] platform=darwin`);
+  console.log(`[INFO] port=${port}`);
+  console.log(`[INFO] target_url=${target_url}`);
+
+  // ✅ log existence accurately (and avoid undefined exists())
+  console.log(
+    `[INFO] chrome_bin=${chrome_bin} exists=${fs.existsSync(chrome_bin)}`
+  );
+  console.log(
+    `[INFO] user_data_dir=${user_data_dir} exists=${fs.existsSync(user_data_dir)}`
+  );
 
   console.log("[MAC] Launching Chrome with remote debugging…");
   const args = [
@@ -74,7 +88,8 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
 
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
-    if (await is_devtools_up()) {
+    // ✅ BUGFIX: must pass port
+    if (await is_devtools_up(port)) {
       console.log(`[CDP] Chrome DevTools listening on ${port}.`);
       return;
     }
