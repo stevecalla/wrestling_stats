@@ -3,7 +3,9 @@ import fs from "fs";
 import { spawn } from "child_process";
 
 // const port = String(process.env.CHROME_DEVTOOLS_PORT || "9222");
-const target_url = (process.env.TARGET_URL && process.env.TARGET_URL.trim()) || "https://www.google.com";
+const target_url =
+  (process.env.TARGET_URL && process.env.TARGET_URL.trim()) ||
+  "https://www.google.com";
 
 // Prefer CHROME_PATH; otherwise try common Chrome/Chromium locations
 function find_linux_chrome() {
@@ -16,7 +18,9 @@ function find_linux_chrome() {
     "/snap/bin/chromium",
   ].filter(Boolean);
   for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch {}
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { }
   }
   return null;
 }
@@ -26,9 +30,14 @@ function ensure_dir(dir) {
   return dir;
 }
 
-async function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function wait(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-async function is_devtools_up(url = `http://localhost:${port}/json/version`) {
+async function is_devtools_up(port) {
+  // ✅ use 127.0.0.1 to avoid localhost/IPv6 weirdness on linux
+  const url = `http://127.0.0.1:${port}/json/version`;
+
   try {
     const res = await fetch(url, { cache: "no-store" });
     return res.ok;
@@ -37,28 +46,33 @@ async function is_devtools_up(url = `http://localhost:${port}/json/version`) {
   }
 }
 
-async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {  
-  // CHANGES
+async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
   if (process.platform !== "linux") {
     throw new Error("[ERR] Linux-only script.");
   }
-
-  console.log(`[INFO] platform=linux`);
-  console.log(`[INFO] port=${port}`);
-  console.log(`[INFO] target_url=${target_url}`);
-  console.log(`[INFO] chrome_bin=${chrome_bin} exists=${exists(chrome_bin)}`);
-  // CHANGES
 
   const user_data_dir = USER_DATA_DIR_DEFAULT;
 
   ensure_dir(user_data_dir);
   const chrome_bin = find_linux_chrome();
   if (!chrome_bin) {
-    throw new Error("No Chrome/Chromium binary found. Install Chrome/Chromium or set CHROME_PATH.");
+    throw new Error(
+      "No Chrome/Chromium binary found. Install Chrome/Chromium or set CHROME_PATH."
+    );
   }
 
+  console.log(`[INFO] platform=linux`);
+  console.log(`[INFO] port=${port}`);
+  console.log(`[INFO] target_url=${target_url}`);
+  console.log(
+    `[INFO] chrome_bin=${chrome_bin} exists=${fs.existsSync(chrome_bin)}`
+  );
+  console.log(
+    `[INFO] user_data_dir=${user_data_dir} exists=${fs.existsSync(user_data_dir)}`
+  );
+
   // Already running with DevTools?
-  if (await is_devtools_up()) {
+  if (await is_devtools_up(port)) {
     console.log(`[CDP] Chrome already listening on ${port}.`);
     return;
   }
@@ -84,7 +98,8 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
 
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
-    if (await is_devtools_up()) {
+    // ✅ BUGFIX: must pass port
+    if (await is_devtools_up(port)) {
       console.log(`[CDP] Chrome DevTools listening on ${port}.`);
       return;
     }
