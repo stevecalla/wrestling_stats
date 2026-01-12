@@ -833,6 +833,10 @@ async function main({
     const { i, url } = iter_item;
     const task_id = iter_item?.task_id || null;
 
+    let task_finalized = false;      // ✅ ensure every task becomes DONE/FAILED
+    let last_error_for_task = null;  // ✅ remember last error if we exhaust retries
+
+
     // 🔧 this `i` is the DB index (from start_at), not "count processed so far"
     const loop_number = processed + 1;
     p(
@@ -975,7 +979,7 @@ async function main({
             throw e;
           }
         }
-        
+
         // progress (multi-scraper DB tasks version)
         let prog = null;
         try {
@@ -1099,14 +1103,18 @@ async function main({
         if (mode === "tasks" && task_id) {
           try {
             await mark_task_done({ task_id });
+            task_finalized = true;
             p(color_text(`✅ task DONE (task_id=${task_id})`, "green"));
           } catch (e) {
             p("⚠️ failed to mark task DONE:", e?.message || e);
           }
         }
 
+
         break;
       } catch (e) {
+        last_error_for_task = e;
+
         // 🔧 broaden auto-recovery to generic CDP/target closed + goto timeouts
         if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
           const is_timeout = e?.code === "E_GOTO_TIMEOUT";
@@ -1165,18 +1173,49 @@ async function main({
            ✅ REQUIRED CHANGE ONLY:
            mark task FAILED if tasks-mode
         ========================================================= */
+        // if (mode === "tasks" && task_id) {
+        //   try {
+        //     await mark_task_failed({ task_id, error: e?.message || e });
+        //     p(color_text(`❌ task FAILED (task_id=${task_id})`, "red"));
+        //   } catch (ee) {
+        //     p("⚠️ failed to mark task FAILED:", ee?.message || ee);
+        //   }
+        // }
+
+        // throw e;
+
         if (mode === "tasks" && task_id) {
           try {
             await mark_task_failed({ task_id, error: e?.message || e });
+            task_finalized = true;
             p(color_text(`❌ task FAILED (task_id=${task_id})`, "red"));
           } catch (ee) {
             p("⚠️ failed to mark task FAILED:", ee?.message || ee);
           }
+
+          // ✅ tasks-mode: don't kill the worker; move to next task
+          break;
         }
 
-        throw e;
+        throw e; // non-tasks mode keeps original behavior
+
       }
     }
+
+    // ✅ If we exhausted attempts without success, finalize the task
+    if (mode === "tasks" && task_id && !task_finalized) {
+      try {
+        const msg =
+          last_error_for_task?.message ||
+          String(last_error_for_task || "exhausted retries without a thrown fatal error");
+        await mark_task_failed({ task_id, error: `EXHAUSTED_RETRIES: ${msg}` });
+        task_finalized = true;
+        p(color_text(`❌ task FAILED (exhausted retries) (task_id=${task_id})`, "red"));
+      } catch (e) {
+        p("⚠️ failed to mark task FAILED after exhausted retries:", e?.message || e);
+      }
+    }
+
   }
 
   await browser.close(); // closes CDP connection (not the external Chrome instance)
