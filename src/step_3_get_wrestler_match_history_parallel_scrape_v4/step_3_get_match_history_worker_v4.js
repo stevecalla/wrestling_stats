@@ -1173,17 +1173,6 @@ async function main({
            ✅ REQUIRED CHANGE ONLY:
            mark task FAILED if tasks-mode
         ========================================================= */
-        // if (mode === "tasks" && task_id) {
-        //   try {
-        //     await mark_task_failed({ task_id, error: e?.message || e });
-        //     p(color_text(`❌ task FAILED (task_id=${task_id})`, "red"));
-        //   } catch (ee) {
-        //     p("⚠️ failed to mark task FAILED:", ee?.message || ee);
-        //   }
-        // }
-
-        // throw e;
-
         if (mode === "tasks" && task_id) {
           try {
             await mark_task_failed({ task_id, error: e?.message || e });

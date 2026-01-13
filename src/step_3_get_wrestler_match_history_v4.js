@@ -77,7 +77,7 @@ export async function main(
 
     job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-    seed_limit: 100, // 👈 only seed n tasks; set to 0 to eliminate limit
+    seed_limit: 0, // 👈 only seed n tasks; set to 0 to eliminate limit
     reset_pending: true, // if true, sets DONE/FAILED back to PENDING
 
     time_bucket: format_ymd(now_mtn), // daily MTN bucket
@@ -92,7 +92,7 @@ export async function main(
   // -----------------------------------------------
   const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
 
-  const PORTS_TO_LAUNCH = 4;
+  const PORTS_TO_LAUNCH = 3;
   const ports_to_use = port_list.slice(0, PORTS_TO_LAUNCH);
 
   const LAUNCH_DELAY_MS = 750;
