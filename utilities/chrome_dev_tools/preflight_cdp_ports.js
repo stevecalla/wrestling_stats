@@ -15,11 +15,26 @@
  *   await preflight_cdp_ports([9222, 9223]);
  *
  * Usage (CLI):
- *   node scripts/preflight_cdp_ports.js
+ *   node preflight_cdp_ports.js
+ * 
+ * Test on windows
+ * 
+ "/c/Program Files/Google/Chrome/Application/chrome.exe" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="/c/tmp/chrome-cdp-9222" \
+  --no-first-run \
+  --no-default-browser-check \
+  "https://www.google.com" \
+  >/dev/null 2>&1 & disown
+
+  then run 
+  node utilities/chrome_dev_tools/preflight_cdp_ports.js 
  */
 
 import { execSync } from "child_process";
 import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const DEFAULT_PORTS = [9222, 9223, 9224, 9225, 9226];
 
@@ -55,6 +70,8 @@ function pids_listening_on_port(port) {
 }
 
 // ✅ EXPORT THIS
+console.log("🟢 preflight_cdp_ports.js starting…");
+
 export async function preflight_cdp_ports(ports = DEFAULT_PORTS) {
   console.log(`🧹 Preflight: clearing CDP ports ${ports.join(", ")} on ${os.platform()}`);
 
@@ -72,6 +89,7 @@ export async function preflight_cdp_ports(ports = DEFAULT_PORTS) {
 }
 
 // (optional) allow direct CLI usage too
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await preflight_cdp_ports();
 }
+
