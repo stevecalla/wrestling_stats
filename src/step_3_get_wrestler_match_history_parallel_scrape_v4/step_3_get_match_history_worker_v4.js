@@ -493,11 +493,18 @@ function fmt_mysql_dt_mtn(d) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
+    hourCycle: "h23", // ✅ force 00–23 instead of allowing 24
   }).formatToParts(d);
 
   const get = (type) => parts.find((p) => p.type === type)?.value;
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+
+  // ✅ defensive: some ICU builds still return "24" at midnight
+  let hh = get("hour");
+  if (hh === "24") hh = "00";
+
+  return `${get("year")}-${get("month")}-${get("day")} ${hh}:${get("minute")}:${get("second")}`;
 }
+
 
 function build_worker_id(port) {
   return `${os.hostname()}|pid=${process.pid}|port=${port}`;
