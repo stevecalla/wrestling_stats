@@ -51,6 +51,7 @@ import { step_19_close_chrome_dev } from "./src/step_19_close_chrome_developer.j
 
 import { close_pools } from "./utilities/mysql/mysql_pool.js"; // Step 20
 import { step_2a_append_team_id_to_team_schedule_data } from "./src/step_2a_append_team_id_to_team_schedule_data.js";
+import { preflight_cdp_ports } from "./utilities/chrome_dev_tools/preflight_cdp_ports.js";
 
 // ====================================================
 // 🧩 STEP TOGGLES
@@ -273,6 +274,9 @@ async function main(config) {
     if (step_flags.step_0) {
       const start = Date.now();
       log_step_start(0, "Launching Chrome DevTools 🚀");
+
+      // Kill any stale CDP listeners before launching / connecting
+      await preflight_cdp_ports([9222, 9223, 9224, 9225, 9226]);
 
       const { browser, page, context } = await step_0_launch_chrome_developer(config.url_home_page);
 
