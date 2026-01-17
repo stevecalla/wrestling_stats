@@ -32,11 +32,11 @@ WHERE 1 = 1
 	AND track_wrestling_category = 'High School Boys'
 	AND team_name_raw LIKE "%, CO%"
   -- AND track_wrestling_category = 'High School Girls'
---   AND start_date IN (
---         CURDATE(),               -- today
---         DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
---         -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
---       )
+  AND start_date IN (
+         -- CURDATE(),               -- today
+        DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
+        -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
+      )-- 
 ORDER BY start_date, event_name
 -- LIMIT 20
 ;
@@ -58,11 +58,11 @@ WITH recent_events AS (
     AND ts.track_wrestling_category = 'High School Boys'
 	AND team_name_raw LIKE "%, CO%"
     -- AND ts.track_wrestling_category = 'High School Girls'
-    -- AND ts.start_date IN (
---           CURDATE(),						          -- today
---           DATE_SUB(CURDATE(), INTERVAL 1 DAY)  		  -- yesterday
---           -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)    -- tomorrow
---         )
+    AND ts.start_date IN (
+          -- CURDATE(),						          -- today
+          DATE_SUB(CURDATE(), INTERVAL 1 DAY)  		  -- yesterday
+          -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)    -- tomorrow
+        )
 )
 
 SELECT 
@@ -95,9 +95,6 @@ LEFT JOIN wrestler_list_scrape_data w
          )
 WHERE 1 = 1
 	AND w.name_link IS NOT NULL AND w.name_link <> ''
-ORDER BY
-    re.start_date,
-    re.event_name,
-    
-    w.name
+GROUP BY 1, 2
+ORDER BY 1, 2
 ;
