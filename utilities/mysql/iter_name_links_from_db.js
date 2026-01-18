@@ -381,10 +381,10 @@ export async function get_task_set_progress(task_set_id) {
     `
     SELECT
       task_set_id,
-      SUM(status='Done')   AS done_count,
-      SUM(status='Locked') AS locked_count,
-      SUM(status='Failed') AS failed_count,
-      SUM(status='Pending') AS pending_count,
+      SUM(status='DONE')    AS done_count,
+      SUM(status='LOCKED')  AS locked_count,
+      SUM(status='FAILED')  AS failed_count,
+      SUM(status='PENDING') AS pending_count,
       COUNT(*) AS total_count,
       MIN(updated_at_mtn) AS min_updated_at_mtn,
       MAX(updated_at_mtn) AS max_updated_at_mtn,
@@ -405,7 +405,6 @@ export async function get_task_set_progress(task_set_id) {
   const r = rows?.[0] || null;
 
   if (!r) {
-    // if task_set_id doesn't exist yet, return a safe empty snapshot
     return {
       task_set_id,
       done_count: 0,
@@ -419,7 +418,6 @@ export async function get_task_set_progress(task_set_id) {
     };
   }
 
-  // normalize to numbers
   return {
     task_set_id: r.task_set_id,
     done_count: Number(r.done_count || 0),
