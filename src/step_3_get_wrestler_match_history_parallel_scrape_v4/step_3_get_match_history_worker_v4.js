@@ -54,7 +54,7 @@ import os from "os";
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
-/* ------------------------------------------
+/* --------------------------------------e----
    small helpers
 -------------------------------------------*/
 async function close_extra_tabs(context, keep_page) {
@@ -305,23 +305,46 @@ async function helper_browser_close_restart_relogin(
   return { browser, page, context };
 }
 
+// function build_wrestler_matches_url(url_home_page, page, raw_url) {
+//   try {
+//     const cur = new URL(page.url(), url_home_page);
+//     const tim = cur.searchParams.get("TIM") || String(Date.now());
+//     const sid = cur.searchParams.get("twSessionId") || "";
+
+//     const stored = new URL(raw_url, url_home_page);
+//     const wid = stored.searchParams.get("wrestlerId");
+
+//     const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page).toString();
+//     const params = new URLSearchParams();
+
+//     params.set("TIM", tim);
+//     if (sid) params.set("twSessionId", sid);
+//     if (wid) params.set("wrestlerId", wid);
+
+//     return `${base}?${params.toString()}`;
+//   } catch {
+//     return raw_url;
+//   }
+// }
+
 function build_wrestler_matches_url(url_home_page, page, raw_url) {
   try {
-    const cur = new URL(page.url(), url_home_page);
-    const tim = cur.searchParams.get("TIM") || String(Date.now());
-    const sid = cur.searchParams.get("twSessionId") || "";
-
     const stored = new URL(raw_url, url_home_page);
     const wid = stored.searchParams.get("wrestlerId");
 
-    const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page).toString();
-    const params = new URLSearchParams();
+    const cur = new URL(page.url(), url_home_page);
+    const sid = cur.searchParams.get("twSessionId") || ""; // ✅ take fresh from current page
 
-    params.set("TIM", tim);
-    if (sid) params.set("twSessionId", sid);
-    if (wid) params.set("wrestlerId", wid);
+    const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page);
+    if (wid) base.searchParams.set("wrestlerId", wid);
 
-    return `${base}?${params.toString()}`;
+    // ✅ keep twSessionId if we have it (needed for season context)
+    if (sid) base.searchParams.set("twSessionId", sid);
+
+    // ✅ always fresh TIM
+    base.searchParams.set("TIM", String(Date.now()));
+
+    return base.toString();
   } catch {
     return raw_url;
   }
@@ -505,7 +528,6 @@ function fmt_mysql_dt_mtn(d) {
   return `${get("year")}-${get("month")}-${get("day")} ${hh}:${get("minute")}:${get("second")}`;
 }
 
-
 function build_worker_id(port) {
   return `${os.hostname()}|pid=${process.pid}|port=${port}`;
 }
@@ -657,7 +679,8 @@ async function main({
   worker_id = null,
   claim_batch_size = 25
 }) {
-  const load_timeout_ms = 30000;
+  // const load_timeout_ms = 30000;
+  const load_timeout_ms = 60000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
   // ✅ NEW: port-prefixed logger (minimal)
@@ -1068,7 +1091,7 @@ async function main({
 
         const HARD_RESET_LIMIT = 30;
 
-        // 🔁 HARD RESET EVERY 50 PAGES (without losing place in iterator)
+        // 🔁 HARD RESET EVERY 30 PAGES (without losing place in iterator)
         if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
           hard_reset_count += 1;
           p(
