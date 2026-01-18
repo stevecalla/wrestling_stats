@@ -25,12 +25,12 @@ process.on("unhandledRejection", (err) => {
 });
 
 // Save files to csv & msyql
-import { save_to_csv_file } from "../../utilities/create_and_load_csv_files/save_to_csv_file.js";
+import { save_to_csv_file } from "../../../utilities/create_and_load_csv_files/save_to_csv_file.js";
 import {
   upsert_wrestler_match_history,
   // delete helper for per-wrestler snapshot
   delete_wrestler_match_history_for_wrestler,
-} from "../../utilities/mysql/upsert_wrestler_match_history.js";
+} from "../../../utilities/mysql/upsert_wrestler_match_history.js";
 
 import {
   count_rows_in_db_wrestler_links,
@@ -38,21 +38,21 @@ import {
   count_name_links_based_on_event_schedule,
   iter_name_links_based_on_event_schedule,
   get_task_set_progress,
-} from "../../utilities/mysql/iter_name_links_from_db.js";
+} from "../../../utilities/mysql/iter_name_links_from_db.js";
 
-import { step_0_launch_chrome_developer_v3 } from "./step_0_launch_chrome_developer_v3.js";
-import { auto_login_select_season } from "../../utilities/scraper_tasks/auto_login_select_season.js";
+import { step_0_launch_chrome_developer_v3 } from "../step_0_launch_chrome_developer_v3.js";
+import { auto_login_select_season } from "../../../utilities/scraper_tasks/auto_login_select_season.js";
 
-import { color_text } from "../../utilities/console_logs/console_colors.js";
-import { step_19_close_chrome_dev } from "../step_19_close_chrome_developer.js";
+import { color_text } from "../../../utilities/console_logs/console_colors.js";
+import { step_19_close_chrome_dev } from "../../step_19_close_chrome_developer.js";
 
 /* =========================================================
    ✅ REQUIRED CHANGE ONLY:
    integrate tasks table claim + DONE/FAILED tracking
 ========================================================= */
 import os from "os";
-import { get_pool } from "../../utilities/mysql/mysql_pool.js";
-import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
+import { get_pool } from "../../../utilities/mysql/mysql_pool.js";
+import { get_mountain_time_offset_hours } from "../../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
 /* --------------------------------------e----
    small helpers
@@ -642,43 +642,6 @@ async function mark_task_failed({ task_id, error }) {
   );
 }
 
-async function requeue_tasks_for_worker({
-  task_set_id,
-  worker_id,
-  reason = "PORT_STUCK_OR_DEAD",
-}) {
-  const pool = await get_pool();
-  const now_utc = get_now();
-  const now_mtn = get_now();
-
-  const [res] = await pool.query(
-    `
-    UPDATE wrestler_match_history_scrape_tasks
-    SET
-      status = 'PENDING',
-      last_error = CONCAT(?, ' | ', COALESCE(last_error, '')),
-      updated_at_utc = ?,
-      updated_at_mtn = ?
-    WHERE task_set_id = ?
-      AND status = 'LOCKED'
-      AND locked_by = ?
-    `,
-    [
-      reason,
-      fmt_mysql_dt_utc(now_utc),
-      fmt_mysql_dt_mtn(now_mtn),
-      task_set_id,
-      worker_id,
-    ]
-  );
-
-  console.log(
-    `[requeue] task_set_id=${task_set_id} worker_id=${worker_id} requeued=${res?.affectedRows || 0}`
-  );
-
-  return res?.affectedRows || 0;
-}
-
 /* ------------------------------------------
    main orchestrator
 -------------------------------------------*/
@@ -856,20 +819,6 @@ async function main({
   ========================================================= */
   async function* iter_tasks_table() {
     while (true) {
-      
-      // ✅ if this worker's devtools port isn't open, requeue whatever it had locked
-      const port_ok = await wait_until_port_is_open(port, 1500).catch(() => false);
-      if (!port_ok) {
-        await requeue_tasks_for_worker({
-          task_set_id,
-          worker_id: effective_worker_id,
-          reason: `PORT_NOT_OPEN port=${port}`,
-        });
-
-        // stop this worker so your supervisor/cron can restart it
-        throw new Error(`DevTools port ${port} is not open; requeued LOCKED tasks for this worker.`);
-      }
-
       const tasks = await claim_next_tasks({
         task_set_id,
         claim_batch_size,

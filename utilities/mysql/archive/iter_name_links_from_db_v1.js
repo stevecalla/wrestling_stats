@@ -1,5 +1,5 @@
 // utilities/mysql/iter_name_links_from_db.js
-import { get_pool } from "./mysql_pool.js";
+import { get_pool } from "../mysql_pool.js";
 
 // NOTE: THE QUERIERS BELOW ARE FOR WRESTLER PAGES BASED ON A VARIETY OF CRITERIA BUT MOSTLY A DIRECT PULL OF WRESTLERS BASED ON CATEGORY (High School Boys, High School Girls), seasson, gender, state qualifier, team id, wrestler id
 /** Fast COUNT(*) with a simple filter to avoid NULL/blank links */
