@@ -30,6 +30,7 @@ USE wrestling_stats;
       - Confirm row count
 ---------------------------------------------------------------------------- */
 SELECT * FROM reference_wrestler_rankings_list;
+-- DROP TABLE reference_wrestler_rankings_list;
 
 SELECT 
 	ranking_week, 
@@ -149,7 +150,7 @@ ref_matches AS (
     r.ranking_week_number,
     r.wrestler_name
   FROM reference_wrestler_rankings_list r
-  WHERE r.ranking_week_number IN (0,1,2)
+  WHERE r.ranking_week_number IN (0,1,2,3,4,5)
 ),
 
 ref_per_name AS (
@@ -157,7 +158,10 @@ ref_per_name AS (
     wrestler_name,
     MAX(ranking_week_number = 0) AS has_week0,
     MAX(ranking_week_number = 1) AS has_week1,
-    MAX(ranking_week_number = 2) AS has_week2
+    MAX(ranking_week_number = 2) AS has_week2,
+    MAX(ranking_week_number = 3) AS has_week3,
+    MAX(ranking_week_number = 4) AS has_week4,
+    MAX(ranking_week_number = 5) AS has_week5
   FROM ref_matches
   GROUP BY wrestler_name
 ),
@@ -173,7 +177,7 @@ matched_matches AS (
    AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
    AND l.wrestling_season = '2025-26'
    AND l.track_wrestling_category = 'High School Boys'
-  WHERE r.ranking_week_number IN (0,1,2)
+  WHERE r.ranking_week_number IN (0,1,2,3,4,5)
 ),
 
 matched_per_name AS (
@@ -181,7 +185,10 @@ matched_per_name AS (
     wrestler_name,
     MAX(ranking_week_number = 0) AS has_week0,
     MAX(ranking_week_number = 1) AS has_week1,
-    MAX(ranking_week_number = 2) AS has_week2
+    MAX(ranking_week_number = 2) AS has_week2,
+    MAX(ranking_week_number = 3) AS has_week3,
+    MAX(ranking_week_number = 4) AS has_week4,
+    MAX(ranking_week_number = 5) AS has_week5
   FROM matched_matches
   GROUP BY wrestler_name
 ),
@@ -202,6 +209,9 @@ SELECT
   (SELECT SUM(has_week0=1) FROM ref_per_name) AS ref_week0_total,
   (SELECT SUM(has_week1=1) FROM ref_per_name) AS ref_week1_total,
   (SELECT SUM(has_week2=1) FROM ref_per_name) AS ref_week2_total,
+  (SELECT SUM(has_week3=1) FROM ref_per_name) AS ref_week3_total,
+  (SELECT SUM(has_week4=1) FROM ref_per_name) AS ref_week4_total,
+  (SELECT SUM(has_week5=1) FROM ref_per_name) AS ref_week5_total,
   (SELECT COUNT(*)        FROM ref_per_name) AS ref_union_total,
 
   /* ---------------------------
@@ -210,6 +220,9 @@ SELECT
   (SELECT SUM(has_week0=1) FROM matched_per_name) AS matched_week0_total,
   (SELECT SUM(has_week1=1) FROM matched_per_name) AS matched_week1_total,
   (SELECT SUM(has_week2=1) FROM matched_per_name) AS matched_week2_total,
+  (SELECT SUM(has_week3=1) FROM matched_per_name) AS matched_week3_total,
+  (SELECT SUM(has_week4=1) FROM matched_per_name) AS matched_week4_total,
+  (SELECT SUM(has_week5=1) FROM matched_per_name) AS matched_week5_total,
   (SELECT COUNT(*)        FROM matched_per_name) AS matched_union_total,
 
   /* ---------------------------
@@ -218,6 +231,9 @@ SELECT
   (SELECT SUM(has_week0=1) FROM missing_per_name) AS missing_week0_total,
   (SELECT SUM(has_week1=1) FROM missing_per_name) AS missing_week1_total,
   (SELECT SUM(has_week2=1) FROM missing_per_name) AS missing_week2_total,
+  (SELECT SUM(has_week3=1) FROM missing_per_name) AS missing_week3_total,
+  (SELECT SUM(has_week4=1) FROM missing_per_name) AS missing_week4_total,
+  (SELECT SUM(has_week5=1) FROM missing_per_name) AS missing_week5_total,
   (SELECT COUNT(*)        FROM missing_per_name) AS missing_union_total,
 
   /* ---------------------------
@@ -237,21 +253,25 @@ SELECT
 ---------------------------------------------------------------------------- */
 WITH matches AS (
   SELECT DISTINCT
-    r.ranking_week_number,
+    -- r.ranking_week_number,
+    CAST(r.ranking_week_number AS UNSIGNED) AS ranking_week_number,  -- ✅ minimal safety
     r.wrestler_name
   FROM reference_wrestler_rankings_list r
     JOIN wrestler_list_scrape_data l ON r.wrestler_name = l.name
       AND r.school LIKE SUBSTRING_INDEX(l.team, ',', 1)
       AND l.wrestling_season = '2025-26'
       AND l.track_wrestling_category = 'High School Boys'
-  WHERE r.ranking_week_number IN (0,1,2)
+  WHERE r.ranking_week_number IN (0,1,2,3,4,5)
 ),
 per_name AS (
   SELECT
     wrestler_name,
     MAX(ranking_week_number = 0) AS has_week0,
     MAX(ranking_week_number = 1) AS has_week1,
-    MAX(ranking_week_number = 2) AS has_week2
+    MAX(ranking_week_number = 2) AS has_week2,
+    MAX(ranking_week_number = 3) AS has_week3,
+    MAX(ranking_week_number = 4) AS has_week4,
+    MAX(ranking_week_number = 5) AS has_week5
   FROM matches
   GROUP BY wrestler_name
 )
@@ -260,6 +280,9 @@ SELECT
   SUM(has_week0 = 1) AS week0_total,
   SUM(has_week1 = 1) AS week1_total,
   SUM(has_week2 = 1) AS week2_total,
+  SUM(has_week3 = 1) AS week3_total,
+  SUM(has_week4 = 1) AS week4_total,
+  SUM(has_week5 = 1) AS week5_total,
 
   -- exclusives + overlap
   SUM(has_week0 = 1 AND has_week1 = 1 AND has_week2 = 1) AS all_weeks,	
