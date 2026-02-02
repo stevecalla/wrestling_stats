@@ -434,6 +434,27 @@ async function main(config) {
       // =============================
       const wall_start = Date.now();
 
+      console.log("🧹 [PHASE TRANSITION] Closing step-0 browser (port 9222) to prevent overlap");
+      // 1️⃣ close browser (detach)
+      await ctx.browser?.close();
+
+      // 2️⃣ null out references so nothing can reuse them
+      ctx.browser = null;
+      ctx.page = null;
+      ctx.context = null;
+
+      // 3️⃣ confirm handles are gone (in-process)
+      console.log("🔒 [VERIFY] ctx.browser =", ctx.browser);
+      console.log("🔒 [VERIFY] ctx.page    =", ctx.page);
+      console.log("🔒 [VERIFY] ctx.context =", ctx.context);
+
+      // 4️⃣ optional runtime check: is Node still connected to 9222?
+      if (process.env.DEBUG_CDP === "1") {
+        console.log("🔍 [DEBUG] Verify no active CDP connections to 9222 via OS tools");
+        console.log("      Run: lsof -iTCP -sTCP:ESTABLISHED -nP | grep node | grep 9222");
+      }
+
+      console.log("🚦 [PHASE TRANSITION] Entering match-history phase (ports 9223–9224:9225:9226 only)");
       const results = await Promise.allSettled(
         ports_to_use.map((port, idx) => (async () => {
 
@@ -555,6 +576,27 @@ async function main(config) {
       //   `Scraping match history (limit=${limit}, step_3_v2_loop_start=${loop_start}) ${is_test ? "🧪 TEST MODE" : "🏟️ FULL"}`
       // );
 
+      console.log("🧹 [PHASE TRANSITION] Closing step-0 browser (port 9222) to prevent overlap");
+      // 1️⃣ close browser (detach)
+      await ctx.browser?.close();
+
+      // 2️⃣ null out references so nothing can reuse them
+      ctx.browser = null;
+      ctx.page = null;
+      ctx.context = null;
+
+      // 3️⃣ confirm handles are gone (in-process)
+      console.log("🔒 [VERIFY] ctx.browser =", ctx.browser);
+      console.log("🔒 [VERIFY] ctx.page    =", ctx.page);
+      console.log("🔒 [VERIFY] ctx.context =", ctx.context);
+
+      // 4️⃣ optional runtime check: is Node still connected to 9222?
+      if (process.env.DEBUG_CDP === "1") {
+        console.log("🔍 [DEBUG] Verify no active CDP connections to 9222 via OS tools");
+        console.log("      Run: lsof -iTCP -sTCP:ESTABLISHED -nP | grep node | grep 9222");
+      }
+
+      console.log("🚦 [PHASE TRANSITION] Entering match-history phase (ports 9223–9224:9225:9226 only)");
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
         config.url_login_page,
