@@ -80,6 +80,7 @@ function is_cdp_disconnect_error(err) {
   const msg = String(err?.message || "");
   return (
     err?.code === "E_TARGET_CLOSED" ||
+    msg.includes("Page crashed") ||                     // ✅ ADD THIS LINE
     msg.includes("Execution context was destroyed") || // 👈 broadened to treat this as recoverable
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("Target closed") ||
@@ -134,22 +135,34 @@ async function safe_goto(page, url, opts = {}) {
   } catch (err) {
     const msg = String(err?.message || "");
 
-    if (msg.includes("is interrupted by another navigation")) {
-      console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => { });
-    } else if (msg.includes("Target page, context or browser has been closed")) {
-      err.code = "E_TARGET_CLOSED"; // sentinel
-      throw err;
-    } else if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
-      // mark page.goto timeouts so the outer loop can retry
-      err.code = "E_GOTO_TIMEOUT";
-      throw err;
-    } else {
+    // ✅ treat Chromium crashes as recoverable
+    if (msg.includes("Page crashed") || msg.includes("Target crashed")) {
+      err.code = "E_TARGET_CLOSED";
       throw err;
     }
+
+    if (msg.includes("is interrupted by another navigation")) {
+      console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      return page.url(); // optional, but explicit
+    }
+
+    if (msg.includes("Target page, context or browser has been closed")) {
+      err.code = "E_TARGET_CLOSED";
+      throw err;
+    }
+
+    if (err?.name === "TimeoutError" || msg.includes("Timeout")) {
+      err.code = "E_GOTO_TIMEOUT";
+      throw err;
+    }
+
+    throw err;
   }
+
   return page.url();
 }
+
 
 async function wait_ms(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
