@@ -1,6 +1,5 @@
 // run_simple_visual_numbered_test_snake.js (ESM)
 import path from "path";
-import { fileURLToPath } from "url";
 
 import { determine_os_path } from "./utilities/directory_tools/determine_os_path.js";
 import { create_directory } from "./utilities/directory_tools/create_directory.js";
@@ -129,6 +128,10 @@ async function load_config(custom = {}) {
     // wrestling_season: "2024-25",
     // wrestling_season: "2025-26",
     // gender: "F",
+
+    // ✅ Iterator mode flags (default to list-based)
+    use_scheduled_events_iterator_query: false,
+    use_wrestler_list_iterator_query: true,
 
     // SQL WHERE STATEMENT
     sql_where_filter_state_qualifier: "",
@@ -597,6 +600,37 @@ async function main(config) {
       }
 
       console.log("🚦 [PHASE TRANSITION] Entering match-history phase (ports 9223–9224:9225:9226 only)");
+
+      let reset_tasks_table; // true = clear table & repopulate; false = rerun pass 1 again to requeue Locked/failed
+
+      // PASS 1: start clean (truncate + seed + run)
+      reset_tasks_table = true; 
+      const { task_set_id } = await step_3_get_wrestler_match_history_v4(
+        config.url_home_page,
+        config.url_login_page,
+
+        limit,
+        loop_start,
+
+        config.wrestling_season,
+        config.track_wrestling_category,
+        config.gender,
+
+        config.sql_where_filter_state_qualifier,
+        config.sql_where_filter_onthemat_ranking_list,
+        config.sql_team_id_list,
+        config.sql_wrestler_id_list,
+
+        ctx.paths.match_csv,
+
+        config.use_scheduled_events_iterator_query,
+        config.use_wrestler_list_iterator_query,
+        
+        reset_tasks_table, // truncate
+      );
+
+      // PASS 2: mop up (same task_set_id + do not truncate + requeue LOCKED/FAILED + run again)
+      reset_tasks_table = false;
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
         config.url_login_page,
@@ -617,6 +651,9 @@ async function main(config) {
 
         config.use_scheduled_events_iterator_query,
         config.use_wrestler_list_iterator_query,
+
+        reset_tasks_table,   // no truncate
+        task_set_id,         // ✅ reuse PASS 1 id
       );
 
       log_step_success(3_4, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);

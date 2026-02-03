@@ -1,24 +1,5 @@
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
 
-// async function step_1_truncate_scrape_tasks_table() {
-//   const pool = await get_pool();
-
-//   const sql = `
-//     TRUNCATE TABLE wrestler_match_history_scrape_tasks;
-//   `;
-
-//   try {
-//     console.log(
-//       "🛠️ Preparing table wrestler_match_history_scrape_tasks..."
-//     );
-//     await pool.query(sql);
-//     console.log("✅ Table truncated: wrestler_match_history_scrape_tasks (v3)");
-//   } catch (err) {
-//     console.error("❌ Failed to create table:", err?.message || err);
-//     throw err;
-//   }
-// }
-
 async function step_1_truncate_scrape_tasks_table() {
   const pool = await get_pool();
 
