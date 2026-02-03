@@ -8,28 +8,18 @@ import { step_3_get_match_history_worker_v4 } from "./step_3_get_wrestler_match_
 
 import { color_text } from "../utilities/console_logs/console_colors.js";
 
-// import { build_worker_id } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_4_scrape_tasks_repo.js";
-
-/* -------------------------------------------------
-    GET MTN TIME
---------------------------------------------------*/
 import { get_mountain_time_offset_hours } from "../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
 function get_now_mtn() {
-    const now_utc = new Date();
-    const offset_hours = get_mountain_time_offset_hours(now_utc);
-    return new Date(now_utc.getTime() + offset_hours * 60 * 60 * 1000);
+  const now_utc = new Date();
+  const offset_hours = get_mountain_time_offset_hours(now_utc);
+  return new Date(now_utc.getTime() + offset_hours * 60 * 60 * 1000);
 }
 
 function format_ymd(date) {
-  // takes in: 2025-12-22T01:13:16.162Z
-  const formatted_date = date.toISOString().slice(0, 10);
-  return formatted_date; // "2025-12-22"
+  return date.toISOString().slice(0, 10);
 }
 
-/* -------------------------------------------------
-   STEP 3 ORCHESTRATOR
---------------------------------------------------*/
 export async function main(
   url_home_page,
   url_login_page,
@@ -49,13 +39,20 @@ export async function main(
   file_path,
 
   use_scheduled_events_iterator_query = false,
-  use_wrestler_list_iterator_query = true
+  use_wrestler_list_iterator_query = true,
+
+  RESET_TASKS_TABLE = false, // true = truncate/reset; false = resume
+
+  TASK_SET_ID_OVERRIDE = null // ✅ NEW: pass PASS-1 task_set_id into PASS-2
 ) {
   // -----------------------------------------------
   // STEP 1: ensure scrape task table exists
   // -----------------------------------------------
-  await step_1_truncate_scrape_tasks_table();
   await step_1_create_scrape_tasks_table();
+
+  if (RESET_TASKS_TABLE) {
+    await step_1_truncate_scrape_tasks_table();
+  }
 
   // -----------------------------------------------
   // STEP 2: seed tasks (returns task_set_id)
@@ -77,12 +74,13 @@ export async function main(
 
     job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
 
-    seed_limit: 0, // 👈 only seed n tasks; set to 0 to eliminate limit
-    reset_pending: true, // if true, sets DONE/FAILED back to PENDING
+    seed_limit: 0,
+    reset_pending: !RESET_TASKS_TABLE, // if NOT truncating, requeue LOCKED/FAILED for same task_set_id
 
-    time_bucket: format_ymd(now_mtn), // daily MTN bucket
-    // time_bucket: format_ymd_hour(now_mtn), // hourly MTN bucket
+    time_bucket: format_ymd(now_mtn),
     prune_keep_last_n: 3,
+
+    task_set_id: TASK_SET_ID_OVERRIDE, // ✅ NEW: force reuse when provided
   });
 
   console.log(color_text(`\n📌 task_set_id = ${task_set_id}`, "cyan"));
@@ -91,14 +89,9 @@ export async function main(
   // STEP 4: run parallel workers
   // -----------------------------------------------
   const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
-
   const PORTS_TO_LAUNCH = 3;
   const ports_to_use = port_list.slice(0, PORTS_TO_LAUNCH);
-
-  // const LAUNCH_DELAY_MS = 750;
-  const LAUNCH_DELAY_MS = 2500; // 2.5s
-
-  // how many tasks to claim per DB transaction
+  const LAUNCH_DELAY_MS = 2500;
   const claim_batch_size = 15;
 
   const wall_start = Date.now();
@@ -109,7 +102,6 @@ export async function main(
 
   const results = await Promise.allSettled(
     ports_to_use.map((port, idx) => (async () => {
-      // if (idx > 0) await new Promise((res) => setTimeout(res, LAUNCH_DELAY_MS));
       if (idx > 0) await new Promise(res => setTimeout(res, idx * LAUNCH_DELAY_MS));
 
       const port_start = Date.now();
@@ -122,8 +114,7 @@ export async function main(
 
       const match_csv_path = file_path.replace(/\.csv$/i, `_${port}.csv`);
 
-      // ✅ worker runs until it can't claim any more tasks
-      const worker_summary = await step_3_get_match_history_worker_v4({
+      await step_3_get_match_history_worker_v4({
         url_home_page,
         url_login_page,
 
@@ -149,17 +140,12 @@ export async function main(
         use_scheduled_events_iterator_query,
         use_wrestler_list_iterator_query,
 
-        /* =========================================================
-         ✅ REQUIRED CHANGE ONLY:
-         new params to support tasks table mode
-        ========================================================= */
         task_set_id,
         worker_id,
         claim_batch_size
       });
 
       const port_ms = Date.now() - port_start;
-
       return { port, port_ms, match_csv_path };
     })())
   );
@@ -179,10 +165,10 @@ export async function main(
     }
 
     const { port_ms } = r.value;
-    console.log(
-      `✅ Port ${port} done — port_time=${port_ms} ms (${(port_ms / 1000).toFixed(2)}s) `
-    );
+    console.log(`✅ Port ${port} done — port_time=${port_ms} ms (${(port_ms / 1000).toFixed(2)}s)`);
   });
+
+  return { task_set_id }; // ✅ NEW: so wrapper can pass into PASS 2
 }
 
 export { main as step_3_get_wrestler_match_history_v4 };

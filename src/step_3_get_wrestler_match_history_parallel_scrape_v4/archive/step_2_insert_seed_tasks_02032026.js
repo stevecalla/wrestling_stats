@@ -21,12 +21,19 @@ import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/
 /* -------------------------------------------------
    helpers
 --------------------------------------------------*/
+// ✅ produce YYYY-MM-DD from:
+// - time_bucket if it's already a date-like postfix
+// - otherwise "today" (UTC) for stable labeling
+// NOTE: we still keep this fallback as UTC because time_bucket is expected to be passed
+// from the orchestrator in MTN if you want MTN alignment.
 function derive_date_postfix(time_bucket) {
   const tb = String(time_bucket || "").trim();
 
+  // If caller passes something like "2025-12-21" or "2025-12-21T18"
   const m = tb.match(/^(\d{4}-\d{2}-\d{2})/);
   if (m && m[1]) return m[1];
 
+  // Default: today's UTC date
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -38,6 +45,8 @@ function build_task_set_id({
   gender,
   job_type,
   job_name = "step_3",
+  // include a time bucket to avoid collisions if you want uniqueness per run
+  // e.g. "2025-12-21T18" (hourly bucket) or a fixed string for daily schedules
   time_bucket = null,
 } = {}) {
   const base = [
@@ -49,9 +58,14 @@ function build_task_set_id({
     time_bucket || "static",
   ].join("|");
 
+  // shorter friendly hash
   const hash = crypto.createHash("sha1").update(base).digest("hex").slice(0, 12);
+
+  // 🔧 readable date postfix first
   const date_postfix = derive_date_postfix(time_bucket);
 
+  // example:
+  // step_3_hs_boys_2026_e10482704f76_2025-12-21
   return `${job_name}_${job_type}_${hash}_${date_postfix}`;
 }
 
@@ -64,6 +78,7 @@ async function prune_old_task_sets({
   job_type,
   keep_last_n = 3,
 } = {}) {
+  // Find old task_set_ids by most recent updated_at_utc
   const [rows] = await pool.query(
     `
       SELECT task_set_id, MAX(updated_at_utc) AS last_seen
@@ -92,6 +107,7 @@ async function prune_old_task_sets({
 /* -------------------------------------------------
    main seeder
 --------------------------------------------------*/
+
 async function main({
   wrestling_season,
   track_wrestling_category,
@@ -116,7 +132,9 @@ async function main({
 
   time_bucket = null,
   prune_keep_last_n = 0, // if >0: prunes old task sets for this scope/job_type (keeps last N)
+
 } = {}) {
+
   if (!wrestling_season || !track_wrestling_category || !gender) {
     throw new Error(
       "seed_tasks missing required args: wrestling_season, track_wrestling_category, gender"
@@ -125,7 +143,7 @@ async function main({
 
   const pool = await get_pool();
 
-  // ✅ Batch timestamps (UTC → MTN)
+  // ✅ Batch timestamps (UTC → MTN) — house pattern
   const now_utc = new Date();
   const mtn_offset_hours = get_mountain_time_offset_hours(now_utc);
   const now_mtn = new Date(now_utc.getTime() + mtn_offset_hours * 60 * 60 * 1000);
@@ -160,17 +178,16 @@ async function main({
     // ambiguous / both true / both false → default to list + warn
     console.warn(
       "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
-        use_scheduled_events_iterator_query +
-        ", use_wrestler_list_iterator_query=" +
-        use_wrestler_list_iterator_query +
-        "); defaulting to list-based iterator."
+      use_scheduled_events_iterator_query +
+      ", use_wrestler_list_iterator_query=" +
+      use_wrestler_list_iterator_query +
+      "); defaulting to list-based iterator."
     );
     return "list";
   })();
 
-  const select_query =
-    mode === "events"
-      ? `
+  const select_query = mode === "events" ? `
+        -- retrieves events from yesterday & today
         WITH recent_events AS (
           SELECT 
               ts.start_date,
@@ -186,7 +203,6 @@ async function main({
             AND ts.start_date IN (
                   -- CURDATE()                               -- today
                   DATE_SUB(CURDATE(), INTERVAL 2 DAY)       -- yesterday
-                  -- DATE_SUB(CURDATE(), INTERVAL 2 DAY)
                   -- "2025-12-02"
                   -- "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06"
                 )
@@ -209,17 +225,18 @@ async function main({
         FROM recent_events re
 
         LEFT JOIN wrestler_list_scrape_data w ON w.wrestling_season = re.wrestling_season
-         AND w.track_wrestling_category = re.track_wrestling_category
-          AND (
-                -- 1) primary: match on team_id when present
-                (re.team_id IS NOT NULL AND w.team_id = re.team_id)
-                -- 2) fallback: match on team name when event.team_id is NULL
-                OR (re.team_id IS NULL AND w.team = re.team_name_raw)
-              )
-        WHERE w.name_link IS NOT NULL AND w.name_link <> ''
+            AND w.track_wrestling_category  = re.track_wrestling_category
+            AND (
+                  -- 1) primary: match on team_id when present
+                  (re.team_id IS NOT NULL AND w.team_id = re.team_id)
+                  -- 2) fallback: match on team name when event.team_id is NULL
+                  OR (re.team_id IS NULL AND w.team = re.team_name_raw)
+                )
+        WHERE 1 = 1
+          AND w.name_link IS NOT NULL AND w.name_link <> ''
+        -- GROUP BY 1, 2
         ORDER BY w.wrestler_id, w.name_link
-      `
-      : `
+` : `
         SELECT
           ? AS task_set_id,
           ? AS job_type,
@@ -245,41 +262,27 @@ async function main({
           ${sql_team_id_list}
           ${sql_wrestler_id_list}
         ORDER BY w.wrestler_id
-      `;
+      `
+    ;
 
   console.log(select_query);
 
   console.log(
     color_text(
       `\n🌱 Seeding step_3 tasks\n` +
-        `   task_set_id=${resolved_task_set_id}\n` +
-        `   job_type=${job_type}\n` +
-        `   mode=${mode}\n` +
-        `   scope=${wrestling_season} / ${track_wrestling_category} / ${gender}\n` +
-        `   date_postfix=${derive_date_postfix(time_bucket)}\n` +
-        `   now_mtn=${created_at_mtn.toISOString()}\n` +
-        `   now_utc=${created_at_utc.toISOString()}\n`,
+      `   task_set_id=${resolved_task_set_id}\n` +
+      `   job_type=${job_type}\n` +
+      `   scope=${wrestling_season} / ${track_wrestling_category} / ${gender}\n` +
+      `   date_postfix=${derive_date_postfix(time_bucket)}\n` +
+      `   now_mtn=${created_at_mtn.toISOString()}\n` +
+      `   now_utc=${created_at_utc.toISOString()}\n`,
       "cyan"
     )
   );
 
-  // ✅ IMPORTANT: bindings differ by mode (events has no season/category/gender ? placeholders)
-  const params_common = [
-    resolved_task_set_id,
-    job_type,
-    created_at_mtn,
-    updated_at_mtn,
-    created_at_utc,
-    updated_at_utc,
-  ];
-
-  const params =
-    mode === "events"
-      ? params_common
-      : [...params_common, wrestling_season, track_wrestling_category, gender];
-      
   // ✅ Upsert tasks for this task_set_id only.
   // Note: status is always inserted as PENDING for new rows.
+  // Existing rows keep their status unless you reset_pending=true.
   const [insert_result] = await pool.query(
     `
       INSERT INTO wrestler_match_history_scrape_tasks
@@ -299,13 +302,25 @@ async function main({
           updated_at_utc
         )
         ${select_query}
-      ${seed_limit && seed_limit > 0 ? `LIMIT ${Number(seed_limit)}` : ``}
+      ${seed_limit && seed_limit > 0 ? `LIMIT ${Number(seed_limit)}` : ``} -- LIMIT
       ON DUPLICATE KEY UPDATE
         name_link = VALUES(name_link),
         updated_at_mtn = VALUES(updated_at_mtn),
         updated_at_utc = VALUES(updated_at_utc)
     `,
-    params
+    [
+      resolved_task_set_id,
+      job_type,
+
+      created_at_mtn,
+      updated_at_mtn,
+      created_at_utc,
+      updated_at_utc,
+
+      wrestling_season,
+      track_wrestling_category,
+      gender,
+    ]
   );
 
   console.log(
@@ -315,6 +330,7 @@ async function main({
     )
   );
 
+  // Optional: reset only this task_set_id (LOCKED + FAILED -> PENDING; keep DONE)
   if (reset_pending) {
     const [reset_result] = await pool.query(
       `
@@ -361,7 +377,8 @@ async function main({
   // Quick counts for this task_set_id
   const [counts] = await pool.query(
     `
-      SELECT status, COUNT(*) AS cnt
+      SELECT 
+        status, COUNT(*) AS cnt
       FROM wrestler_match_history_scrape_tasks
       WHERE task_set_id=?
       GROUP BY status
