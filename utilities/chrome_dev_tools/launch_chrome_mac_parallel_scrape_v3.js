@@ -14,7 +14,7 @@ function find_mac_chrome() {
   for (const p of candidates) {
     try {
       if (fs.existsSync(p)) return p;
-    } catch {}
+    } catch { }
   }
   return null;
 }
@@ -29,7 +29,7 @@ async function wait(ms) {
 }
 
 async function is_devtools_up(port) {
-  // ✅ use 127.0.0.1 to avoid localhost resolution quirks
+  // ✅ use 127.0.0.1 to avoid localhost reesolution quirks
   const url = `http://127.0.0.1:${port}/json/version`;
 
   try {
@@ -79,7 +79,8 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
     `--user-data-dir=${user_data_dir}`,
     `--no-first-run`,
     `--no-default-browser-check`,
-    `--new-window`,
+    `--headless`,        // <-- change 1
+    // `--new-window`,   // <-- optional: remove in headless runs
     url,
   ];
 
