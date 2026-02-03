@@ -1,6 +1,6 @@
 // src/step_3_get_wrestler_match_history.js (ESM, snake_case)
-
 import net from "net"; // for wait_until_port_is_open function
+
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -54,7 +54,7 @@ import os from "os";
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
 import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
-/* ------------------------------------------
+/* --------------------------------------e----
    small helpers
 -------------------------------------------*/
 async function close_extra_tabs(context, keep_page) {
@@ -80,9 +80,8 @@ function is_cdp_disconnect_error(err) {
   const msg = String(err?.message || "");
   return (
     err?.code === "E_TARGET_CLOSED" ||
-    msg.includes("Page crashed") ||
-    msg.includes("Target crashed") ||
-    msg.includes("Execution context was destroyed") ||
+    msg.includes("Page crashed") ||                     // ✅ ADD THIS LINE
+    msg.includes("Execution context was destroyed") || // 👈 broadened to treat this as recoverable
     msg.includes("Target page, context or browser has been closed") ||
     msg.includes("Target closed") ||
     msg.includes("Session closed") ||
@@ -90,16 +89,6 @@ function is_cdp_disconnect_error(err) {
     msg.includes("CDP connection closed") ||
     msg.includes("WebSocket is not open")
   );
-}
-
-// ✅ NEW: safe sleep that won’t throw if page dies mid-wait
-async function safe_sleep(page, ms) {
-  if (!page || page.isClosed?.()) return;
-  try {
-    await page.waitForTimeout(ms);
-  } catch {
-    // swallow (page/context may have closed)
-  }
 }
 
 // 🔧 NEW: safe wrapper around auto_login_select_season
@@ -119,17 +108,13 @@ async function safe_auto_login(page, wrestling_season, track_wrestling_category)
       console.warn(
         "⚠️ auto_login_select_season evaluate interrupted by navigation/context close; continuing..."
       );
+      // Navigation likely succeeded or will be handled by later safe_goto / selectors.
       return;
     }
     throw e;
   }
 }
 
-/**
- * ✅ UPDATED: relogin is now resilient to page closes
- * - No hard dependency on waitForTimeout
- * - Uses load states; sleeps are safe
- */
 async function relogin(
   page,
   load_timeout_ms,
@@ -139,20 +124,9 @@ async function relogin(
 ) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
-
-  await page
-    .waitForLoadState("domcontentloaded", { timeout: Math.min(load_timeout_ms, 15000) })
-    .catch(() => {});
-
-  await safe_sleep(page, 500);
-
+  await page.waitForTimeout(1000);
   await safe_auto_login(page, wrestling_season, track_wrestling_category);
-
-  await page
-    .waitForLoadState("domcontentloaded", { timeout: Math.min(load_timeout_ms, 15000) })
-    .catch(() => {});
-
-  await safe_sleep(page, 300);
+  await page.waitForTimeout(800);
 }
 
 async function safe_goto(page, url, opts = {}) {
@@ -170,7 +144,7 @@ async function safe_goto(page, url, opts = {}) {
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
       await page.waitForLoadState("domcontentloaded").catch(() => {});
-      return page.url();
+      return page.url(); // optional, but explicit
     }
 
     if (msg.includes("Target page, context or browser has been closed")) {
@@ -188,6 +162,7 @@ async function safe_goto(page, url, opts = {}) {
 
   return page.url();
 }
+
 
 async function wait_ms(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -261,7 +236,7 @@ async function wait_until_devtools_ready(
         if (j && j.Browser) return true;
         return true;
       }
-    } catch {}
+    } catch { }
     await wait_ms(200);
   }
 
@@ -289,50 +264,23 @@ async function safe_wait_for_selector(frame_or_page, selector, opts = {}) {
   }
 }
 
-/* =========================================================
-   ✅ NEW: shared recovery mutex
-   - Prevent watchdog + main loop from recovering at same time
-========================================================= */
-async function with_recovery_mutex(state, fn) {
-  // wait for ongoing recovery if present
-  while (state._recovery_promise) {
-    try {
-      await state._recovery_promise;
-    } catch {
-      // ignore; next recovery attempt can proceed
-    }
-  }
-
-  const p = (async () => {
-    state.recovering = true;
-    try {
-      return await fn();
-    } finally {
-      state.recovering = false;
-      state._recovery_promise = null;
-    }
-  })();
-
-  state._recovery_promise = p;
-  return await p;
-}
-
 async function helper_browser_close_restart_relogin(
   browser,
   page,
   context,
+
   port,
+
   url_home_page,
+
   load_timeout_ms,
+
   wrestling_season,
   track_wrestling_category,
   url_login_page,
   cause
 ) {
-  // ✅ reduce fragility: only close tabs if keep_page looks healthy
-  if (context && page && !page.isClosed?.()) {
-    await close_extra_tabs(context, page);
-  }
+  if (context) await close_extra_tabs(context, page);
 
   try {
     if (browser?.isConnected?.()) {
@@ -370,82 +318,27 @@ async function helper_browser_close_restart_relogin(
   return { browser, page, context };
 }
 
-/* =========================================================
-   🐶 MINIMAL WATCHDOG  (UPDATED with mutex)
-========================================================= */
-function start_watchdog({
-  state, // { browser, page, context, recovering, _recovery_promise }
-  port,
-  url_home_page,
-  load_timeout_ms,
-  wrestling_season,
-  track_wrestling_category,
-  url_login_page,
-  interval_ms = 5000,
-}) {
-  let stopped = false;
-  let local_recovering = false;
+// function build_wrestler_matches_url(url_home_page, page, raw_url) {
+//   try {
+//     const cur = new URL(page.url(), url_home_page);
+//     const tim = cur.searchParams.get("TIM") || String(Date.now());
+//     const sid = cur.searchParams.get("twSessionId") || "";
 
-  const tick = async () => {
-    if (stopped || local_recovering) return;
+//     const stored = new URL(raw_url, url_home_page);
+//     const wid = stored.searchParams.get("wrestlerId");
 
-    // ✅ if main loop is recovering, watchdog must back off
-    if (state.recovering || state._recovery_promise) return;
+//     const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page).toString();
+//     const params = new URLSearchParams();
 
-    try {
-      const port_ok = await wait_until_port_is_open(port, 1200).catch(() => false);
+//     params.set("TIM", tim);
+//     if (sid) params.set("twSessionId", sid);
+//     if (wid) params.set("wrestlerId", wid);
 
-      const dead =
-        !port_ok ||
-        !state.browser?.isConnected?.() ||
-        !state.context ||
-        !state.page ||
-        state.page.isClosed?.();
-
-      if (!dead) return;
-
-      local_recovering = true;
-
-      await with_recovery_mutex(state, async () => {
-        console.warn(
-          `[port=${port}] 🐶 watchdog: dead session detected (port_ok=${port_ok}, connected=${state.browser?.isConnected?.()}) — recovering...`
-        );
-
-        const res = await helper_browser_close_restart_relogin(
-          state.browser,
-          state.page,
-          state.context,
-          port,
-          url_home_page,
-          load_timeout_ms,
-          wrestling_season,
-          track_wrestling_category,
-          url_login_page,
-          `watchdog detected dead session (port_ok=${port_ok})`
-        );
-
-        state.browser = res.browser;
-        state.page = res.page;
-        state.context = res.context;
-
-        console.warn(`[port=${port}] 🐶 watchdog: recovery complete`);
-      });
-    } catch (e) {
-      console.warn(`[port=${port}] 🐶 watchdog: recovery failed:`, e?.message || e);
-    } finally {
-      local_recovering = false;
-    }
-  };
-
-  const timer = setInterval(() => void tick(), interval_ms);
-
-  return {
-    stop() {
-      stopped = true;
-      clearInterval(timer);
-    },
-  };
-}
+//     return `${base}?${params.toString()}`;
+//   } catch {
+//     return raw_url;
+//   }
+// }
 
 function build_wrestler_matches_url(url_home_page, page, raw_url) {
   try {
@@ -453,13 +346,15 @@ function build_wrestler_matches_url(url_home_page, page, raw_url) {
     const wid = stored.searchParams.get("wrestlerId");
 
     const cur = new URL(page.url(), url_home_page);
-    const sid = cur.searchParams.get("twSessionId") || "";
+    const sid = cur.searchParams.get("twSessionId") || ""; // ✅ take fresh from current page
 
     const base = new URL("/seasons/WrestlerMatches.jsp", url_home_page);
     if (wid) base.searchParams.set("wrestlerId", wid);
 
+    // ✅ keep twSessionId if we have it (needed for season context)
     if (sid) base.searchParams.set("twSessionId", sid);
 
+    // ✅ always fresh TIM
     base.searchParams.set("TIM", String(Date.now()));
 
     return base.toString();
@@ -473,6 +368,7 @@ function build_wrestler_matches_url(url_home_page, page, raw_url) {
 -------------------------------------------*/
 function extractor_source() {
   return () => {
+    // === basic helper ===
     const norm = (s) =>
       (s || "")
         .normalize("NFKD")
@@ -542,6 +438,7 @@ function extractor_source() {
       return { start_date: "", end_date: "" };
     };
 
+    // current wrestler context (from dropdown)
     const sel = document.querySelector("#wrestler");
     const sel_opt =
       sel?.selectedOptions?.[0] ||
@@ -554,7 +451,7 @@ function extractor_source() {
       : opt_text;
 
     const rows = [];
-    let match_order = 1;
+    let match_order = 1; // per wrestler-page order
 
     for (const tr of document.querySelectorAll("tr.dataGridRow")) {
       const tds = tr.querySelectorAll("td");
@@ -589,7 +486,7 @@ function extractor_source() {
         end_date,
         event: event_raw,
         weight_category: weight_raw,
-        match_order,
+        match_order, // 👈 store the order
         opponent_id,
         raw_details: details_text_raw,
       });
@@ -632,11 +529,12 @@ function fmt_mysql_dt_mtn(d) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    hourCycle: "h23",
+    hourCycle: "h23", // ✅ force 00–23 instead of allowing 24
   }).formatToParts(d);
 
   const get = (type) => parts.find((p) => p.type === type)?.value;
 
+  // ✅ defensive: some ICU builds still return "24" at midnight
   let hh = get("hour");
   if (hh === "24") hh = "00";
 
@@ -653,6 +551,8 @@ async function claim_next_tasks({ task_set_id, claim_batch_size = 25, worker_id 
 
   const now_utc = get_now();
   const now_mtn = get_now();
+
+  console.log('4) Claim next task *************** now_mtn', now_mtn);
 
   const query_skip_lock = `
       SELECT 
@@ -680,6 +580,8 @@ async function claim_next_tasks({ task_set_id, claim_batch_size = 25, worker_id 
     return query;
   }
 
+  console.log('*********** query claim task', query_claim_task);
+
   try {
     await conn.beginTransaction();
 
@@ -698,7 +600,8 @@ async function claim_next_tasks({ task_set_id, claim_batch_size = 25, worker_id 
       fmt_mysql_dt_utc(now_utc),
       fmt_mysql_dt_mtn(now_mtn),
       ...ids,
-    ]);
+    ]
+    );
 
     await conn.commit();
     return rows;
@@ -714,6 +617,8 @@ async function mark_task_done({ task_id }) {
   const pool = await get_pool();
   const now_utc = get_now();
   const now_mtn = get_now();
+
+  console.log('5) Mark as done *************** now_mtn', now_mtn);
 
   await pool.query(
     `
@@ -733,6 +638,8 @@ async function mark_task_failed({ task_id, error }) {
   const pool = await get_pool();
   const now_utc = get_now();
   const now_mtn = get_now();
+
+  console.log('5) Mark as failed *************** now_mtn', now_mtn);
 
   await pool.query(
     `
@@ -814,10 +721,15 @@ async function main({
   use_scheduled_events_iterator_query = false,
   use_wrestler_list_iterator_query = true,
 
+  /* =========================================================
+     ✅ REQUIRED CHANGE ONLY:
+     new params to support tasks table mode
+  ========================================================= */
   task_set_id = null,
   worker_id = null,
   claim_batch_size = 25
 }) {
+  // const load_timeout_ms = 30000;
   const load_timeout_ms = 60000;
   const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
@@ -843,9 +755,14 @@ async function main({
     });
   }
 
+  /* =========================================================
+     ✅ REQUIRED CHANGE ONLY:
+     tasks table mode detection + worker id
+  ========================================================= */
   const use_tasks_table = Boolean(task_set_id);
   const effective_worker_id = worker_id || build_worker_id(port);
 
+  // DETERMINE WHETHER TO GET THE WRESTLER LINKS BASED ON SCHEDULED EVENTS/MATCHS OR WRESTLER LIST
   const mode = (() => {
     if (use_tasks_table) return "tasks";
     if (use_scheduled_events_iterator_query && !use_wrestler_list_iterator_query) {
@@ -854,6 +771,7 @@ async function main({
     if (!use_scheduled_events_iterator_query && use_wrestler_list_iterator_query) {
       return "list";
     }
+    // ambiguous / both true / both false → default to list + warn
     p(
       "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
       use_scheduled_events_iterator_query +
@@ -864,6 +782,7 @@ async function main({
     return "list";
   })();
 
+  // DB: count + cap (memory-efficient streaming)
   let total_rows_in_db;
 
   if (mode === "events") {
@@ -876,541 +795,520 @@ async function main({
       wrestling_season,
       track_wrestling_category,
       gender,
+
       sql_where_filter_state_qualifier,
       sql_where_filter_onthemat_ranking_list,
       sql_team_id_list,
       sql_wrestler_id_list
     );
   } else {
+    // tasks mode: we don't need total count here; keep existing variables
     total_rows_in_db = 0;
   }
 
-  const no_of_urls =
-    mode === "tasks"
-      ? matches_page_limit
-      : Math.min(matches_page_limit, total_rows_in_db);
-
+  const no_of_urls = mode === "tasks" ? matches_page_limit : Math.min(matches_page_limit, total_rows_in_db);
   let headers_written = false;
 
-  let processed = 0;
-  let csv_write_iterations = 0;
-  let total_rows_written_csv = 0;
-  let total_rows_inserted_db = 0;
-  let total_rows_updated_db = 0;
-  let auto_recover_cdp_count = 0;
-  let auto_recover_timeout_count = 0;
-  let hard_reset_count = 0;
+  // 🔢 global counters for clearer logging
+  let processed = 0; // total successful wrestler pages processed
+  let csv_write_iterations = 0; // how many times we call save_to_csv_file (including 0-row writes)
+  let total_rows_written_csv = 0; // cumulative rows written to CSV
+  let total_rows_inserted_db = 0; // cumulative inserted rows
+  let total_rows_updated_db = 0; // cumulative updated rows
+  let auto_recover_cdp_count = 0; // number of CDP-style auto-recoveries
+  let auto_recover_timeout_count = 0; // number of navigation timeout auto-recoveries
+  let hard_reset_count = 0; // number of hard resets (every HARD_RESET_LIMIT pages)
 
-  // ✅ shared state for watchdog + loop (UPDATED)
-  const state = {
-    browser,
-    page,
-    context,
-    recovering: false,
-    _recovery_promise: null,
-  };
-  let watchdog = null;
+  browser.on?.("disconnected", () =>
+    p("⚠️ CDP disconnected — Chrome closed")
+  );
 
-  try {
-    browser.on?.("disconnected", () => p("⚠️ CDP disconnected — Chrome closed"));
+  // INIITIAL LOGIN = SAFE GOTO ENSURES ON THE CORRECT PAGE THEN AUTO LOGIN SELECTS THE SEASON
+  await safe_goto(page, url_login_page, { timeout: load_timeout_ms });
+  await page.waitForTimeout(2000);
 
-    // INITIAL LOGIN
-    await safe_goto(state.page, url_login_page, { timeout: load_timeout_ms });
-    await safe_sleep(state.page, 2000);
+  p("step 1: on index.jsp, auto login for:", wrestling_season);
+  await safe_auto_login(page, wrestling_season, track_wrestling_category);
+  await page.waitForTimeout(1000);
 
-    p("step 1: on index.jsp, auto login for:", wrestling_season);
-    await safe_auto_login(state.page, wrestling_season, track_wrestling_category);
-    await safe_sleep(state.page, 1000);
-
-    // ✅ start watchdog AFTER we have a valid logged-in page
-    watchdog = start_watchdog({
-      state,
-      port,
-      url_home_page,
-      load_timeout_ms,
-      wrestling_season,
-      track_wrestling_category,
-      url_login_page,
-      interval_ms: 5000,
-    });
-
-    if (mode === "events") {
-      p(
-        color_text(
-          `📄 DB has ${total_rows_in_db} wrestler links derived from scheduled events (yesterday & today)`,
-          "green"
-        )
-      );
-    } else if (mode === "list") {
-      p(
-        color_text(
-          `📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`,
-          "green"
-        )
-      );
-    } else {
-      p(
-        color_text(
-          `📄 Tasks mode enabled (task_set_id=${task_set_id}, worker_id=${effective_worker_id}, claim_batch_size=${claim_batch_size})`,
-          "green"
-        )
-      );
-    }
-
+  if (mode === "events") {
     p(
       color_text(
-        `\x1b[33m⚙️ Processing up to ${no_of_urls} starting at index ${loop_start}\x1b[0m\n`,
+        `📄 DB has ${total_rows_in_db} wrestler links derived from scheduled events (yesterday & today)`,
         "green"
       )
     );
+  } else if (mode === "list") {
+    p(
+      color_text(
+        `📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`,
+        "green"
+      )
+    );
+  } else {
+    p(
+      color_text(
+        `📄 Tasks mode enabled (task_set_id=${task_set_id}, worker_id=${effective_worker_id}, claim_batch_size=${claim_batch_size})`,
+        "green"
+      )
+    );
+  }
 
-    async function* iter_tasks_table() {
-      while (true) {
-        const port_ok = await wait_until_port_is_open(port, 1500).catch(() => false);
-        if (!port_ok) {
-          await requeue_tasks_for_worker({
-            task_set_id,
-            worker_id: effective_worker_id,
-            reason: `PORT_NOT_OPEN port=${port}`,
-          });
+  p(
+    color_text(
+      `\x1b[33m⚙️ Processing up to ${no_of_urls} starting at index ${loop_start}\x1b[0m\n`,
+      "green"
+    )
+  );
 
-          throw new Error(
-            `DevTools port ${port} is not open; requeued LOCKED tasks for this worker.`
-          );
-        }
-
-        const tasks = await claim_next_tasks({
+  /* =========================================================
+     ✅ REQUIRED CHANGE ONLY:
+     iterator selection:
+       - tasks mode uses a generator that claims tasks in batches
+       - other modes unchanged
+  ========================================================= */
+  async function* iter_tasks_table() {
+    while (true) {
+      
+      // ✅ if this worker's devtools port isn't open, requeue whatever it had locked
+      const port_ok = await wait_until_port_is_open(port, 1500).catch(() => false);
+      if (!port_ok) {
+        await requeue_tasks_for_worker({
           task_set_id,
-          claim_batch_size,
           worker_id: effective_worker_id,
+          reason: `PORT_NOT_OPEN port=${port}`,
         });
 
-        if (!tasks.length) return;
+        // stop this worker so your supervisor/cron can restart it
+        throw new Error(`DevTools port ${port} is not open; requeued LOCKED tasks for this worker.`);
+      }
 
-        for (const t of tasks) {
-          yield { i: t.id, url: t.name_link, task_id: t.id, wrestler_id_task: t.wrestler_id };
-        }
+      const tasks = await claim_next_tasks({
+        task_set_id,
+        claim_batch_size,
+        worker_id: effective_worker_id,
+      });
+
+      if (!tasks.length) return;
+
+      for (const t of tasks) {
+        yield { i: t.id, url: t.name_link, task_id: t.id, wrestler_id_task: t.wrestler_id };
       }
     }
+  }
 
-    const iterator =
-      mode === "tasks"
-        ? iter_tasks_table()
-        : mode === "events"
-          ? iter_name_links_based_on_event_schedule({
-              start_at: loop_start,
-              limit: matches_page_limit,
-              batch_size: 500,
+  const iterator =
+    mode === "tasks"
+      ? iter_tasks_table()
+      : mode === "events"
+        ? iter_name_links_based_on_event_schedule({
+          start_at: loop_start,
+          limit: matches_page_limit,
+          batch_size: 500,
+          wrestling_season,
+          track_wrestling_category,
+        })
+        : iter_name_links_from_db({
+          start_at: loop_start,
+          limit: matches_page_limit,
+          batch_size: 500,
+          wrestling_season,
+          track_wrestling_category,
+          gender,
+          sql_where_filter_state_qualifier,
+          sql_where_filter_onthemat_ranking_list,
+          sql_team_id_list,
+          sql_wrestler_id_list,
+        });
+
+  p("find console.log=================");
+
+  for await (const iter_item of iterator) {
+    const { i, url } = iter_item;
+    const task_id = iter_item?.task_id || null;
+
+    let task_finalized = false;      // ✅ ensure every task becomes DONE/FAILED
+    let last_error_for_task = null;  // ✅ remember last error if we exhaust retries
+
+
+    // 🔧 this `i` is the DB index (from start_at), not "count processed so far"
+    const loop_number = processed + 1;
+    p(
+      color_text(
+        `\n🔁 Starting loop #${loop_number} for DB index=${i}, loop_start=${loop_start}, planned_total=${no_of_urls}`,
+        "cyan"
+      )
+    );
+
+    if (handles_dead({ browser, context, page })) {
+      ({ browser, page, context } = await helper_browser_close_restart_relogin(
+        browser,
+        page,
+        context,
+        port,
+        url_home_page,
+        load_timeout_ms,
+        wrestling_season,
+        track_wrestling_category,
+        url_login_page,
+        "handles_dead detected"
+      ));
+    }
+
+    let attempts = 0;
+    while (attempts < MAX_ATTEMPTS_PER_WRESTLER) {
+      attempts += 1;
+      try {
+        const all_rows = [];
+
+        const effective_url = build_wrestler_matches_url(url_home_page, page, url);
+
+        p("step 2a: go to url:", effective_url);
+        await safe_goto(page, effective_url, { timeout: load_timeout_ms });
+
+        p("step 2b: find target frame");
+        let target_frame =
+          page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+          page.mainFrame();
+
+        p("step 3: wait for redirect");
+        await page
+          .waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 })
+          .catch(() => { });
+
+        if (/seasons\/index\.jsp/i.test(page.url())) {
+          p(
+            "step 3a: on index.jsp, starting auto login for season:",
+            wrestling_season
+          );
+
+          await safe_auto_login(page, wrestling_season, track_wrestling_category);
+          await page.waitForTimeout(1000);
+
+          const effective_url_after_login = build_wrestler_matches_url(
+            url_home_page,
+            page,
+            url
+          );
+          p(
+            "step 3b: re-navigating to original URL after login:",
+            effective_url_after_login
+          );
+
+          await safe_goto(page, effective_url_after_login, {
+            timeout: load_timeout_ms,
+          });
+          await page.waitForTimeout(1000);
+
+          target_frame =
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+            page.mainFrame();
+        }
+
+        if (/MainFrame\.jsp/i.test(page.url())) {
+          const effective_url_mainframe = build_wrestler_matches_url(
+            url_home_page,
+            page,
+            url
+          );
+
+          await safe_goto(page, effective_url_mainframe, {
+            timeout: load_timeout_ms,
+          });
+          target_frame =
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+            page.mainFrame();
+        }
+
+        p("step 4: wait for dropdown");
+        await safe_wait_for_selector(target_frame, "#wrestler", {
+          timeout: load_timeout_ms,
+        });
+
+        p("step 5: extract rows");
+        await target_frame.waitForLoadState?.("domcontentloaded");
+        await page.waitForTimeout(1000);
+
+        let rows;
+        try {
+          rows = await target_frame.evaluate(extractor_source());
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (
+            msg.includes("Target page, context or browser has been closed") ||
+            msg.includes("Frame was detached") ||
+            msg.includes("Execution context was destroyed")
+          ) {
+            e.code = "E_TARGET_CLOSED";
+          }
+          if (e?.code === "E_TARGET_CLOSED") {
+            ({ browser, page, context } = await helper_browser_close_restart_relogin(
+              browser,
+              page,
+              context,
+              port,
+              url_home_page,
+              load_timeout_ms,
               wrestling_season,
               track_wrestling_category,
-            })
-          : iter_name_links_from_db({
-              start_at: loop_start,
-              limit: matches_page_limit,
-              batch_size: 500,
-              wrestling_season,
-              track_wrestling_category,
-              gender,
-              sql_where_filter_state_qualifier,
-              sql_where_filter_onthemat_ranking_list,
-              sql_team_id_list,
-              sql_wrestler_id_list,
+              url_login_page,
+              "frame died during evaluate"
+            ));
+
+            const effective_url_retry = build_wrestler_matches_url(
+              url_home_page,
+              page,
+              url
+            );
+            await safe_goto(page, effective_url_retry, {
+              timeout: load_timeout_ms,
             });
 
-    for await (const iter_item of iterator) {
-      // ✅ always use the latest state refs
-      browser = state.browser;
-      page = state.page;
-      context = state.context;
+            let tf =
+              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+              page.mainFrame();
 
-      const { i, url } = iter_item;
-      const task_id = iter_item?.task_id || null;
+            rows = await tf.evaluate(extractor_source());
+          } else {
+            throw e;
+          }
+        }
 
-      let task_finalized = false;
-      let last_error_for_task = null;
+        // progress (multi-scraper DB tasks version)
+        let prog = null;
+        try {
+          prog = await get_task_set_progress(task_set_id);
+        } catch (e) {
+          console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
+        }
 
-      const loop_number = processed + 1;
-      p(
-        color_text(
-          `\n🔁 Starting loop #${loop_number} for DB index=${i}, loop_start=${loop_start}, planned_total=${no_of_urls}`,
-          "cyan"
-        )
-      );
+        const total = prog?.total_count ?? total_rows_in_db;
+        const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
+        const locked = prog?.locked_count ?? 0;
+        const done = prog?.done_count ?? 0;
+        const failed = prog?.failed_count ?? 0;
+        const pending = prog?.pending_count ?? 0;
+        const duration = prog?.duration_hh_mm_ss ?? "00:00:00";
 
-      if (handles_dead({ browser, context, page })) {
-        const res = await with_recovery_mutex(state, async () => {
-          return await helper_browser_close_restart_relogin(
-            state.browser,
-            state.page,
-            state.context,
+        p(
+          color_text(
+            `✔ ${completed} of ${total} ` +
+            `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
+            `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
+            "red"
+          )
+        );
+
+        all_rows.push(...rows);
+
+        // delete existing match history for this wrestler/season/category
+        const this_wrestler_id = rows[0]?.wrestler_id;
+        if (this_wrestler_id) {
+          try {
+            p(
+              color_text(
+                `🧹 deleting existing match history for wrestler_id=${this_wrestler_id} (${wrestling_season}, ${track_wrestling_category})`,
+                "yellow"
+              )
+            );
+            await delete_wrestler_match_history_for_wrestler(
+              { wrestling_season, track_wrestling_category },
+              this_wrestler_id
+            );
+          } catch (e) {
+            p(
+              "⚠️ failed to delete existing match history for wrestler_id=" +
+              this_wrestler_id +
+              ":",
+              e?.message || e
+            );
+          }
+        }
+
+        p("step 6: save to csv");
+        csv_write_iterations += 1; // 🔢 track total CSV writes (including 0-row writes)
+        const headers_written_now = await save_to_csv_file(
+          all_rows,
+          i,
+          headers_written,
+          file_path
+        );
+        headers_written = headers_written_now;
+        total_rows_written_csv += all_rows.length; // 🔢 cumulative rows written to CSV
+        p(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
+
+        p("step 7: save to sql db\n");
+        try {
+          const { inserted, updated } = await upsert_wrestler_match_history(rows, {
+            wrestling_season,
+            track_wrestling_category,
+            gender,
+          });
+          total_rows_inserted_db += inserted;
+          total_rows_updated_db += updated;
+          p(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
+        } catch (e) {
+          p("❌ DB upsert failed:", e?.message || e);
+        }
+
+        processed += 1;
+
+        const HARD_RESET_LIMIT = 30;
+
+        // 🔁 HARD RESET EVERY 30 PAGES (without losing place in iterator)
+        if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
+          hard_reset_count += 1;
+          p(
+            color_text(
+              `=================================
+              HARD RESTART AT ${HARD_RESET_LIMIT}
+              ♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
+              ===================================`,
+              "yellow"
+            )
+          );
+          ({ browser, page, context } = await helper_browser_close_restart_relogin(
+            browser,
+            page,
+            context,
             port,
             url_home_page,
             load_timeout_ms,
             wrestling_season,
             track_wrestling_category,
             url_login_page,
-            "handles_dead detected"
-          );
-        });
+            `processed ${HARD_RESET_LIMIT} pages`
+          ));
+        }
 
-        state.browser = res.browser;
-        state.page = res.page;
-        state.context = res.context;
+        // 🔍 per-loop summary: loops, writes, autorecover, resume hint
+        const resume_from_index = i + 1;
+        p(
+          color_text(
+            `📊 Loop summary #${loop_number} — processed_loops=${processed}, csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}, last_db_index=${i}, resume_from_index=${resume_from_index}`,
+            "cyan"
+          )
+        );
 
-        browser = state.browser;
-        page = state.page;
-        context = state.context;
-      }
-
-      let attempts = 0;
-      while (attempts < MAX_ATTEMPTS_PER_WRESTLER) {
-        attempts += 1;
-
-        try {
-          const all_rows = [];
-
-          const effective_url = build_wrestler_matches_url(url_home_page, page, url);
-
-          p("step 2a: go to url:", effective_url);
-          await safe_goto(page, effective_url, { timeout: load_timeout_ms });
-
-          p("step 2b: find target frame");
-          let target_frame =
-            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
-            page.mainFrame();
-
-          p("step 3: wait for redirect");
-          await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
-
-          if (/seasons\/index\.jsp/i.test(page.url())) {
-            p("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
-
-            await safe_auto_login(page, wrestling_season, track_wrestling_category);
-            await safe_sleep(page, 1000);
-
-            const effective_url_after_login = build_wrestler_matches_url(
-              url_home_page,
-              page,
-              url
-            );
-            p("step 3b: re-navigating to original URL after login:", effective_url_after_login);
-
-            await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
-            await safe_sleep(page, 1000);
-
-            target_frame =
-              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
-              page.mainFrame();
-          }
-
-          if (/MainFrame\.jsp/i.test(page.url())) {
-            const effective_url_mainframe = build_wrestler_matches_url(
-              url_home_page,
-              page,
-              url
-            );
-
-            await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
-            target_frame =
-              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
-              page.mainFrame();
-          }
-
-          p("step 4: wait for dropdown");
-          await safe_wait_for_selector(target_frame, "#wrestler", { timeout: load_timeout_ms });
-
-          p("step 5: extract rows");
-          await target_frame.waitForLoadState?.("domcontentloaded");
-          await safe_sleep(page, 1000);
-
-          let rows;
+        /* =========================================================
+           ✅ REQUIRED CHANGE ONLY:
+           mark task DONE if tasks-mode
+        ========================================================= */
+        if (mode === "tasks" && task_id) {
           try {
-            rows = await target_frame.evaluate(extractor_source());
+            await mark_task_done({ task_id });
+            task_finalized = true;
+            p(color_text(`✅ task DONE (task_id=${task_id})`, "green"));
           } catch (e) {
-            const msg = String(e?.message || "");
-            if (
-              msg.includes("Target page, context or browser has been closed") ||
-              msg.includes("Frame was detached") ||
-              msg.includes("Execution context was destroyed")
-            ) {
-              e.code = "E_TARGET_CLOSED";
-            }
+            p("⚠️ failed to mark task DONE:", e?.message || e);
+          }
+        }
 
-            if (e?.code === "E_TARGET_CLOSED") {
-              const res = await with_recovery_mutex(state, async () => {
-                return await helper_browser_close_restart_relogin(
-                  state.browser,
-                  state.page,
-                  state.context,
-                  port,
-                  url_home_page,
-                  load_timeout_ms,
-                  wrestling_season,
-                  track_wrestling_category,
-                  url_login_page,
-                  "frame died during evaluate"
-                );
-              });
 
-              state.browser = res.browser;
-              state.page = res.page;
-              state.context = res.context;
+        break;
+      } catch (e) {
+        last_error_for_task = e;
 
-              browser = state.browser;
-              page = state.page;
-              context = state.context;
+        // 🔧 broaden auto-recovery to generic CDP/target closed + goto timeouts
+        if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
+          const is_timeout = e?.code === "E_GOTO_TIMEOUT";
+          const cause = is_timeout ? "navigation timeout" : "CDP/target closed";
 
-              const effective_url_retry = build_wrestler_matches_url(url_home_page, page, url);
-              await safe_goto(page, effective_url_retry, { timeout: load_timeout_ms });
-
-              const tf =
-                page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
-                page.mainFrame();
-
-              rows = await tf.evaluate(extractor_source());
-            } else {
-              throw e;
-            }
+          if (is_timeout) {
+            auto_recover_timeout_count += 1;
+          } else {
+            auto_recover_cdp_count += 1;
           }
 
-          // progress (tasks version)
-          let prog = null;
-          try {
-            prog = await get_task_set_progress(task_set_id);
-          } catch (e) {
-            console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
-          }
-
-          const total = prog?.total_count ?? total_rows_in_db;
-          const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
-          const locked = prog?.locked_count ?? 0;
-          const done = prog?.done_count ?? 0;
-          const failed = prog?.failed_count ?? 0;
-          const pending = prog?.pending_count ?? 0;
-          const duration = prog?.duration_hh_mm_ss ?? "00:00:00";
+          const recover_attempt_no = auto_recover_cdp_count + auto_recover_timeout_count;
 
           p(
             color_text(
-              `✔ ${completed} of ${total} ` +
-                `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
-                `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
-              "red"
+              `♻️ Auto-recover #${recover_attempt_no} triggered due to ${cause} (attempt ${attempts}/${MAX_ATTEMPTS_PER_WRESTLER})`,
+              "yellow"
             )
           );
 
-          all_rows.push(...rows);
+          ({ browser, page, context } = await helper_browser_close_restart_relogin(
+            browser,
+            page,
+            context,
+            port,
+            url_home_page,
+            load_timeout_ms,
+            wrestling_season,
+            track_wrestling_category,
+            url_login_page,
+            cause
+          ));
 
-          const this_wrestler_id = rows[0]?.wrestler_id;
-          if (this_wrestler_id) {
-            try {
-              p(
-                color_text(
-                  `🧹 deleting existing match history for wrestler_id=${this_wrestler_id} (${wrestling_season}, ${track_wrestling_category})`,
-                  "yellow"
-                )
-              );
-              await delete_wrestler_match_history_for_wrestler(
-                { wrestling_season, track_wrestling_category },
-                this_wrestler_id
-              );
-            } catch (e) {
-              p(
-                "⚠️ failed to delete existing match history for wrestler_id=" +
-                  this_wrestler_id +
-                  ":",
-                e?.message || e
-              );
-            }
-          }
-
-          p("step 6: save to csv");
-          csv_write_iterations += 1;
-          const headers_written_now = await save_to_csv_file(
-            all_rows,
-            i,
-            headers_written,
-            file_path
-          );
-          headers_written = headers_written_now;
-          total_rows_written_csv += all_rows.length;
-          p(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
-
-          p("step 7: save to sql db\n");
-          try {
-            const { inserted, updated } = await upsert_wrestler_match_history(rows, {
-              wrestling_season,
-              track_wrestling_category,
-              gender,
-            });
-            total_rows_inserted_db += inserted;
-            total_rows_updated_db += updated;
-            p(color_text(`🛠️ DB upsert — inserted: ${inserted}, updated: ${updated}`, "green"));
-          } catch (e) {
-            p("❌ DB upsert failed:", e?.message || e);
-          }
-
-          processed += 1;
-
-          const HARD_RESET_LIMIT = 30;
-          if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
-            hard_reset_count += 1;
-            p(
-              color_text(
-                `=================================
-HARD RESTART AT ${HARD_RESET_LIMIT}
-♻️ Processed ${processed} wrestler pages — recycling browser session (hard reset at ${HARD_RESET_LIMIT}).
-===================================`,
-                "yellow"
-              )
-            );
-
-            const res = await with_recovery_mutex(state, async () => {
-              return await helper_browser_close_restart_relogin(
-                state.browser,
-                state.page,
-                state.context,
-                port,
-                url_home_page,
-                load_timeout_ms,
-                wrestling_season,
-                track_wrestling_category,
-                url_login_page,
-                `processed ${HARD_RESET_LIMIT} pages`
-              );
-            });
-
-            state.browser = res.browser;
-            state.page = res.page;
-            state.context = res.context;
-
-            browser = state.browser;
-            page = state.page;
-            context = state.context;
-          }
-
-          const resume_from_index = i + 1;
-          p(
-            color_text(
-              `📊 Loop summary #${loop_number} — processed_loops=${processed}, csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}, last_db_index=${i}, resume_from_index=${resume_from_index}`,
-              "cyan"
-            )
+          const effective_url_after_reconnect = build_wrestler_matches_url(
+            url_home_page,
+            page,
+            url
           );
 
-          if (mode === "tasks" && task_id) {
-            try {
-              await mark_task_done({ task_id });
-              task_finalized = true;
-              p(color_text(`✅ task DONE (task_id=${task_id})`, "green"));
-            } catch (e) {
-              p("⚠️ failed to mark task DONE:", e?.message || e);
-            }
-          }
-
-          break; // ✅ success
-        } catch (e) {
-          last_error_for_task = e;
-
-          if (is_cdp_disconnect_error(e) || e?.code === "E_GOTO_TIMEOUT") {
-            const is_timeout = e?.code === "E_GOTO_TIMEOUT";
-            const cause = is_timeout ? "navigation timeout" : "CDP/target closed";
-
-            if (is_timeout) auto_recover_timeout_count += 1;
-            else auto_recover_cdp_count += 1;
-
-            const recover_attempt_no = auto_recover_cdp_count + auto_recover_timeout_count;
-
-            p(
-              color_text(
-                `♻️ Auto-recover #${recover_attempt_no} triggered due to ${cause} (attempt ${attempts}/${MAX_ATTEMPTS_PER_WRESTLER})`,
-                "yellow"
-              )
-            );
-
-            const res = await with_recovery_mutex(state, async () => {
-              return await helper_browser_close_restart_relogin(
-                state.browser,
-                state.page,
-                state.context,
-                port,
-                url_home_page,
-                load_timeout_ms,
-                wrestling_season,
-                track_wrestling_category,
-                url_login_page,
-                cause
-              );
-            });
-
-            state.browser = res.browser;
-            state.page = res.page;
-            state.context = res.context;
-
-            browser = state.browser;
-            page = state.page;
-            context = state.context;
-
-            const effective_url_after_reconnect = build_wrestler_matches_url(
-              url_home_page,
-              page,
-              url
-            );
-
-            await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
-
-            continue;
-          }
-
-          p("❌ Fatal error while processing wrestler link", {
-            index: i,
-            url,
-            attempts,
-            msg: String(e?.message || ""),
+          await safe_goto(page, effective_url_after_reconnect, {
+            timeout: load_timeout_ms,
           });
 
-          if (mode === "tasks" && task_id) {
-            try {
-              await mark_task_failed({ task_id, error: e?.message || e });
-              task_finalized = true;
-              p(color_text(`❌ task FAILED (task_id=${task_id})`, "red"));
-            } catch (ee) {
-              p("⚠️ failed to mark task FAILED:", ee?.message || ee);
-            }
+          // retry this wrestler (if attempts < MAX_ATTEMPTS_PER_WRESTLER)
+          continue;
+        }
 
-            break; // tasks-mode: move to next task
+        p("❌ Fatal error while processing wrestler link", {
+          index: i,
+          url,
+          attempts,
+          msg: String(e?.message || ""),
+        });
+
+        /* =========================================================
+           ✅ REQUIRED CHANGE ONLY:
+           mark task FAILED if tasks-mode
+        ========================================================= */
+        if (mode === "tasks" && task_id) {
+          try {
+            await mark_task_failed({ task_id, error: e?.message || e });
+            task_finalized = true;
+            p(color_text(`❌ task FAILED (task_id=${task_id})`, "red"));
+          } catch (ee) {
+            p("⚠️ failed to mark task FAILED:", ee?.message || ee);
           }
 
-          throw e;
+          // ✅ tasks-mode: don't kill the worker; move to next task
+          break;
         }
-      }
 
-      if (mode === "tasks" && task_id && !task_finalized) {
-        try {
-          const msg =
-            last_error_for_task?.message ||
-            String(last_error_for_task || "exhausted retries without a thrown fatal error");
-          await mark_task_failed({ task_id, error: `EXHAUSTED_RETRIES: ${msg}` });
-          task_finalized = true;
-          p(color_text(`❌ task FAILED (exhausted retries) (task_id=${task_id})`, "red"));
-        } catch (e) {
-          p("⚠️ failed to mark task FAILED after exhausted retries:", e?.message || e);
-        }
+        throw e; // non-tasks mode keeps original behavior
+
       }
     }
 
-    // closes CDP connection (not the external Chrome instance)
-    await state.browser.close();
+    // ✅ If we exhausted attempts without success, finalize the task
+    if (mode === "tasks" && task_id && !task_finalized) {
+      try {
+        const msg =
+          last_error_for_task?.message ||
+          String(last_error_for_task || "exhausted retries without a thrown fatal error");
+        await mark_task_failed({ task_id, error: `EXHAUSTED_RETRIES: ${msg}` });
+        task_finalized = true;
+        p(color_text(`❌ task FAILED (exhausted retries) (task_id=${task_id})`, "red"));
+      } catch (e) {
+        p("⚠️ failed to mark task FAILED after exhausted retries:", e?.message || e);
+      }
+    }
 
-    p(
-      color_text(
-        `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events / tasks). csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}`,
-        "green"
-      )
-    );
-  } finally {
-    try {
-      watchdog?.stop?.();
-    } catch {}
   }
+
+  await browser.close(); // closes CDP connection (not the external Chrome instance)
+
+  p(
+    color_text(
+      `\n✅ done. processed ${processed} wrestler pages from DB via ${mode} iterator (wrestler_list / scheduled_events / tasks). csv_write_iterations=${csv_write_iterations}, total_rows_written_csv=${total_rows_written_csv}, total_db_inserted=${total_rows_inserted_db}, total_db_updated=${total_rows_updated_db}, auto_recover_cdp=${auto_recover_cdp_count}, auto_recover_timeouts=${auto_recover_timeout_count}, hard_resets=${hard_reset_count}`,
+      "green"
+    )
+  );
 }
 
 export { main as step_3_get_match_history_worker_v4 };

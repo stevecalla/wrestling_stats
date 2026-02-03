@@ -20,7 +20,7 @@ const chrome_bin = (
 const q = (s) => `"${String(s).replace(/"/g, '""')}"`;
 
 const exists = (p) => {
-  try { return fs.existsSync(p); } catch { return false; }
+  try { return fs.existsSync(p); } catch { return false; } e
 };
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -99,25 +99,18 @@ async function main(URL, USER_DATA_DIR_DEFAULT, port) {
   const user_data_dir = ensure_writable_dir(USER_DATA_DIR_DEFAULT, fallback_dir);
   console.log(`[INFO] user_data_dir=${user_data_dir}`);
 
-  // // display chrome window
-  // const base_args_arr = [
-  //   `--remote-debugging-port=${port}`,
-  //   `--user-data-dir=${user_data_dir}`,
-  //   `--no-first-run`,
-  //   `--no-default-browser-check`,
-  //   `--new-window`,
-  // ];
-  // headless; hide chrome window to reduce overhead
+  console.log("[WINDOWS] Launching Chrome with remote debugging…");
   const base_args_arr = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${user_data_dir}`,
     `--no-first-run`,
     `--no-default-browser-check`,
-    `--headless=new`,
+    `--headless`, // <-- change 1: old headless
     `--disable-gpu`,
     `--disable-blink-features=AutomationControlled`,
   ];
   const base_args_str = base_args_arr.join(" ");
+
 
   // If DevTools already up: try to open a tab and return
   if (await is_devtools_up(port)) {

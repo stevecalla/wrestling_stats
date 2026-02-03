@@ -77,6 +77,7 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
     return;
   }
 
+  console.log("[LINUX] Launching Chrome with remote debugging…");
   const args = [
     `--remote-debugging-port=${port}`,
     `--remote-debugging-address=127.0.0.1`,
@@ -84,11 +85,9 @@ async function main(url = target_url, USER_DATA_DIR_DEFAULT, port) {
     `--no-first-run`,
     `--no-default-browser-check`,
     // `--new-window`,
-    `--headless=new`,
-    // Optional Linux niceties (uncomment if needed):
-    // `--password-store=basic`,
-    // `--use-mock-keychain`,
-    // `--ozone-platform-hint=auto`,
+    `--headless`,               // <-- change 1: old headless (more stable)
+    `--disable-gpu`,            // <-- change 2: avoids GPU/compositor issues
+    `--disable-dev-shm-usage`,  // <-- change 3: avoids /dev/shm pressure
     url,
   ];
 
