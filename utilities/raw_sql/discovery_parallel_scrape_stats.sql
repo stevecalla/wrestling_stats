@@ -4,10 +4,10 @@ USE wrestling_stats;
 SELECT FORMAT(COUNT(*), 0) FROM wrestler_match_history_scrape_tasks LIMIT 10;
 SELECT
   task_set_id,
-  SUM(status='Done')   AS done_count,
-  SUM(status='Locked') AS locked_count,
-  SUM(status='Failed') AS failed_count,
-  SUM(status='Pending') AS pending_count,
+  SUM(status='DONE')   AS done_count,
+  SUM(status='LOCKED') AS locked_count,
+  SUM(status='FAILED') AS failed_count,
+  SUM(status='PENDING') AS pending_count,
   COUNT(*) AS total_count,
   MIN(updated_at_mtn) AS min_updated_at_mtn,
   MAX(updated_at_mtn) AS max_updated_at_mtn,
@@ -35,10 +35,10 @@ SUBSTRING_INDEX(
   '|',
   1
 ) AS locked_pid,
-  SUM(status='Done')   AS done_count,
-  SUM(status='Locked') AS locked_count,
-  SUM(status='Failed') AS failed_count,
-  SUM(status='Pending') AS pending_count,
+  SUM(status='DONE')   AS done_count,
+  SUM(status='LOCKED') AS locked_count,
+  SUM(status='FAILED') AS failed_count,
+  SUM(status='PENDING') AS pending_count,
   COUNT(*) AS total_count,
      -- duration between min/max in HH:MM:SS
     SEC_TO_TIME(
@@ -55,7 +55,7 @@ SUBSTRING_INDEX(
   MAX(updated_at_utc) AS max_updated_at_utc
 FROM wrestler_match_history_scrape_tasks
 GROUP BY task_set_id, locked_by WITH ROLLUP
-ORDER BY 1, 2 ASC;
+ORDER BY 1, 3, 2 ASC;
 
 SELECT * FROM wrestler_match_history_scrape_tasks LIMIT 10;
 SELECT * FROM wrestler_match_history_scrape_tasks WHERE last_error IS NOT NULL LIMIT 10;
@@ -71,3 +71,7 @@ SELECT * FROM wrestler_match_history_scrape_data WHERE wrestler_id = 35021875132
 --   NOW()               AS now_now,
 --   CURRENT_TIMESTAMP() AS now_current_ts,
 --   UTC_TIMESTAMP()     AS now_utc;
+
+DELETE
+FROM wrestler_match_history_scrape_tasks
+WHERE task_set_id = 'step_3_2025-26 High School Boys    _d79fda4cdc6a_2026-02-03';

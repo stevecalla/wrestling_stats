@@ -89,6 +89,37 @@ async function prune_old_task_sets({
   return { deleted_sets: to_delete.length, deleted_rows: del?.affectedRows ?? 0 };
 }
 
+export async function requeue_locked_failed_for_task_set({
+  task_set_id,
+  updated_at_mtn,
+  updated_at_utc,
+} = {}) {
+  if (!task_set_id) throw new Error("requeue_locked_failed_for_task_set: task_set_id is required");
+  if (!updated_at_mtn || !updated_at_utc) {
+    throw new Error("requeue_locked_failed_for_task_set: updated_at_mtn and updated_at_utc are required");
+  }
+
+  const pool = await get_pool();
+
+  const [res] = await pool.execute(
+    `
+    UPDATE wrestler_match_history_scrape_tasks
+    SET 
+      status='PENDING',
+      locked_by=NULL,
+      locked_at_utc=NULL,
+      last_error=NULL,
+      updated_at_mtn=?,
+      updated_at_utc=?
+    WHERE task_set_id=?
+      AND status IN ('LOCKED','FAILED')
+    `,
+    [updated_at_mtn, updated_at_utc, task_set_id]
+  );
+
+  return { requeued_count: res?.affectedRows ?? 0 };
+}
+
 /* -------------------------------------------------
    main seeder
 --------------------------------------------------*/
@@ -160,10 +191,10 @@ async function main({
     // ambiguous / both true / both false → default to list + warn
     console.warn(
       "⚠️ iterator flags ambiguous (use_scheduled_events_iterator_query=" +
-        use_scheduled_events_iterator_query +
-        ", use_wrestler_list_iterator_query=" +
-        use_wrestler_list_iterator_query +
-        "); defaulting to list-based iterator."
+      use_scheduled_events_iterator_query +
+      ", use_wrestler_list_iterator_query=" +
+      use_wrestler_list_iterator_query +
+      "); defaulting to list-based iterator."
     );
     return "list";
   })();
@@ -252,13 +283,13 @@ async function main({
   console.log(
     color_text(
       `\n🌱 Seeding step_3 tasks\n` +
-        `   task_set_id=${resolved_task_set_id}\n` +
-        `   job_type=${job_type}\n` +
-        `   mode=${mode}\n` +
-        `   scope=${wrestling_season} / ${track_wrestling_category} / ${gender}\n` +
-        `   date_postfix=${derive_date_postfix(time_bucket)}\n` +
-        `   now_mtn=${created_at_mtn.toISOString()}\n` +
-        `   now_utc=${created_at_utc.toISOString()}\n`,
+      `   task_set_id=${resolved_task_set_id}\n` +
+      `   job_type=${job_type}\n` +
+      `   mode=${mode}\n` +
+      `   scope=${wrestling_season} / ${track_wrestling_category} / ${gender}\n` +
+      `   date_postfix=${derive_date_postfix(time_bucket)}\n` +
+      `   now_mtn=${created_at_mtn.toISOString()}\n` +
+      `   now_utc=${created_at_utc.toISOString()}\n`,
       "cyan"
     )
   );
@@ -277,7 +308,7 @@ async function main({
     mode === "events"
       ? params_common
       : [...params_common, wrestling_season, track_wrestling_category, gender];
-      
+
   // ✅ Upsert tasks for this task_set_id only.
   // Note: status is always inserted as PENDING for new rows.
   const [insert_result] = await pool.query(
@@ -316,24 +347,15 @@ async function main({
   );
 
   if (reset_pending) {
-    const [reset_result] = await pool.query(
-      `
-      UPDATE wrestler_match_history_scrape_tasks
-      SET status='PENDING',
-          locked_by=NULL,
-          locked_at_utc=NULL,
-          last_error=NULL,
-          updated_at_mtn=?,
-          updated_at_utc=?
-      WHERE task_set_id=?
-        AND status IN ('LOCKED','FAILED')
-    `,
-      [updated_at_mtn, updated_at_utc, resolved_task_set_id]
-    );
+    const { requeued_count } = await requeue_locked_failed_for_task_set({
+      task_set_id: resolved_task_set_id,
+      updated_at_mtn,
+      updated_at_utc,
+    });
 
     console.log(
       color_text(
-        `♻️ Reset tasks to PENDING (LOCKED+FAILED only): ${reset_result?.affectedRows ?? "?"}`,
+        `♻️ Reset tasks to PENDING (LOCKED+FAILED only): ${requeued_count}`,
         "yellow"
       )
     );
@@ -376,4 +398,8 @@ async function main({
   return { task_set_id: resolved_task_set_id };
 }
 
-export { main as step_2_seed_tasks };
+export {
+  main as step_2_seed_tasks,
+  requeue_locked_failed_for_task_set,
+};
+

@@ -161,8 +161,8 @@ const hs_boys_2026 = {
   track_wrestling_category: "High School Boys",
   wrestling_season: "2025-26",
   gender: "M",
-  use_scheduled_events_iterator_query: true,
-  use_wrestler_list_iterator_query: false,
+  use_scheduled_events_iterator_query: false,
+  use_wrestler_list_iterator_query: true,
   // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
   // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
   // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
@@ -604,7 +604,7 @@ async function main(config) {
       let reset_tasks_table; // true = clear table & repopulate; false = rerun pass 1 again to requeue Locked/failed
 
       // PASS 1: start clean (truncate + seed + run)
-      reset_tasks_table = true; 
+      reset_tasks_table = true;
       const { task_set_id } = await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
         config.url_login_page,
@@ -630,6 +630,10 @@ async function main(config) {
       );
 
       // PASS 2: mop up (same task_set_id + do not truncate + requeue LOCKED/FAILED + run again)
+      
+      // when manually running to finish a partially complete job comment our PASS 1 above...
+      // ... and pass in the task_set_id from the tasks db
+      // const task_set_id = 'step_3_2025-26 High School Boys    _4275c9453776_2026-02-02';
       reset_tasks_table = false;
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
@@ -839,7 +843,7 @@ async function main(config) {
 }
 
 // ====================================================
-// main(hs_girls_2026).catch(e => {
+// main(hs_boys_2026).catch(e => {
 //   log_error(e?.stack || e);
 //   // process.exit(1);
 // });
