@@ -89,7 +89,7 @@ async function prune_old_task_sets({
   return { deleted_sets: to_delete.length, deleted_rows: del?.affectedRows ?? 0 };
 }
 
-export async function requeue_locked_failed_for_task_set({
+async function requeue_locked_failed_for_task_set({
   task_set_id,
   updated_at_mtn,
   updated_at_utc,

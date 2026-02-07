@@ -131,7 +131,7 @@ async function load_config(custom = {}) {
 
     // ✅ Iterator mode flags (default to list-based)
     use_scheduled_events_iterator_query: false,
-    use_wrestler_list_iterator_query: true,
+    use_wrestler_list_iterator_query: false,
 
     // SQL WHERE STATEMENT
     sql_where_filter_state_qualifier: "",
@@ -155,6 +155,18 @@ async function load_config(custom = {}) {
 
   return { ...defaults, ...custom };
 }
+
+const hs_boys_otm_2026 = {
+  track_wrestling_category: "High School Boys",
+  wrestling_season: "2025-26",
+  gender: "M",
+  use_scheduled_events_iterator_query: false,
+  use_wrestler_list_iterator_query: true,
+  // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
+  sql_where_filter_onthemat_ranking_list: "AND onthemat_is_name_match = 1",
+  // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
+  // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
+};
 
 const hs_boys_2026 = {
   // HIGH SCHOOL BOYS = set category, season & gender
@@ -279,7 +291,7 @@ async function main(config) {
       log_step_start(0, "Launching Chrome DevTools 🚀");
 
       // Kill any stale CDP listeners before launching / connecting
-      await preflight_cdp_ports([9222, 9223, 9224, 9225, 9226]);
+      await preflight_cdp_ports([9222, 9223, 9224, 9225, 9226, 9227, 9228]);
 
       const { browser, page, context } = await step_0_launch_chrome_developer(config.url_home_page);
 
@@ -625,12 +637,12 @@ async function main(config) {
 
         config.use_scheduled_events_iterator_query,
         config.use_wrestler_list_iterator_query,
-        
+
         reset_tasks_table, // truncate
       );
 
       // PASS 2: mop up (same task_set_id + do not truncate + requeue LOCKED/FAILED + run again)
-      
+
       // when manually running to finish a partially complete job comment our PASS 1 above...
       // ... and pass in the task_set_id from the tasks db
       // const task_set_id = 'step_3_2025-26 High School Boys    _4275c9453776_2026-02-02';
@@ -731,7 +743,7 @@ async function main(config) {
       await step_9_create_state_qualfier_reference();
 
       log_step_success(9, `Create state qualifier place reference`, Date.now() - start);
-    } else log_step_skip(9, "Create state qualifier place reference");
+    } else log_step_skip(9, "Create state qualifier place reference");kj
 
     // === STEP 10 APPEND TEAM DIVISION UPDATES ===
     if (step_flags.step_10) {
@@ -843,7 +855,7 @@ async function main(config) {
 }
 
 // ====================================================
-// main(hs_boys_2026).catch(e => {
+// main(hs_boys_otm_2026).catch(e => {
 //   log_error(e?.stack || e);
 //   // process.exit(1);
 // });
