@@ -83,10 +83,10 @@ finish_logging() {
   echo "Log directory: ${LOG_DIR}"
   echo "---------------------------------------------"
 
-  # Log rotation: keep last 7 days
-  # -mtime +6 → strictly older than ~7 days
-  echo "Cleaning up logs older than 7 days in: ${LOG_DIR}"
-  find "${LOG_DIR}" -type f -name "${JOB_NAME}_*.log" -mtime +6 -print -delete || true
+  # Log rotation: keep last 3 days
+  # -mtime +3 → strictly older than ~3 days
+  echo "Cleaning up logs older than 3 days in: ${LOG_DIR}"
+  find "${LOG_DIR}" -type f -name "${JOB_NAME}_*.log" -mtime +3 -print -delete || true
 
   echo "Done."
 }

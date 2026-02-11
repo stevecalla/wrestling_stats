@@ -643,9 +643,9 @@ async function main(config) {
 
       // PASS 2: mop up (same task_set_id + do not truncate + requeue LOCKED/FAILED + run again)
 
-      // when manually running to finish a partially complete job comment our PASS 1 above...
+      // when manually running to finish a partially complete job comment out PASS 1 above...
       // ... and pass in the task_set_id from the tasks db
-      // const task_set_id = 'step_3_2025-26 High School Boys    _4275c9453776_2026-02-02';
+      // const task_set_id = 'step_3_2025-26 High School Boys    _9ca5f0f69f57_2026-02-08';
       reset_tasks_table = false;
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
@@ -743,7 +743,7 @@ async function main(config) {
       await step_9_create_state_qualfier_reference();
 
       log_step_success(9, `Create state qualifier place reference`, Date.now() - start);
-    } else log_step_skip(9, "Create state qualifier place reference");kj
+    } else log_step_skip(9, "Create state qualifier place reference");
 
     // === STEP 10 APPEND TEAM DIVISION UPDATES ===
     if (step_flags.step_10) {
@@ -822,14 +822,23 @@ async function main(config) {
       log_step_success(17, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
     } else log_step_skip(17, "Load Data to Google Cloud & Bigquery 🔗");
 
-    // === STEP 18 CLOSE BROWSER ===
+    // === STEP 18 TRANSFER DATA FROM WINDOWS TO MAC ===
     if (step_flags.step_18) {
       const start = Date.now();
       log_step_start(18, "Transfer tables between windows & mac 🧹");
 
-      await step_18_transfer_tables_between_windows_and_mac();
+      try {
+        await step_18_transfer_tables_between_windows_and_mac();
+        log_step_success(18, "Transfer tables between windows & mac successfully", Date.now() - start);
 
-      log_step_success(18, "Transfer tables between windows & mac successfully", Date.now() - start);
+      } catch (err) {
+        console.error("Step 18 skipped (backup not reachable):", err.code || err.message);
+
+        log_step_warning?.(18, "Transfer skipped due to network issue", Date.now() - start);
+
+        // DO NOT rethrow to continue to step 19
+      }
+
     } else log_step_skip(18, "Transfer tables between windows & mac");
 
     // === STEP 19 CLOSE BROWSER ===
@@ -848,10 +857,19 @@ async function main(config) {
 
   } catch (err) {
     console.error(err);
+    process.exitCode = 1;   // 👈 mark process as failed
   } finally {
-    await close_pools(); // Step 20: Close once, at the very end
+    try {
+      await close_pools();
+    } catch (e) {
+      console.error("close_pools() failed:", e);
+      process.exitCode = 1;
+    } finally {
+      // ✅ Force termination so flock releases even if handles linger
+      console.log(`Exiting with code ${process.exitCode ?? 0}`);
+      process.exit(process.exitCode ?? 0);
+    }
   }
-
 }
 
 // ====================================================
