@@ -131,7 +131,7 @@ async function load_config(custom = {}) {
 
     // ✅ Iterator mode flags (default to list-based)
     use_scheduled_events_iterator_query: false,
-    use_wrestler_list_iterator_query: true,
+    use_wrestler_list_iterator_query: false,
 
     // SQL WHERE STATEMENT
     sql_where_filter_state_qualifier: "",
@@ -156,13 +156,25 @@ async function load_config(custom = {}) {
   return { ...defaults, ...custom };
 }
 
+const hs_boys_otm_2026 = {
+  track_wrestling_category: "High School Boys",
+  wrestling_season: "2025-26",
+  gender: "M",
+  use_scheduled_events_iterator_query: false,
+  use_wrestler_list_iterator_query: true,
+  // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
+  sql_where_filter_onthemat_ranking_list: "AND onthemat_is_name_match = 1",
+  // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
+  // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
+};
+
 const hs_boys_2026 = {
   // HIGH SCHOOL BOYS = set category, season & gender
   track_wrestling_category: "High School Boys",
   wrestling_season: "2025-26",
   gender: "M",
-  use_scheduled_events_iterator_query: true,
-  use_wrestler_list_iterator_query: false,
+  use_scheduled_events_iterator_query: false,
+  use_wrestler_list_iterator_query: true,
   // sql_where_filter_state_qualifier: "AND wrestler_is_state_tournament_qualifier IS NOT NULL",
   // sql_team_id_list: "AND team_id IN (764192150, 839403150)",
   // sql_wrestler_id_list: "AND wrestler_id IN (35527236132, 35671717132)",
@@ -279,7 +291,7 @@ async function main(config) {
       log_step_start(0, "Launching Chrome DevTools 🚀");
 
       // Kill any stale CDP listeners before launching / connecting
-      await preflight_cdp_ports([9222, 9223, 9224, 9225, 9226]);
+      await preflight_cdp_ports([9222, 9223, 9224, 9225, 9226, 9227, 9228]);
 
       const { browser, page, context } = await step_0_launch_chrome_developer(config.url_home_page);
 
@@ -604,7 +616,7 @@ async function main(config) {
       let reset_tasks_table; // true = clear table & repopulate; false = rerun pass 1 again to requeue Locked/failed
 
       // PASS 1: start clean (truncate + seed + run)
-      reset_tasks_table = true; 
+      reset_tasks_table = true;
       const { task_set_id } = await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
         config.url_login_page,
@@ -625,11 +637,15 @@ async function main(config) {
 
         config.use_scheduled_events_iterator_query,
         config.use_wrestler_list_iterator_query,
-        
+
         reset_tasks_table, // truncate
       );
 
       // PASS 2: mop up (same task_set_id + do not truncate + requeue LOCKED/FAILED + run again)
+
+      // when manually running to finish a partially complete job comment out PASS 1 above...
+      // ... and pass in the task_set_id from the tasks db
+      // const task_set_id = 'step_3_2025-26 High School Boys    _9ca5f0f69f57_2026-02-08';
       reset_tasks_table = false;
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
@@ -806,14 +822,23 @@ async function main(config) {
       log_step_success(17, "Data loaded to Google Cloud & Bigquery", Date.now() - start);
     } else log_step_skip(17, "Load Data to Google Cloud & Bigquery 🔗");
 
-    // === STEP 18 CLOSE BROWSER ===
+    // === STEP 18 TRANSFER DATA FROM WINDOWS TO MAC ===
     if (step_flags.step_18) {
       const start = Date.now();
       log_step_start(18, "Transfer tables between windows & mac 🧹");
 
-      await step_18_transfer_tables_between_windows_and_mac();
+      try {
+        await step_18_transfer_tables_between_windows_and_mac();
+        log_step_success(18, "Transfer tables between windows & mac successfully", Date.now() - start);
 
-      log_step_success(18, "Transfer tables between windows & mac successfully", Date.now() - start);
+      } catch (err) {
+        console.error("Step 18 skipped (backup not reachable):", err.code || err.message);
+
+        log_step_warning?.(18, "Transfer skipped due to network issue", Date.now() - start);
+
+        // DO NOT rethrow to continue to step 19
+      }
+
     } else log_step_skip(18, "Transfer tables between windows & mac");
 
     // === STEP 19 CLOSE BROWSER ===
@@ -832,14 +857,23 @@ async function main(config) {
 
   } catch (err) {
     console.error(err);
+    process.exitCode = 1;   // 👈 mark process as failed
   } finally {
-    await close_pools(); // Step 20: Close once, at the very end
+    try {
+      await close_pools();
+    } catch (e) {
+      console.error("close_pools() failed:", e);
+      process.exitCode = 1;
+    } finally {
+      // ✅ Force termination so flock releases even if handles linger
+      console.log(`Exiting with code ${process.exitCode ?? 0}`);
+      process.exit(process.exitCode ?? 0);
+    }
   }
-
 }
 
 // ====================================================
-// main(hs_girls_2026).catch(e => {
+// main(hs_boys_otm_2026).catch(e => {
 //   log_error(e?.stack || e);
 //   // process.exit(1);
 // });

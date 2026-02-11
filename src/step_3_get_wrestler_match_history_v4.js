@@ -3,7 +3,7 @@ import os from "os";
 
 import { step_0_launch_chrome_developer_v3 } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_0_launch_chrome_developer_v3.js";
 import { step_1_create_scrape_tasks_table, step_1_truncate_scrape_tasks_table } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_1_create_scrape_tasks_table.js";
-import { step_2_seed_tasks } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_2_insert_seed_tasks.js";
+import { step_2_seed_tasks, requeue_locked_failed_for_task_set } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_2_insert_seed_tasks.js";
 import { step_3_get_match_history_worker_v4 } from "./step_3_get_wrestler_match_history_parallel_scrape_v4/step_3_get_match_history_worker_v4.js";
 
 import { color_text } from "../utilities/console_logs/console_colors.js";
@@ -41,49 +41,78 @@ export async function main(
   use_scheduled_events_iterator_query = false,
   use_wrestler_list_iterator_query = true,
 
-  RESET_TASKS_TABLE = false, // true = truncate/reset; false = resume
+  reset_tasks_table = false, // true = truncate/reset; false = resume
 
-  TASK_SET_ID_OVERRIDE = null // ✅ NEW: pass PASS-1 task_set_id into PASS-2
+  TASK_SET_ID_OVERRIDE = null // ✅ pass PASS-1 task_set_id into PASS-2
 ) {
   // -----------------------------------------------
   // STEP 1: ensure scrape task table exists
   // -----------------------------------------------
   await step_1_create_scrape_tasks_table();
 
-  if (RESET_TASKS_TABLE) {
+  let task_set_id = TASK_SET_ID_OVERRIDE || null;
+
+  if (reset_tasks_table) {
     await step_1_truncate_scrape_tasks_table();
+
+    // -----------------------------------------------
+    // STEP 2: seed tasks (returns task_set_id)
+    // -----------------------------------------------
+    const now_mtn = get_now_mtn();
+
+    const seeded = await step_2_seed_tasks({
+      wrestling_season,
+      track_wrestling_category,
+      gender,
+
+      sql_where_filter_state_qualifier,
+      sql_where_filter_onthemat_ranking_list,
+      sql_team_id_list,
+      sql_wrestler_id_list,
+
+      use_scheduled_events_iterator_query,
+      use_wrestler_list_iterator_query,
+
+      job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
+
+      seed_limit: 0,
+      reset_pending: false, // if NOT truncating, requeue LOCKED/FAILED for same task_set_id
+
+      time_bucket: format_ymd(now_mtn),
+      prune_keep_last_n: 3,
+
+      task_set_id: TASK_SET_ID_OVERRIDE, // ✅ NEW: force reuse when provided
+    });
+
+    task_set_id = seeded.task_set_id;// ✅ assign to outer-scope var
+
+    console.log(color_text(`\n📌 task_set_id = ${task_set_id}`, "cyan"));
   }
 
   // -----------------------------------------------
-  // STEP 2: seed tasks (returns task_set_id)
+  // STEP 3: resume behavior (requeue LOCKED/FAILED)
   // -----------------------------------------------
-  const now_mtn = get_now_mtn();
+  if (!task_set_id) {
+    throw new Error(
+      "No task_set_id available. If reset_tasks_table=false, pass TASK_SET_ID_OVERRIDE. If reset_tasks_table=true, seeding must return task_set_id."
+    );
+  }
 
-  const { task_set_id } = await step_2_seed_tasks({
-    wrestling_season,
-    track_wrestling_category,
-    gender,
+  if (!reset_tasks_table) {
+    //  ✅ compute your updated_at timestamps the same way you do in seeder
+    const now_utc = new Date();
+    const mtn_offset_hours = get_mountain_time_offset_hours(now_utc);
+    const now_mtn = new Date(now_utc.getTime() + mtn_offset_hours * 60 * 60 * 1000);
 
-    sql_where_filter_state_qualifier,
-    sql_where_filter_onthemat_ranking_list,
-    sql_team_id_list,
-    sql_wrestler_id_list,
+    const { requeued_count } = await requeue_locked_failed_for_task_set({
+      task_set_id,
+      updated_at_mtn: now_mtn,
+      updated_at_utc: now_utc,
+    });
 
-    use_scheduled_events_iterator_query,
-    use_wrestler_list_iterator_query,
+    console.log(color_text(`♻️ Requeued LOCKED/FAILED: ${requeued_count}`, "yellow"));
+  }
 
-    job_type: `${wrestling_season} ${track_wrestling_category} ${sql_where_filter_state_qualifier} ${sql_where_filter_onthemat_ranking_list} ${sql_team_id_list} ${sql_wrestler_id_list}`,
-
-    seed_limit: 0,
-    reset_pending: !RESET_TASKS_TABLE, // if NOT truncating, requeue LOCKED/FAILED for same task_set_id
-
-    time_bucket: format_ymd(now_mtn),
-    prune_keep_last_n: 3,
-
-    task_set_id: TASK_SET_ID_OVERRIDE, // ✅ NEW: force reuse when provided
-  });
-
-  console.log(color_text(`\n📌 task_set_id = ${task_set_id}`, "cyan"));
 
   // -----------------------------------------------
   // STEP 4: run parallel workers
