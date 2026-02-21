@@ -864,7 +864,6 @@ async function main(config) {
     } catch (e) {
       console.error("close_pools() failed:", e);
       process.exitCode = 1;
-steve-calla@steve-calla-Latitude-7420:~/development/wrestling/wre
     } finally {
       // ✅ Force termination so flock releases even if handles linger
       console.log(`Exiting with code ${process.exitCode ?? 0}`);
