@@ -1,5 +1,3 @@
-USE wrestling_stats;
-
 SELECT * FROM wrestler_team_
 division_reference WHERE wrestling_season LIKE "2025-26" AND track_wrestling_category LIKE "High School Boys" LIMIT 10;
 
@@ -9,39 +7,28 @@ SELECT FORMAT(COUNT(*), 0) FROM team_schedule_scrape_data WHERE wrestling_season
 SELECT team_name_raw, team_id, track_wrestling_category, FORMAT(COUNT(DISTINCT team_name_raw), 0) AS count FROM team_schedule_scrape_data GROUP BY team_name_raw, 2, 3 ORDER BY 3, 1 ASC;
 SELECT team_name_raw, team_id, track_wrestling_category, event_name, FORMAT(COUNT(DISTINCT team_name_raw), 0) AS count FROM team_schedule_scrape_data GROUP BY team_name_raw, 2, 3, 4 ORDER BY 3, 1 ASC;
 
-DROP TABLE team_schedule_scrape_data;
--- GROUP EVENTS BY EVENT NAME
-SELECT event_name, event_key, start_date, event_js 
-FROM team_schedule_scrape_data 
-WHERE 1 = 1 AND wrestling_season = '2025-26' AND track_wrestling_category = 'High School Boys' AND team_name_raw LIKE "%, CO%" 
-GROUP BY 1, 2, 3, 4
-ORDER BY event_js
-;
--- SHOW EVENTS BY EACH TEAM
 SELECT 
-	"team_schedule" AS query_label,
-	t.*
-	-- start_date,
---     team_name_raw,
---     team_id, 
---     event_name,
---     team_score
-FROM team_schedule_scrape_data AS t
-WHERE 1 = 1
-	AND wrestling_season = '2025-26'
-	AND track_wrestling_category = 'High School Boys'
-	AND team_name_raw LIKE "%, CO%"
+	-- *
+	start_date,
+    team_name_raw,
+    team_id, 
+    event_name
+FROM team_schedule_scrape_data
+WHERE wrestling_season = '2025-26'
+  AND track_wrestling_category = 'High School Boys'
   -- AND track_wrestling_category = 'High School Girls'
   AND start_date IN (
-         -- CURDATE(),               -- today
+        CURDATE(),               -- today
         DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
         -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
-      )-- 
+      )
 ORDER BY start_date, event_name
 -- LIMIT 20
 ;
+
 SELECT * FROM wrestler_list_scrape_data LIMIT 10;
 SELECT wrestling_season, track_wrestling_category, team, team_id FROM wrestler_list_scrape_data LIMIT 10;
+
 
 -- retrieves events from yesterday & today
 WITH recent_events AS (
@@ -53,15 +40,13 @@ WITH recent_events AS (
       ts.wrestling_season,
       ts.track_wrestling_category
   FROM team_schedule_scrape_data ts
-  WHERE 1 = 1
-	AND ts.wrestling_season = '2025-26'
+  WHERE ts.wrestling_season = '2025-26'
     AND ts.track_wrestling_category = 'High School Boys'
-	AND team_name_raw LIKE "%, CO%"
     -- AND ts.track_wrestling_category = 'High School Girls'
     AND ts.start_date IN (
-          -- CURDATE(),						          -- today
-          DATE_SUB(CURDATE(), INTERVAL 1 DAY)  		  -- yesterday
-          -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)    -- tomorrow
+          CURDATE(),               -- today
+          DATE_SUB(CURDATE(), INTERVAL 1 DAY)  -- yesterday
+          -- , DATE_ADD(CURDATE(), INTERVAL 1 DAY)  -- tomorrow
         )
 )
 
@@ -93,8 +78,9 @@ LEFT JOIN wrestler_list_scrape_data w
           -- 2) fallback: match on team name when event.team_id is NULL
           OR (re.team_id IS NULL AND w.team = re.team_name_raw)
          )
-WHERE 1 = 1
-	AND w.name_link IS NOT NULL AND w.name_link <> ''
-GROUP BY 1, 2
-ORDER BY 1, 2
+
+ORDER BY
+    re.start_date,
+    re.event_name,
+    w.name
 ;
