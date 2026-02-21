@@ -118,7 +118,7 @@ export async function main(
   // STEP 4: run parallel workers
   // -----------------------------------------------
   const port_list = [9223, 9224, 9225, 9226, 9227, 9228];
-  const PORTS_TO_LAUNCH = 3;
+  const PORTS_TO_LAUNCH = 4;
   const ports_to_use = port_list.slice(0, PORTS_TO_LAUNCH);
   const LAUNCH_DELAY_MS = 2500;
   const claim_batch_size = 15;
