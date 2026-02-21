@@ -834,7 +834,7 @@ async function main(config) {
       } catch (err) {
         console.error("Step 18 skipped (backup not reachable):", err.code || err.message);
 
-        log_step_warning?.(18, "Transfer skipped due to network issue", Date.now() - start);
+        log_step_skip?.(18, "Transfer skipped due to network issue", Date.now() - start);
 
         // DO NOT rethrow to continue to step 19
       }
@@ -864,6 +864,7 @@ async function main(config) {
     } catch (e) {
       console.error("close_pools() failed:", e);
       process.exitCode = 1;
+steve-calla@steve-calla-Latitude-7420:~/development/wrestling/wre
     } finally {
       // ✅ Force termination so flock releases even if handles linger
       console.log(`Exiting with code ${process.exitCode ?? 0}`);
