@@ -607,7 +607,8 @@ async function main(
     while (Date.now() - start < timeout_ms) {
       const frames = page.frames();
       const urls = frames.map((f) => f.url());
-      console.log("step 0a: current frames:", urls);
+      console.log("step 0a: current frames: starting step 0a");
+      // console.log("step 0a: current frames:", urls);
 
       // Prefer the real /seasons/Results.jsp content frame
       const candidate_frames = frames.filter((f) =>
@@ -720,6 +721,7 @@ async function main(
     }
 
     const end = TEST_MODE ? new Date(2025, 12 - 1, 2) : new Date();
+    // const end = TEST_MODE ? new Date(2026, 12 - 11, 21) : new Date();
     end.setHours(0, 0, 0, 0);
 
     const end_date = new Date(end);
