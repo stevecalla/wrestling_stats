@@ -11,21 +11,49 @@ import { send_mail, mail_details } from "../../utilities/email_sends/nodemailer.
 // Helpers: Disk + Temperature
 // ====================================================
 
-function get_root_disk_usage_pct() {
-    // Uses POSIX df output; returns something like "63%" or "N/A"
+function get_root_disk_stats() {
+    // Returns totals for "/" in GB + percent used
+    // Uses POSIX df output; stable for scripting
     try {
-        const out = execSync("df -P /", { encoding: "utf8" }).trim().split("\n");
-        if (!out[1]) return "N/A";
+        const out = execSync("df -P -B1 /", { encoding: "utf8" }).trim().split("\n");
+        if (!out[1]) {
+            return {
+                pct_used: "N/A",
+                total_gb: "N/A",
+                used_gb: "N/A",
+                avail_gb: "N/A",
+            };
+        }
 
         const cols = out[1].split(/\s+/);
+        // Filesystem 1B-blocks Used Available Capacity Mounted on
+        //    0         1B        2     3        4       5
+        const totalBytes = Number(cols[1]);
+        const usedBytes = Number(cols[2]);
+        const availBytes = Number(cols[3]);
         const capacity = cols[4]; // e.g. "63%"
-        return capacity || "N/A";
+
+        const toGB = (b) => (Number.isFinite(b) ? (b / 1024 / 1024 / 1024).toFixed(2) : "N/A");
+
+        return {
+            pct_used: capacity || "N/A",
+            total_gb: toGB(totalBytes),
+            used_gb: toGB(usedBytes),
+            avail_gb: toGB(availBytes),
+        };
     } catch (e) {
-        return "N/A";
+        return {
+            pct_used: "N/A",
+            total_gb: "N/A",
+            used_gb: "N/A",
+            avail_gb: "N/A",
+        };
     }
 }
 
-function get_system_temp_c() {
+function get_system_temp_f() {
+    let tempC = null;
+
     // Prefer sysfs: /sys/class/thermal/thermal_zone*/temp
     try {
         const base = "/sys/class/thermal";
@@ -39,27 +67,31 @@ function get_system_temp_c() {
                 const val = Number(raw);
                 if (Number.isNaN(val)) continue;
 
-                // If millidegrees C
-                const c = val > 1000 ? val / 1000 : val;
+                tempC = val > 1000 ? val / 1000 : val;
 
                 // sanity range
-                if (c > 0 && c < 120) return c.toFixed(1);
+                if (tempC > 0 && tempC < 120) break;
             }
         }
     } catch (e) {
-        // ignore and fall through
+        // ignore
     }
 
-    // Fallback: `sensors` (lm-sensors) if installed
-    try {
-        const out = execSync("sensors", { encoding: "utf8" });
-        const m = out.match(/\+([0-9]{1,3}\.[0-9])°C|\+([0-9]{1,3})°C/);
-        if (m) return (m[1] || m[2]);
-    } catch (e) {
-        // sensors not installed or not accessible
+    // Fallback to lm-sensors if needed
+    if (tempC === null) {
+        try {
+            const out = execSync("sensors", { encoding: "utf8" });
+            const m = out.match(/\+([0-9]{1,3}\.[0-9])°C|\+([0-9]{1,3})°C/);
+            if (m) tempC = Number(m[1] || m[2]);
+        } catch (e) {
+            return "N/A";
+        }
     }
 
-    return "N/A";
+    if (tempC === null || Number.isNaN(tempC)) return "N/A";
+
+    const tempF = (tempC * 9) / 5 + 32;
+    return tempF.toFixed(1);
 }
 
 // ====================================================
@@ -165,13 +197,15 @@ async function send_ubuntu_log_via_email() {
     const usedMemGB = (Number(totalMemGB) - Number(freeMemGB)).toFixed(2);
     const memUsedPct = ((Number(usedMemGB) / Number(totalMemGB)) * 100).toFixed(1);
 
-    const tempC = get_system_temp_c();
-    const rootDiskPct = get_root_disk_usage_pct();
+    const tempF = get_system_temp_f();
 
-    // Optional highlighting thresholds
-    const tempNum = Number(tempC);
-    const isHot = !Number.isNaN(tempNum) && tempNum >= 80;
-    const isVeryHot = !Number.isNaN(tempNum) && tempNum >= 90;
+    const disk = get_root_disk_stats();
+    const rootDiskPct = disk.pct_used;
+
+    // Optional highlighting thresholds (Fahrenheit)
+    const tempNum = Number(tempF);
+    const isHot = !Number.isNaN(tempNum) && tempNum >= 176;     // ~80°C
+    const isVeryHot = !Number.isNaN(tempNum) && tempNum >= 194; // ~90°C
 
     const diskNum = Number(String(rootDiskPct).replace("%", ""));
     const diskHigh = !Number.isNaN(diskNum) && diskNum >= 85;
@@ -233,13 +267,13 @@ async function send_ubuntu_log_via_email() {
             <tr>
                 <td style="padding:6px 0;"><strong>System Temp</strong></td>
                 <td style="padding:6px 0; font-weight:${isVeryHot ? "bold" : "normal"}; color:${isHot ? "#dc3545" : "inherit"};">
-                    ${tempC} °C
+                    ${tempF} °F
                 </td>
             </tr>
             <tr>
                 <td style="padding:6px 0;"><strong>Disk ( / )</strong></td>
                 <td style="padding:6px 0; font-weight:${diskHigh ? "bold" : "normal"}; color:${diskHigh ? "#dc3545" : "inherit"};">
-                    ${rootDiskPct} used
+                    ${disk.used_gb} GB used / ${disk.total_gb} GB total — ${disk.avail_gb} GB available (${disk.pct_used} used)
                 </td>
             </tr>
         </table>
