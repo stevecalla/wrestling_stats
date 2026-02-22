@@ -19,14 +19,13 @@ async function determine_os_path() {
 }
 
 // READ UBUNTU SERVER UPDATE LOG
-// C:\Users\calla\development\wrestling_stats\cron_jobs\cron_update_ubuntu\ubuntu-update.log
-// /home/steve-calla/development/wrestling_stats/cron_jobs/cron_update_ubuntu/ubuntu-update.log
+// /home/steve-calla/development/wrestling/wrestling_stats/scripts/cron_update_ubuntu/ubuntu-update.log
 const ubuntu_folder_path = {
     linux: {
-        'steve-calla': '/home/steve-calla/development/wrestling_stats/cron_jobs/cron_update_ubuntu',
+        'steve-calla': '/home/steve-calla/development/wrestling/wrestling_stats/scripts/cron_update_ubuntu',
     },
-    mac: '/Users/teamkwsc/development/wrestling_stats/cron_jobs/cron_update_ubuntu',
-    windows: 'C:\\Users\\calla\\development\\wrestling_stats\\cron_jobs\\cron_update_ubuntu'
+    mac: '/home/steve-calla/development/wrestling/wrestling_stats/scripts/cron_update_ubuntu',
+    windows: 'C:\\Users\\calla\\development\\wrestling_stats\\scripts\\cron_update_ubuntu'
 }
 
 async function determine_ubuntu_update_log_file_path(file_name) {
