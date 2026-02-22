@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 const app = express();
-const PORT = Number(process.env.SERVER_HEALTH_CHECK_PORT || 3000);
+const port = Number(process.env.SERVER_HEALTH_CHECK_PORT || 3000);
 
 app.set("trust proxy", true);
 
@@ -19,7 +19,7 @@ app.set("trust proxy", true);
 // ---------- Helpers ----------
 //
 
-function formatDuration(seconds) {
+function format_duration(seconds) {
   seconds = Math.floor(seconds);
 
   const days = Math.floor(seconds / 86400);
@@ -34,7 +34,7 @@ function formatDuration(seconds) {
   return `${days}d ${hours}h ${minutes}m ${seconds}s`;
 }
 
-function getDiskUsage() {
+function get_disk_usage() {
   try {
     const output = execSync("df -h /").toString().split("\n")[1];
     const parts = output.split(/\s+/);
@@ -55,7 +55,7 @@ function getDiskUsage() {
   }
 }
 
-function logBlock(title, obj) {
+function log_block(title, obj) {
   console.log("***************************************");
   console.log(title);
   Object.entries(obj).forEach(([key, value]) => {
@@ -88,13 +88,13 @@ app.use((req, res, next) => {
 
 app.get("/health", (req, res) => {
   const mem = process.memoryUsage();
-  const disk = getDiskUsage();
+  const disk = get_disk_usage();
 
-  const statusDetails = {
+  const status_details = {
     status: "ok",
-    server: "health server is up and running. Stands Ready.",
+    server: "health server is up and running. stands_ready.",
     requesting_ip: req.ip,
-    uptime: formatDuration(process.uptime()),
+    uptime: format_duration(process.uptime()),
     load_avg: os.loadavg().map(n => n.toFixed(2)).join(", "),
     cpu_cores: os.cpus().length,
     memory_used_mb: (mem.rss / 1024 / 1024).toFixed(1),
@@ -107,17 +107,15 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
   };
 
-  logBlock("status details:", statusDetails);
+  log_block("status_details:", status_details);
 
-  res.status(200).json(statusDetails);
+  res.status(200).json(status_details);
 });
 
 //
 // ---------- Start Server ----------
 //
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Health check running on port ${PORT}`
-  );
+app.listen(port, "0.0.0.0", () => {
+  console.log(`health_check_running_on_port ${port}`);
 });
