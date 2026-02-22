@@ -2,16 +2,36 @@
   "name": "wrestling",
   "version": "0.1.0",
   "description": "Utilities and scripts for the wrestling project",
-  "main": "index.js",
+  "main": "index..js",
   "type": "module",
   "scripts": {
     "start": "node .",
     "dev": "node --watch .",
+
     "test": "playwright test",
     "test:headful": "playwright test --headed",
     "install-browsers": "playwright install",
     "lint": "echo \"No lint configured\"",
-    "format": "echo \"No formatter configured\""
+    "format": "echo \"No formatter configured\"",
+
+    "pm2_monitor": "pm2 monit",
+    "pm2_list": "pm2 list",
+    "pm2_restart_all": "pm2 restart all",
+    "pm2_logs_all": "pm2 logs all",
+    "pm2_delete_all": "pm2 delete all",
+    "pm2_run_all_servers": "echo '▶ (1 of 12) Starting pm2:health:start' && npm run pm2:health:start && echo '▶ (2 of 12) Placeholder for net server' && npm run pm2:health:monit",
+    
+    "get_date": "sh -c 'date \"+%Y-%m-%d %H:%M:%S\"'",
+
+    "health:local": "node server_health_check_8000.js",
+    "pm2:health:start": "pm2 start server_health_check_8000.js --name health-server --time",
+    "pm2:health:restart": "pm2 restart health-server",
+    "pm2:health:stop": "pm2 stop health-server",
+    "pm2:health:delete": "pm2 delete health-server",
+    "pm2:health:logs": "pm2 logs health-server --lines 200",
+    "pm2:health:status": "pm2 status",
+    "pm2:health:monit": "pm2 monit",
+    "pm2:save": "pm2 save"
   },
   "repository": {
     "type": "git",
@@ -40,8 +60,9 @@
     "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.17.3",
     "csv-parse": "^6.1.0",
-    "dayjs": "^1.11.19",
+    "day.js": "^1.11.19",
     "dotenv": "^17.3.1",
+    "express": "^5.2.1",
     "fast-csv": "^5.0.5",
     "mammoth": "^1.11.0",
     "mysql2": "^3.15.3",
