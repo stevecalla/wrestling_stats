@@ -147,7 +147,7 @@ async function send_ubuntu_log_via_slack() {
 // ====================================================
 
 async function send_ubuntu_log_via_email() {
-    // ---------------------------------------
+    // ---------------------------------------  
     // Read logs
     // ---------------------------------------
     const email_message = await read_ubuntu_update_log(-500);
@@ -164,7 +164,7 @@ async function send_ubuntu_log_via_email() {
     let reboot_status = "Reboot Status Unknown";
     const lowerMessage = message.toLowerCase();
 
-    if (lowerMessage.includes("run sudo reboot")) {
+    if (lowerMessage.includes("Run: sudo reboot")) {
         reboot_status = "⚠️ REBOOT REQUIRED";
     } else if (lowerMessage.includes("no reboot required")) {
         reboot_status = "✅ No Reboot Required";
