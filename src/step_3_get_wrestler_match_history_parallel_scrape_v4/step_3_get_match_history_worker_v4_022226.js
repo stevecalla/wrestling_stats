@@ -1,4 +1,4 @@
-// src/step_3_get_wrestler_match_history_parallel_scrape_v4/step_3_get_match_history_worker_v4.js
+// src/step_3_get_wrestler_match_history.js (ESM, snake_case)
 
 import net from "net"; // for wait_until_port_is_open function
 import path from "path";
@@ -12,7 +12,10 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 // 🔧 global handler to suppress the noisy dialog error
 process.on("unhandledRejection", (err) => {
   const msg = String(err?.message || "");
-  if (msg.includes("Page.handleJavaScriptDialog") && msg.includes("No dialog is showing")) {
+  if (
+    msg.includes("Page.handleJavaScriptDialog") &&
+    msg.includes("No dialog is showing")
+  ) {
     console.warn(
       "⚠️ Suppressed Playwright dialog error: Page.handleJavaScriptDialog → No dialog is showing"
     );
@@ -49,6 +52,7 @@ import { step_19_close_chrome_dev } from "../step_19_close_chrome_developer.js";
 ========================================================= */
 import os from "os";
 import { get_pool } from "../../utilities/mysql/mysql_pool.js";
+import { get_mountain_time_offset_hours } from "../../utilities/date_time_tools/get_mountain_time_offset_hours.js";
 
 /* ------------------------------------------
    small helpers
@@ -126,13 +130,19 @@ async function safe_auto_login(page, wrestling_season, track_wrestling_category)
  * - No hard dependency on waitForTimeout
  * - Uses load states; sleeps are safe
  */
-async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page) {
+async function relogin(
+  page,
+  load_timeout_ms,
+  wrestling_season,
+  track_wrestling_category,
+  url_login_page
+) {
   const login_url = url_login_page;
   await safe_goto(page, login_url, { timeout: load_timeout_ms });
 
   await page
     .waitForLoadState("domcontentloaded", { timeout: Math.min(load_timeout_ms, 15000) })
-    .catch(() => { });
+    .catch(() => {});
 
   await safe_sleep(page, 500);
 
@@ -140,7 +150,7 @@ async function relogin(page, load_timeout_ms, wrestling_season, track_wrestling_
 
   await page
     .waitForLoadState("domcontentloaded", { timeout: Math.min(load_timeout_ms, 15000) })
-    .catch(() => { });
+    .catch(() => {});
 
   await safe_sleep(page, 300);
 }
@@ -159,7 +169,7 @@ async function safe_goto(page, url, opts = {}) {
 
     if (msg.includes("is interrupted by another navigation")) {
       console.warn("⚠️ Ignored navigation interruption, site redirected itself.");
-      await page.waitForLoadState("domcontentloaded").catch(() => { });
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
       return page.url();
     }
 
@@ -186,7 +196,11 @@ async function wait_ms(ms) {
 /**
  * Wait until DevTools port is open
  */
-async function wait_until_port_is_open(port = 9222, max_wait_ms = 5000, host = "127.0.0.1") {
+async function wait_until_port_is_open(
+  port = 9222,
+  max_wait_ms = 5000,
+  host = "127.0.0.1"
+) {
   const start_time = Date.now();
 
   while (Date.now() - start_time < max_wait_ms) {
@@ -222,7 +236,11 @@ async function wait_until_port_is_open(port = 9222, max_wait_ms = 5000, host = "
 /**
  * More robust DevTools readiness check
  */
-async function wait_until_devtools_ready(port = 9222, max_wait_ms = 7000, host = "127.0.0.1") {
+async function wait_until_devtools_ready(
+  port = 9222,
+  max_wait_ms = 7000,
+  host = "127.0.0.1"
+) {
   const start_time = Date.now();
   const ok = await wait_until_port_is_open(port, max_wait_ms, host);
   if (!ok) return false;
@@ -243,7 +261,7 @@ async function wait_until_devtools_ready(port = 9222, max_wait_ms = 7000, host =
         if (j && j.Browser) return true;
         return true;
       }
-    } catch { }
+    } catch {}
     await wait_ms(200);
   }
 
@@ -332,13 +350,22 @@ async function helper_browser_close_restart_relogin(
 
   await wait_until_devtools_ready(port, 8000).catch(() => false);
 
-  ({ browser, page, context } = await step_0_launch_chrome_developer_v3(url_home_page, port));
+  ({ browser, page, context } = await step_0_launch_chrome_developer_v3(
+    url_home_page,
+    port
+  ));
 
   browser.on?.("disconnected", () => {
     console.warn("⚠️ CDP disconnected");
   });
 
-  await relogin(page, load_timeout_ms, wrestling_season, track_wrestling_category, url_login_page);
+  await relogin(
+    page,
+    load_timeout_ms,
+    wrestling_season,
+    track_wrestling_category,
+    url_login_page
+  );
 
   return { browser, page, context };
 }
@@ -472,9 +499,10 @@ function extractor_source() {
       if (!t) return { start_date: "", end_date: "" };
 
       // A: MM/DD - MM/DD/YYYY
-      let m = t.match(
-        /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-      );
+      let m =
+        t.match(
+          /^(\d{1,2})[\/\-](\d{1,2})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+        );
       if (m) {
         const [, m1, d1, m2, d2, y2] = m;
         const start_obj = to_date(y2, m1, d1);
@@ -483,9 +511,10 @@ function extractor_source() {
       }
 
       // B: MM/DD/YYYY - MM/DD/YYYY
-      m = t.match(
-        /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
-      );
+      m =
+        t.match(
+          /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*[-–—]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/
+        );
       if (m) {
         const [, m1, d1, y1, m2, d2, y2] = m;
         const start_obj = to_date(y1, m1, d1);
@@ -515,7 +544,8 @@ function extractor_source() {
 
     const sel = document.querySelector("#wrestler");
     const sel_opt =
-      sel?.selectedOptions?.[0] || document.querySelector("#wrestler option[selected]");
+      sel?.selectedOptions?.[0] ||
+      document.querySelector("#wrestler option[selected]");
 
     const wrestler_id = (sel_opt?.value || "").trim();
     const opt_text = norm(sel_opt?.textContent || "");
@@ -539,7 +569,9 @@ function extractor_source() {
       const details_text_raw = norm(details_cell?.innerText);
 
       let opponent_id = "";
-      const link_nodes = Array.from(details_cell.querySelectorAll('a[href*="wrestlerId="]'));
+      const link_nodes = Array.from(
+        details_cell.querySelectorAll('a[href*="wrestlerId="]')
+      );
       for (const a of link_nodes) {
         const href = a.getAttribute("href") || "";
         const m = href.match(/wrestlerId=(\d+)/);
@@ -620,8 +652,7 @@ async function claim_next_tasks({ task_set_id, claim_batch_size = 25, worker_id 
   const conn = await pool.getConnection();
 
   const now_utc = get_now();
-  // NOTE: fmt_mysql_dt_mtn() already formats in America/Denver, so pass normal Date()
-  const now_mtn = now_utc;
+  const now_mtn = get_now();
 
   const query_skip_lock = `
       SELECT 
@@ -682,7 +713,7 @@ async function claim_next_tasks({ task_set_id, claim_batch_size = 25, worker_id 
 async function mark_task_done({ task_id }) {
   const pool = await get_pool();
   const now_utc = get_now();
-  const now_mtn = now_utc;
+  const now_mtn = get_now();
 
   await pool.query(
     `
@@ -701,7 +732,7 @@ async function mark_task_done({ task_id }) {
 async function mark_task_failed({ task_id, error }) {
   const pool = await get_pool();
   const now_utc = get_now();
-  const now_mtn = now_utc;
+  const now_mtn = get_now();
 
   await pool.query(
     `
@@ -717,10 +748,14 @@ async function mark_task_failed({ task_id, error }) {
   );
 }
 
-async function requeue_tasks_for_worker({ task_set_id, worker_id, reason = "PORT_STUCK_OR_DEAD" }) {
+async function requeue_tasks_for_worker({
+  task_set_id,
+  worker_id,
+  reason = "PORT_STUCK_OR_DEAD",
+}) {
   const pool = await get_pool();
   const now_utc = get_now();
-  const now_mtn = now_utc;
+  const now_mtn = get_now();
 
   const [res] = await pool.query(
     `
@@ -734,7 +769,13 @@ async function requeue_tasks_for_worker({ task_set_id, worker_id, reason = "PORT
       AND status = 'LOCKED'
       AND locked_by = ?
     `,
-    [reason, fmt_mysql_dt_utc(now_utc), fmt_mysql_dt_mtn(now_mtn), task_set_id, worker_id]
+    [
+      reason,
+      fmt_mysql_dt_utc(now_utc),
+      fmt_mysql_dt_mtn(now_mtn),
+      task_set_id,
+      worker_id,
+    ]
   );
 
   console.log(
@@ -775,14 +816,10 @@ async function main({
 
   task_set_id = null,
   worker_id = null,
-  claim_batch_size = 25,
-
-  is_extended_failure_retry = true, // PASS 1 default: more tolerant (longer timeout + more attempts)
+  claim_batch_size = 25
 }) {
-  // ✅ NEW: retry tuning (kept very local / minimal)
-  const load_timeout_ms = is_extended_failure_retry ? 60000 : 30000;
-  const MAX_ATTEMPTS_PER_WRESTLER = is_extended_failure_retry ? 2 : 1;
-  const PROG_REFRESH_MS = is_extended_failure_retry ? 5000 : 2500;
+  const load_timeout_ms = 60000;
+  const MAX_ATTEMPTS_PER_WRESTLER = 2;
 
   // ✅ NEW: port-prefixed logger (minimal)
   const p = (...args) => console.log(`[port=${port}]`, ...args);
@@ -848,7 +885,10 @@ async function main({
     total_rows_in_db = 0;
   }
 
-  const no_of_urls = mode === "tasks" ? matches_page_limit : Math.min(matches_page_limit, total_rows_in_db);
+  const no_of_urls =
+    mode === "tasks"
+      ? matches_page_limit
+      : Math.min(matches_page_limit, total_rows_in_db);
 
   let headers_written = false;
 
@@ -871,29 +911,6 @@ async function main({
   };
   let watchdog = null;
 
-  // ✅ NEW: task progress cache (prevents DB hammering)
-  let _last_prog_fetch_ms = 0;
-  let _last_prog_value = null;
-
-  async function get_task_progress_cached(task_set_id_in) {
-    if (!task_set_id_in) return null;
-
-    const now = Date.now();
-    if (_last_prog_value && now - _last_prog_fetch_ms < PROG_REFRESH_MS) {
-      return _last_prog_value;
-    }
-
-    try {
-      const prog = await get_task_set_progress(task_set_id_in);
-      _last_prog_value = prog;
-      _last_prog_fetch_ms = now;
-      return prog;
-    } catch (e) {
-      console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
-      return _last_prog_value; // return stale if available
-    }
-  }
-
   try {
     browser.on?.("disconnected", () => p("⚠️ CDP disconnected — Chrome closed"));
 
@@ -914,7 +931,7 @@ async function main({
       wrestling_season,
       track_wrestling_category,
       url_login_page,
-      interval_ms: is_extended_failure_retry ? 6000 : 4000, // ✅ NEW: slightly calmer in is_extended_failure_retry
+      interval_ms: 5000,
     });
 
     if (mode === "events") {
@@ -925,7 +942,12 @@ async function main({
         )
       );
     } else if (mode === "list") {
-      p(color_text(`📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`, "green"));
+      p(
+        color_text(
+          `📄 DB has ${total_rows_in_db} wrestler links (wrestler_list_scrape_data)`,
+          "green"
+        )
+      );
     } else {
       p(
         color_text(
@@ -952,7 +974,9 @@ async function main({
             reason: `PORT_NOT_OPEN port=${port}`,
           });
 
-          throw new Error(`DevTools port ${port} is not open; requeued LOCKED tasks for this worker.`);
+          throw new Error(
+            `DevTools port ${port} is not open; requeued LOCKED tasks for this worker.`
+          );
         }
 
         const tasks = await claim_next_tasks({
@@ -974,24 +998,24 @@ async function main({
         ? iter_tasks_table()
         : mode === "events"
           ? iter_name_links_based_on_event_schedule({
-            start_at: loop_start,
-            limit: matches_page_limit,
-            batch_size: 500,
-            wrestling_season,
-            track_wrestling_category,
-          })
+              start_at: loop_start,
+              limit: matches_page_limit,
+              batch_size: 500,
+              wrestling_season,
+              track_wrestling_category,
+            })
           : iter_name_links_from_db({
-            start_at: loop_start,
-            limit: matches_page_limit,
-            batch_size: 500,
-            wrestling_season,
-            track_wrestling_category,
-            gender,
-            sql_where_filter_state_qualifier,
-            sql_where_filter_onthemat_ranking_list,
-            sql_team_id_list,
-            sql_wrestler_id_list,
-          });
+              start_at: loop_start,
+              limit: matches_page_limit,
+              batch_size: 500,
+              wrestling_season,
+              track_wrestling_category,
+              gender,
+              sql_where_filter_state_qualifier,
+              sql_where_filter_onthemat_ranking_list,
+              sql_team_id_list,
+              sql_wrestler_id_list,
+            });
 
     for await (const iter_item of iterator) {
       // ✅ always use the latest state refs
@@ -1051,10 +1075,12 @@ async function main({
           await safe_goto(page, effective_url, { timeout: load_timeout_ms });
 
           p("step 2b: find target frame");
-          let target_frame = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+          let target_frame =
+            page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+            page.mainFrame();
 
           p("step 3: wait for redirect");
-          await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => { });
+          await page.waitForURL(/seasons\/index\.jsp/i, { timeout: 5000 }).catch(() => {});
 
           if (/seasons\/index\.jsp/i.test(page.url())) {
             p("step 3a: on index.jsp, starting auto login for season:", wrestling_season);
@@ -1062,20 +1088,32 @@ async function main({
             await safe_auto_login(page, wrestling_season, track_wrestling_category);
             await safe_sleep(page, 1000);
 
-            const effective_url_after_login = build_wrestler_matches_url(url_home_page, page, url);
+            const effective_url_after_login = build_wrestler_matches_url(
+              url_home_page,
+              page,
+              url
+            );
             p("step 3b: re-navigating to original URL after login:", effective_url_after_login);
 
             await safe_goto(page, effective_url_after_login, { timeout: load_timeout_ms });
             await safe_sleep(page, 1000);
 
-            target_frame = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            target_frame =
+              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+              page.mainFrame();
           }
 
           if (/MainFrame\.jsp/i.test(page.url())) {
-            const effective_url_mainframe = build_wrestler_matches_url(url_home_page, page, url);
+            const effective_url_mainframe = build_wrestler_matches_url(
+              url_home_page,
+              page,
+              url
+            );
 
             await safe_goto(page, effective_url_mainframe, { timeout: load_timeout_ms });
-            target_frame = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+            target_frame =
+              page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+              page.mainFrame();
           }
 
           p("step 4: wait for dropdown");
@@ -1125,15 +1163,23 @@ async function main({
               const effective_url_retry = build_wrestler_matches_url(url_home_page, page, url);
               await safe_goto(page, effective_url_retry, { timeout: load_timeout_ms });
 
-              const tf = page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) || page.mainFrame();
+              const tf =
+                page.frames().find((f) => /WrestlerMatches\.jsp/i.test(f.url())) ||
+                page.mainFrame();
+
               rows = await tf.evaluate(extractor_source());
             } else {
               throw e;
             }
           }
 
-          // progress (tasks version)  ✅ cached
-          const prog = await get_task_progress_cached(task_set_id);
+          // progress (tasks version)
+          let prog = null;
+          try {
+            prog = await get_task_set_progress(task_set_id);
+          } catch (e) {
+            console.warn("⚠️ get_task_set_progress failed (ignored):", e?.message || e);
+          }
 
           const total = prog?.total_count ?? total_rows_in_db;
           const completed = (prog?.done_count ?? 0) + (prog?.failed_count ?? 0);
@@ -1146,8 +1192,8 @@ async function main({
           p(
             color_text(
               `✔ ${completed} of ${total} ` +
-              `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
-              `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
+                `(done=${done}, locked=${locked}, failed=${failed}, pending=${pending}, duration=${duration}) ` +
+                `(invocation ${processed + 1} of ${no_of_urls}). rows returned: ${rows.length} from ${url}`,
               "red"
             )
           );
@@ -1169,7 +1215,9 @@ async function main({
               );
             } catch (e) {
               p(
-                "⚠️ failed to delete existing match history for wrestler_id=" + this_wrestler_id + ":",
+                "⚠️ failed to delete existing match history for wrestler_id=" +
+                  this_wrestler_id +
+                  ":",
                 e?.message || e
               );
             }
@@ -1177,7 +1225,12 @@ async function main({
 
           p("step 6: save to csv");
           csv_write_iterations += 1;
-          const headers_written_now = await save_to_csv_file(all_rows, i, headers_written, file_path);
+          const headers_written_now = await save_to_csv_file(
+            all_rows,
+            i,
+            headers_written,
+            file_path
+          );
           headers_written = headers_written_now;
           total_rows_written_csv += all_rows.length;
           p(`\x1b[33m➕ tracking headers_written: ${headers_written}\x1b[0m\n`);
@@ -1198,7 +1251,7 @@ async function main({
 
           processed += 1;
 
-          const HARD_RESET_LIMIT = is_extended_failure_retry ? 30 : 20; // ✅ NEW: slightly more frequent recycling in is_extended_failure_retry false
+          const HARD_RESET_LIMIT = 30;
           if (processed % HARD_RESET_LIMIT === 0 && processed < no_of_urls) {
             hard_reset_count += 1;
             p(
@@ -1296,7 +1349,12 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
             page = state.page;
             context = state.context;
 
-            const effective_url_after_reconnect = build_wrestler_matches_url(url_home_page, page, url);
+            const effective_url_after_reconnect = build_wrestler_matches_url(
+              url_home_page,
+              page,
+              url
+            );
+
             await safe_goto(page, effective_url_after_reconnect, { timeout: load_timeout_ms });
 
             continue;
@@ -1351,7 +1409,7 @@ HARD RESTART AT ${HARD_RESET_LIMIT}
   } finally {
     try {
       watchdog?.stop?.();
-    } catch { }
+    } catch {}
   }
 }
 
