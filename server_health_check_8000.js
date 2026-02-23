@@ -2,12 +2,11 @@
 import path from "path";
 import rateLimit from "express-rate-limit";
 import os from "os";
-import { execSync } from "child_process";
+import { execSync, execFile } from "child_process";
 
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import express from "express";
-
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,20 +23,14 @@ app.set("trust proxy", true);
 // ---------- Helpers ----------
 //
 
-// Best-effort "real client IP" + where it came from.
-// This also helps rate limiting key off the real IP when behind Cloudflare.
 function get_client_ip_info(req) {
   const cf_ip = (req.headers["cf-connecting-ip"] || "").toString().trim();
   const xff = (req.headers["x-forwarded-for"] || "").toString().trim();
   const x_real_ip = (req.headers["x-real-ip"] || "").toString().trim();
 
-  // x-forwarded-for can be a comma-separated chain: "client, proxy1, proxy2"
   const xff_first = xff ? xff.split(",")[0].trim() : "";
-
-  // express sets req.ip based on trust proxy
   const express_ip = (req.ip || "").toString().trim();
 
-  // Prefer Cloudflare header if present, then XFF first hop, then X-Real-IP, then Express.
   const ip = cf_ip || xff_first || x_real_ip || express_ip || "unknown";
 
   let source = "unknown";
@@ -73,7 +66,7 @@ function format_duration(seconds) {
 
 function get_disk_usage() {
   try {
-    const output = execSync("df -h /").toString().split("\n")[1];
+    const output = execSync("df -h /", { encoding: "utf8" }).trim().split("\n")[1];
     const parts = output.split(/\s+/);
 
     return {
@@ -101,29 +94,133 @@ function log_block(title, obj) {
   console.log("=======================================");
 }
 
+function is_probably_ip(ip) {
+  return typeof ip === "string" && ip.length >= 3 && ip.length <= 64 && (ip.includes(".") || ip.includes(":"));
+}
+
+//
+// ---------- WHOIS lookup (best-effort + cached + timeout) ----------
+//
+
+const WHOIS_TTL_MS = Number(process.env.WHOIS_TTL_MS || 24 * 60 * 60 * 1000); // 24h
+const WHOIS_TIMEOUT_MS = Number(process.env.WHOIS_TIMEOUT_MS || 1200); // 1.2s
+const WHOIS_MAX_CACHE = Number(process.env.WHOIS_MAX_CACHE || 2000);
+
+const whois_cache = new Map();
+
+function prune_whois_cache_if_needed() {
+  if (whois_cache.size <= WHOIS_MAX_CACHE) return;
+  const to_delete = Math.max(1, Math.floor(WHOIS_MAX_CACHE * 0.1));
+  let i = 0;
+  for (const key of whois_cache.keys()) {
+    whois_cache.delete(key);
+    i += 1;
+    if (i >= to_delete) break;
+  }
+}
+
+function parse_whois_best_effort(raw) {
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !l.startsWith("%") && !l.startsWith("#"));
+
+  const find_first = (regex) => {
+    for (const l of lines) {
+      const m = l.match(regex);
+      if (m) return (m[1] || "").trim();
+    }
+    return null;
+  };
+
+  const org =
+    find_first(/^OrgName:\s*(.+)$/i) ||
+    find_first(/^org-name:\s*(.+)$/i) ||
+    find_first(/^Organization:\s*(.+)$/i) ||
+    find_first(/^owner:\s*(.+)$/i) ||
+    find_first(/^descr:\s*(.+)$/i) ||
+    null;
+
+  const city = find_first(/^City:\s*(.+)$/i) || find_first(/^city:\s*(.+)$/i) || null;
+
+  const country = find_first(/^Country:\s*(.+)$/i) || find_first(/^country:\s*(.+)$/i) || null;
+
+  const netname =
+    find_first(/^NetName:\s*(.+)$/i) ||
+    find_first(/^netname:\s*(.+)$/i) ||
+    null;
+
+  const asn =
+    find_first(/^OriginAS:\s*(.+)$/i) ||
+    find_first(/^origin:\s*(.+)$/i) ||
+    null;
+
+  return {
+    org_name: org,
+    city,
+    country,
+    net_name: netname,
+    origin_as: asn,
+  };
+}
+
+function whois_lookup(ip) {
+  return new Promise((resolve) => {
+    if (!is_probably_ip(ip)) return resolve({ ok: false, error: "invalid_ip" });
+
+    const cached = whois_cache.get(ip);
+    if (cached && cached.expires_at > Date.now()) {
+      return resolve({ ok: true, cached: true, ...cached.data });
+    }
+
+    execFile(
+      "whois",
+      [ip],
+      { timeout: WHOIS_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          const data = {
+            ok: false,
+            cached: false,
+            error: err.killed ? "timeout" : "whois_failed",
+            stderr: (stderr || "").toString().slice(0, 200),
+          };
+          whois_cache.set(ip, { expires_at: Date.now() + Math.min(WHOIS_TTL_MS, 10 * 60 * 1000), data });
+          prune_whois_cache_if_needed();
+          return resolve(data);
+        }
+
+        const parsed = parse_whois_best_effort((stdout || "").toString());
+        const data = { ok: true, cached: false, ...parsed };
+
+        whois_cache.set(ip, { expires_at: Date.now() + WHOIS_TTL_MS, data });
+        prune_whois_cache_if_needed();
+        return resolve(data);
+      }
+    );
+  });
+}
+
 //
 // ---------- Rate Limiter ----------
 //
-// Install:
-//   npm i express-rate-limit
-//
-// Defaults below are conservative for a public /health endpoint.
-// Tune via env vars if desired.
 
-const window_ms = Number(process.env.HEALTH_RL_WINDOW_MS || 60_000); // 1 minute
-const max_requests = Number(process.env.HEALTH_RL_MAX || 60); // per IP per window
+const window_ms = Number(process.env.HEALTH_RL_WINDOW_MS || 60_000);
+const max_requests = Number(process.env.HEALTH_RL_MAX || 60);
 
 const health_rate_limiter = rateLimit({
   windowMs: window_ms,
   max: max_requests,
-  standardHeaders: true, // adds RateLimit-* headers
+  standardHeaders: true,
   legacyHeaders: false,
-  // Key by our "real IP" extraction (better behind proxies)
   keyGenerator: (req) => get_client_ip_info(req).ip,
-  // Friendly JSON response on block
-  handler: (req, res /*, next, options */) => {
+  handler: (req, res) => {
     const ip_info = get_client_ip_info(req);
-    const payload = {
+    console.log(
+      `${new Date().toISOString()} | RATE_LIMIT | ${req.method} ${req.originalUrl} | 429 | ${ip_info.ip} (${ip_info.source})`
+    );
+    return res.status(429).json({
       status: "rate_limited",
       message: "too many requests",
       requesting_ip: ip_info.ip,
@@ -131,13 +228,7 @@ const health_rate_limiter = rateLimit({
       window_ms,
       max_requests,
       timestamp: new Date().toISOString(),
-    };
-
-    console.log(
-      `${new Date().toISOString()} | RATE_LIMIT | ${req.method} ${req.originalUrl} | 429 | ${ip_info.ip} (${ip_info.source})`
-    );
-
-    return res.status(429).json(payload);
+    });
   },
 });
 
@@ -151,7 +242,6 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const ms = Date.now() - start;
-
     console.log(
       `${new Date().toISOString()} | ${req.method} ${req.originalUrl} | ${res.statusCode} | ${ms}ms | ${ip_info.ip} (${ip_info.source})`
     );
@@ -164,18 +254,19 @@ app.use((req, res, next) => {
 // ---------- Health Route ----------
 //
 
-// Apply limiter only to /health (keeps other routes unaffected if you add them later)
 // https://dell-home.kidderwise.org/health?key=SEE_ENV_SECRET
-app.get("/health", health_rate_limiter, (req, res) => {
-  const mem = process.memoryUsage();
-  const disk = get_disk_usage();
+app.get("/health", health_rate_limiter, async (req, res) => {
   const ip_info = get_client_ip_info(req);
 
-  console.log('req.query.key=', req.query.key);
-
+  // IMPORTANT: do key check BEFORE any whois
   if (req.query.key !== process.env.SERVER_HEALTH_CHECK_KEY_SECRET) {
     return res.status(403).send("Forbidden");
   }
+
+  const mem = process.memoryUsage();
+  const disk = get_disk_usage();
+
+  const whois = await whois_lookup(ip_info.ip);
 
   const status_details = {
     status: "ok",
@@ -183,13 +274,22 @@ app.get("/health", health_rate_limiter, (req, res) => {
     requesting_ip: ip_info.ip,
     ip_source: ip_info.source,
 
-    // raw headers that often explain "where did this IP come from?"
-    // (helpful behind Cloudflare / proxies)
     ip_debug: {
       cf_connecting_ip: ip_info.cf_connecting_ip,
       x_forwarded_for: ip_info.x_forwarded_for,
       x_real_ip: ip_info.x_real_ip,
       express_req_ip: ip_info.express_req_ip,
+    },
+
+    whois: {
+      ok: whois.ok,
+      cached: whois.cached || false,
+      org_name: whois.org_name || null,
+      city: whois.city || null,
+      country: whois.country || null,
+      net_name: whois.net_name || null,
+      origin_as: whois.origin_as || null,
+      error: whois.ok ? null : whois.error || "unknown",
     },
 
     uptime: format_duration(process.uptime()),
@@ -209,8 +309,7 @@ app.get("/health", health_rate_limiter, (req, res) => {
   };
 
   log_block("status_details:", status_details);
-
-  res.status(200).json(status_details);
+  return res.status(200).json(status_details);
 });
 
 //
@@ -219,7 +318,6 @@ app.get("/health", health_rate_limiter, (req, res) => {
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`health_check_running_on_port ${port}`);
-  console.log(
-    `rate_limit: window_ms=${window_ms} max_requests=${max_requests} (route=/health)`
-  );
+  console.log(`rate_limit: window_ms=${window_ms} max_requests=${max_requests} (route=/health)`);
+  console.log(`whois: ttl_ms=${WHOIS_TTL_MS} timeout_ms=${WHOIS_TIMEOUT_MS} max_cache=${WHOIS_MAX_CACHE}`);
 });
