@@ -4,6 +4,7 @@ import path from "path";
 import { determine_os_path } from "./utilities/directory_tools/determine_os_path.js";
 import { create_directory } from "./utilities/directory_tools/create_directory.js";
 import { color_text } from "./utilities/console_logs/console_colors.js";
+import { send_job_status_email } from "./utilities/email_sends/send_job_status_email.js";
 
 // === imports for each step ===
 import { step_0_launch_chrome_developer } from "./src/step_0_launch_chrome_developer.js";
@@ -264,7 +265,7 @@ async function main(config) {
   const output_dir = await create_directory("output", directory);
 
   const adjusted_season = config.wrestling_season.replace("-", "_");
-  const adjusted_gender = config.track_wrestling_category
+  const adjusted_category = config.track_wrestling_category
     .toLowerCase()           // make lowercase
     .replace(/\s+/g, "_")
     ;   // replace all spaces with underscores
@@ -274,16 +275,38 @@ async function main(config) {
     paths: {
       input_dir,
       output_dir,
-      wrestler_list_csv: path.join(input_dir, `wrestler_list_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
-      team_schedule_csv: path.join(input_dir, `team_schedule_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
-      url_array_js: path.join(input_dir, `wrestler_match_urls_${adjusted_season}_${adjusted_gender}.js`),
-      match_csv: path.join(output_dir, `wrestler_match_history_scrape_data_${adjusted_season}_${adjusted_gender}.csv`),
+      wrestler_list_csv: path.join(input_dir, `wrestler_list_scrape_data_${adjusted_season}_${adjusted_category}.csv`),
+      team_schedule_csv: path.join(input_dir, `team_schedule_scrape_data_${adjusted_season}_${adjusted_category}.csv`),
+      url_array_js: path.join(input_dir, `wrestler_match_urls_${adjusted_season}_${adjusted_category}.js`),
+      match_csv: path.join(output_dir, `wrestler_match_history_scrape_data_${adjusted_season}_${adjusted_category}.csv`),
     },
     browser: null,
     page: null,
     context: null,
   };
 
+  // ✅ EMAIL #1: START (just before step 0)
+  console.log(">>> BEFORE START EMAIL");
+
+  try {
+    await send_job_status_email({
+      stage: "START",
+      status: "OK",
+      job_name: `TrackWrestling ${config.wrestling_season} ${config.track_wrestling_category}`,
+      program_start_ms: program_start,
+      ctx,
+      step_flags,
+      test_flags,
+      details: {
+        note: "Starting job. About to enter Step 0 (launch chrome).",
+      },
+    });
+  } catch (e) {
+    console.error("START email failed (continuing job):", e?.message || e);
+  }
+
+  console.log(">>> AFTER START EMAIL (should see this)");
+  
   try {
     // === STEP 0 LAUNCH GOOGLE CHROME DEVTOOLS ===
     if (step_flags.step_0) {
@@ -469,7 +492,8 @@ async function main(config) {
         console.log("      Run: lsof -iTCP -sTCP:ESTABLISHED -nP | grep node | grep 9222");
       }
 
-      console.log("🚦 [PHASE TRANSITION] Entering match-history phase (ports 9223–9224:9225:9226 only)");
+      console.log("🚦 [PHASE TRANSITION] Entering match-history phase (ports 9223:9224:9225:9226 only)");
+
       const results = await Promise.allSettled(
         ports_to_use.map((port, idx) => (async () => {
 
@@ -679,6 +703,28 @@ async function main(config) {
 
       log_step_success(3_4, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
 
+      // ✅ EMAIL #2: AFTER STEP 3_4
+      try {
+        await send_job_status_email({
+          stage: "AFTER_STEP_3_4",
+          status: "OK",
+          job_name: `TrackWrestling ${config.wrestling_season} ${config.track_wrestling_category}`,
+          program_start_ms: program_start,
+          ctx,
+          step_flags,
+          test_flags,
+          details: {
+            note: "Step 3_4 completed (PASS 1 + PASS 2). Moving on to downstream steps.",
+            task_set_id,
+            match_csv: ctx.paths.match_csv,
+            use_wrestler_list_iterator_query: config.use_wrestler_list_iterator_query,
+            use_scheduled_events_iterator_query: config.use_scheduled_events_iterator_query,
+          },
+        });
+      } catch (e) {
+        console.error("AFTER_STEP_3_4 email failed (continuing job):", e?.message || e);
+      }
+
     } else log_step_skip(3_4, "Match history");
 
     // === STEP 4  CREATE MATCH HISTORY METRICS ===
@@ -860,9 +906,50 @@ async function main(config) {
     console.log(color_text(`\n⏲️  Total duration: ${format_duration(total_ms)}`, "cyan"));
     console.log(color_text("\n🏆 🎉 All steps completed successfully!\n", "green"));
 
+    // ✅ EMAIL #3: END (SUCCESS)
+    console.log(">>> SENDING END EMAIL NOW (test)");
+    try {
+      await send_job_status_email({
+        stage: "END",
+        status: "OK",
+        job_name: `TrackWrestling ${config.wrestling_season} ${config.track_wrestling_category}`,
+        program_start_ms: program_start,
+        ctx,
+        step_flags,
+        test_flags,
+        details: {
+          note: "All steps completed successfully.",
+          total_duration: format_duration(total_ms),
+        },
+      });
+    } catch (e) {
+      console.error("END email failed:", e?.message || e);
+    }
+    console.log(">>> END EMAIL SENT (test)");
+
   } catch (err) {
     console.error(err);
     process.exitCode = 1;   // 👈 mark process as failed
+
+    // ✅ EMAIL #3: END (FAIL)
+    try {
+      await send_job_status_email({
+        stage: "END",
+        status: "FAIL",
+        job_name: `TrackWrestling ${config?.wrestling_season || "unknown"} ${config?.track_wrestling_category || ""}`,
+        program_start_ms: program_start,
+        ctx,
+        step_flags,
+        test_flags,
+        details: {
+          note: "Job failed. See error section.",
+        },
+        error: err,
+      });
+    } catch (e) {
+      console.error("FAIL END email failed:", e?.message || e);
+    }
+
   } finally {
     try {
       await close_pools();
@@ -872,6 +959,10 @@ async function main(config) {
     } finally {
       // ✅ Force termination so flock releases even if handles linger
       console.log(`Exiting with code ${process.exitCode ?? 0}`);
+
+      // give nodemailer/socket flush a moment (especially in "all steps disabled" test)
+      await new Promise((r) => setTimeout(r, 750));
+
       process.exit(process.exitCode ?? 0);
     }
   }

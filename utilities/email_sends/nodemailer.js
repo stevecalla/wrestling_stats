@@ -62,7 +62,7 @@ const send_mail = async (mail_options) => {
     } catch (error) {
         console.log(error);
     } finally {
-        process.exit(0); // ensure the process exits to the command line
+        // process.exit(0); // ensure the process exits to the command line
     }
 };
 
