@@ -647,6 +647,10 @@ async function main(config) {
       // ... and pass in the task_set_id from the tasks db
       // const task_set_id = 'step_3_2025-26 High School Boys    _9ca5f0f69f57_2026-02-08';
       reset_tasks_table = false;
+
+      // PASS 2 should be LESS aggressive (faster, fewer retries)
+      const is_extended_failure_retry = false; // PASS 2: fast/limited retries
+
       await step_3_get_wrestler_match_history_v4(
         config.url_home_page,
         config.url_login_page,
@@ -668,8 +672,9 @@ async function main(config) {
         config.use_scheduled_events_iterator_query,
         config.use_wrestler_list_iterator_query,
 
-        reset_tasks_table,   // no truncate
-        task_set_id,         // ✅ reuse PASS 1 id
+        reset_tasks_table,    // no truncate
+        task_set_id,          // ✅ reuse PASS 1 id
+        is_extended_failure_retry,
       );
 
       log_step_success(3_4, `Match history saved → ${ctx.paths.match_csv}`, Date.now() - start);
