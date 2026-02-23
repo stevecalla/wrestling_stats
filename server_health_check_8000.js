@@ -85,12 +85,38 @@ function get_disk_usage() {
   }
 }
 
+// function log_block(title, obj) {
+//   console.log("***************************************");
+//   console.log(title);
+//   Object.entries(obj).forEach(([key, value]) => {
+//     console.log(`  ${key}: ${value}`);
+//   });
+//   console.log("=======================================");
+// }
+
 function log_block(title, obj) {
   console.log("***************************************");
   console.log(title);
-  Object.entries(obj).forEach(([key, value]) => {
-    console.log(`  ${key}: ${value}`);
-  });
+
+  for (const [key, value] of Object.entries(obj)) {
+    const is_object =
+      value !== null &&
+      typeof value === "object" &&
+      !(value instanceof Date);
+
+    if (is_object) {
+      console.log(`  ${key}:`);
+      // indent JSON lines so it stays readable in pm2 logs
+      const pretty = JSON.stringify(value, null, 2)
+        .split("\n")
+        .map((line) => `    ${line}`)
+        .join("\n");
+      console.log(pretty);
+    } else {
+      console.log(`  ${key}: ${value}`);
+    }
+  }
+
   console.log("=======================================");
 }
 
