@@ -32,6 +32,12 @@ const verify_transporter_connection = async () => {
     });
 };
 
+function close_mail_transport() {
+    try {
+        transporter.close();
+    } catch { }
+};
+
 const mail_details = (args) => {
     // construct mail details/options object
     const mail_options = {
@@ -68,9 +74,12 @@ const send_mail = async (mail_options) => {
 
 // await send_mail(mail_details());
 
+
+
 export {
     mail_details,
     send_mail,
+    close_mail_transport,
 };
 
 // SECTION - SOURCES
