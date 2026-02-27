@@ -4,6 +4,11 @@ pw-user-data/
 chrome-tw-user-data
 crontab_draft.txt
 
+# Used for cron_system_metrics log
+# cron_system_metrics runtime files\
+scripts/cron_system_metrics/metrics.jsonl
+scripts/cron_system_metrics/system_metrics.log
+
 # google analytics
 ga4_data
 wrestler-match-tracking-data-71ccf46666ed.json
