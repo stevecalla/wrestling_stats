@@ -7,10 +7,6 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// HERE TO ALLOW CRON JOB TO ACCESS .ENV USING NODE PATH
-import dotenv from "dotenv"; 
-dotenv.config({ path: "/home/steve-calla/development/wrestling/wrestling_stats/.env" });
-
 import { send_mail, mail_details, close_mail_transport } from "../../utilities/email_sends/nodemailer.js";
 
 // -----------------------------
