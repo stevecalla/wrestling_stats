@@ -7,6 +7,10 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// HERE TO ALLOW CRON JOB TO ACCESS .ENV USING NODE PATH
+import dotenv from "dotenv"; 
+dotenv.config({ path: "/home/steve-calla/development/wrestling/wrestling_stats/.env" });
+
 import { send_mail, mail_details, close_mail_transport } from "../../utilities/email_sends/nodemailer.js";
 
 // -----------------------------
@@ -178,7 +182,7 @@ function fmt_ts_mtn_from_ts_utc(ts_utc) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hour12: true,
   });
 }
 
@@ -531,7 +535,7 @@ async function send_daily_summary_via_email() {
   };
 
   await send_mail(mail_options);
-  close_mail_transport();     // lets Node exit naturally
+  close_mail_transport(); // lets Node exit naturally
 }
 
 // -----------------------------

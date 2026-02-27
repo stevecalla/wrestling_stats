@@ -7,7 +7,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { send_mail, mail_details, close_mail_transport } from "../../utilities/email_sends/nodemailer.js";
+import { send_mail, mail_details, close_mail_transport } from "../../../utilities/email_sends/nodemailer.js";
 
 // -----------------------------
 // Paths (ESM __dirname)
