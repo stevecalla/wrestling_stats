@@ -137,9 +137,7 @@ async function send_ubuntu_log_via_slack() {
 
     console.log(message);
 
-    await send_mail(mail_details());
-
-    // await slack_message_api(message, "steve_calla_slack_channel");
+    await slack_message_api(message, "steve_calla_slack_channel");
 }
 
 // ====================================================
