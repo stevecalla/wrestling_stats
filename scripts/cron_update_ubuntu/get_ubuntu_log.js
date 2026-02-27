@@ -3,7 +3,7 @@ import fs from "fs";
 import { execSync } from "child_process";
 
 import { determine_ubuntu_update_log_file_path } from "../../utilities/directory_tools/determine_os_path.js";
-import { send_mail, mail_details } from "../../utilities/email_sends/nodemailer.js";
+import { send_mail, mail_details, close_mail_transport } from "../../utilities/email_sends/nodemailer.js";
 
 // const { slack_message_api } = require("../../schedule_slack/slack_message_api");
 
@@ -308,6 +308,8 @@ ${email_message || ""}
     };
 
     await send_mail(mail_options);
+
+    close_mail_transport();     // lets Node exit naturally
 }
 
 // ====================================================
