@@ -53,7 +53,7 @@ read -r mem_total_b mem_used_b mem_free_b mem_shared_b mem_cache_b mem_available
   free -b | awk '/^Mem:/ {print $2,$3,$4,$5,$6,$7}'
 )
 
-read -r swap_total_b swap_used_b swap_free_b < <(
+read -r swap_total_b swap_used_b swap_free_b < <(e
   free -b | awk '/^Swap:/ {print $2,$3,$4}'
 )
 
