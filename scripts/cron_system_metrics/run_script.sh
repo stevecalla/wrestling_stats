@@ -28,13 +28,34 @@ trim_metrics_file() {
       sub(/.*"ts_utc":"/, "", ts)
       sub(/".*/, "", ts)
 
-      if (ts ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/) {
+      if (ts ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/) {
         if (to_epoch(ts) >= cutoff_epoch) print $0
       }
     }
   ' "$metrics_file" > "$tmp_file" || true
 
   mv "$tmp_file" "$metrics_file"
+}
+
+trim_log_file() {
+  [ ! -f "$log_file" ] && return 0
+  tmp_file="${log_file}.tmp"
+
+  awk -v cutoff_epoch="$cutoff_epoch" '
+    function to_epoch(ts, y,mo,d,h,mi,s) {
+      y=substr(ts,1,4); mo=substr(ts,6,2); d=substr(ts,9,2)
+      h=substr(ts,12,2); mi=substr(ts,15,2); s=substr(ts,18,2)
+      return mktime(y " " mo " " d " " h " " mi " " s)
+    }
+    {
+      ts=substr($0,1,19)
+      if (ts ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/) {
+        if (to_epoch(ts) >= cutoff_epoch) print $0
+      }
+    }
+  ' "$log_file" > "$tmp_file" || true
+
+  mv "$tmp_file" "$log_file"
 }
 
 # ----------------------------
@@ -53,7 +74,7 @@ read -r mem_total_b mem_used_b mem_free_b mem_shared_b mem_cache_b mem_available
   free -b | awk '/^Mem:/ {print $2,$3,$4,$5,$6,$7}'
 )
 
-read -r swap_total_b swap_used_b swap_free_b < <(e
+read -r swap_total_b swap_used_b swap_free_b < <(
   free -b | awk '/^Swap:/ {print $2,$3,$4}'
 )
 
@@ -113,3 +134,4 @@ printf "%s load=%s/%s/%s mem=%.1f/%.1fGi(avail=%.1fGi) swap=%.1f/%.1fGi disk=%.1
   >> "$log_file"
 
 trim_metrics_file
+trim_log_file
