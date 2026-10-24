@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -26,7 +27,7 @@ export DEBIAN_FRONTEND=noninteractive
 # --- Pretty output helpers ---
 info()  { printf "\n\033[1;34m[INFO]\033[0m %s\n" "$*"; }
 ok()    { printf "\033[1;32m[OK]\033[0m %s\n" "$*"; }
-warn()  { printf "\033[1;33m[WARN]\033[0m %s\n" "$*\n"; }
+warn()  { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 
 start_ts=$(date +"%F %T")
 export DEBIAN_FRONTEND=noninteractive
@@ -37,13 +38,40 @@ apt-get update -y # -qq
 info "Upgrading installed packages…"
 apt-get upgrade -y # -qq
 
-
 info "Applying full upgrade (handles dependency changes)…"
 apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y # -qq
 
 info "Removing unused packages and cleaning cache…"
 apt-get autoremove --purge -y # -qq
 apt-get clean -qq
+
+# --- Cloudflare Tunnel: restart only when running an outdated binary ---
+# apt updates the installed executable but may leave the old process running.
+# A running executable marked "(deleted)" indicates the binary was replaced.
+# Restart only in that case to activate the newly installed version.
+# Preserve existing tunnel configuration and authentication.
+
+info "Checking Cloudflare Tunnel…"
+
+if systemctl is-active --quiet cloudflared; then
+  cloudflared_pid="$(systemctl show -p MainPID --value cloudflared)"
+  running_binary="$(readlink "/proc/${cloudflared_pid}/exe" 2>/dev/null || true)"
+
+  if [[ "$running_binary" == *" (deleted)" ]]; then
+    info "Cloudflare Tunnel binary was upgraded. Restarting service…"
+
+    if systemctl restart cloudflared && systemctl is-active --quiet cloudflared; then
+      ok "Cloudflare Tunnel restarted successfully: $(cloudflared --version)"
+    else
+      warn "Cloudflare Tunnel failed to restart. Check systemctl status cloudflared."
+      exit 1
+    fi
+  else
+    ok "Cloudflare Tunnel is already using the current binary."
+  fi
+else
+  warn "Cloudflare Tunnel is not running. Skipping automatic restart."
+fi
 
 # Kernel check (current vs newest installed)
 current_kernel="$(uname -r)"
@@ -88,6 +116,34 @@ ok   "Log written to: ${LOGFILE}"
 # SETUP CRON JOB
 # crontab -e
 # 0 3 * * 0 /home/steve-calla/development/ezhire/mysql_load/scheduled_jobs/cron_update_ubuntu/run_script.sh
+
+# CURRENT SCHEDULE (LATITUDE 7420)
+# /etc/cron.d/system_maintenance
+# 30 09 * * * steve-calla $UBUNTU_UPDATE_PATH >> /home/steve-calla/logs/ubuntu_update.log 2>&1
+# 45 09 * * * steve-calla $UBUNTU_LOG_PATH >> /home/steve-calla/logs/ubuntu_update.log 2>&1
+
+# CLOUDFLARE TUNNEL
+# Check installed version:
+# cloudflared --version
+#
+# Check service status:
+# sudo systemctl is-active cloudflared
+#
+# Check running executable (look for "(deleted)"):
+# sudo readlink -f /proc/$(systemctl show -p MainPID --value cloudflared)/exe
+#
+# Check recent tunnel logs:
+# sudo journalctl -u cloudflared -n 30 --no-pager
+#
+# Manually restart if needed:
+# sudo systemctl restart cloudflared
+#
+# Automatic restart behavior:
+# After successful apt upgrades, this script checks the running executable.
+# If marked "(deleted)", it restarts cloudflared and logs the result.
+# Otherwise, no restart occurs.
+# Restart briefly interrupts connections through the tunnel.
+# If the restart fails, the script exits with code 1.
 
 # SETUP ALIAS
 # alias ubuntu_update='~/ubuntu-update.sh'
